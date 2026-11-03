@@ -87,4 +87,22 @@ class Wall {
         height: (json['height'] as num).toDouble(),
         status: ElementStatus.values.byName(json['status'] as String),
       );
+
+  /// Elimina muros duplicados o idénticos (mismo trazo espacial sin importar la dirección)
+  static List<Wall> deduplicate(Iterable<Wall> walls) {
+    final unique = <Wall>[];
+    for (final w in walls) {
+      final isDuplicate = unique.any((existing) {
+        final sameDir = (existing.startPoint.distanceTo(w.startPoint) < 0.05 &&
+            existing.endPoint.distanceTo(w.endPoint) < 0.05);
+        final oppDir = (existing.startPoint.distanceTo(w.endPoint) < 0.05 &&
+            existing.endPoint.distanceTo(w.startPoint) < 0.05);
+        return sameDir || oppDir;
+      });
+      if (!isDuplicate) {
+        unique.add(w);
+      }
+    }
+    return unique;
+  }
 }

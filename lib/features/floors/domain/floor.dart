@@ -123,10 +123,11 @@ class Floor {
                 ?.map((m) => Module.fromJson(m as Map<String, dynamic>))
                 .toList() ??
             const [],
-        walls: (json['walls'] as List<dynamic>?)
-                ?.map((w) => Wall.fromJson(w as Map<String, dynamic>))
-                .toList() ??
-            const [],
+        walls: Wall.deduplicate(
+          (json['walls'] as List<dynamic>?)
+                  ?.map((w) => Wall.fromJson(w as Map<String, dynamic>)) ??
+              const [],
+        ),
         replacementRelationships: (json['replacement_relationships'] as List<dynamic>?)
                 ?.map((r) =>
                     ReplacementRelationship.fromJson(r as Map<String, dynamic>))

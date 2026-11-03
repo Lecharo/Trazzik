@@ -38,15 +38,17 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     List<Floor> allFloors = const [],
     Project? project,
   }) {
-    final floorsList = allFloors.isNotEmpty ? allFloors : [floor];
+    final cleanFloor = floor.copyWith(walls: Wall.deduplicate(floor.walls));
+    final cleanAllFloors = allFloors.map((f) => f.copyWith(walls: Wall.deduplicate(f.walls))).toList();
+    final floorsList = cleanAllFloors.isNotEmpty ? cleanAllFloors : [cleanFloor];
 
     state = FloorEditorState(
       lot: lot,
-      floor: floor,
+      floor: cleanFloor,
       allFloors: floorsList,
       project: project,
-      selectedModuleId: floor.modules.isNotEmpty ? floor.modules.first.id : null,
-      issues: ValidationEngine.validateFloor(floor: floor, lot: lot),
+      selectedModuleId: cleanFloor.modules.isNotEmpty ? cleanFloor.modules.first.id : null,
+      issues: ValidationEngine.validateFloor(floor: cleanFloor, lot: lot),
       zoom: 35.0,
       panOffset: const Offset(80.0, 80.0),
       undoStack: const [],

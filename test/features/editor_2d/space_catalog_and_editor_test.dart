@@ -4,8 +4,10 @@ import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/modules/domain/space_template.dart';
+import 'package:trazzik/features/walls/domain/wall.dart';
 
 void main() {
   group('SpaceTemplate — Catálogo Arquitectónico', () {
@@ -324,6 +326,49 @@ void main() {
       notifier.toggleLShapedNook('mod-living-l');
       mod = container.read(floorEditorProvider).floor.modules.first;
       expect(mod.geometry.vertices.length, equals(6));
+    });
+
+    test('Wall.deduplicate elimina muros duplicados acumulados por reingreso o guardado', () {
+      final wallA1 = Wall(
+        id: 'w1',
+        floorId: 'fl1',
+        startPoint: const Point2D(0, 0),
+        endPoint: const Point2D(5, 0),
+        thickness: 0.15,
+        status: ElementStatus.isNew,
+      );
+      // Muro duplicado exactamente igual con otro id
+      final wallA2 = Wall(
+        id: 'w2',
+        floorId: 'fl1',
+        startPoint: const Point2D(0, 0),
+        endPoint: const Point2D(5, 0),
+        thickness: 0.15,
+        status: ElementStatus.isNew,
+      );
+      // Muro duplicado en sentido inverso
+      final wallA3 = Wall(
+        id: 'w3',
+        floorId: 'fl1',
+        startPoint: const Point2D(5, 0),
+        endPoint: const Point2D(0, 0),
+        thickness: 0.15,
+        status: ElementStatus.isNew,
+      );
+      // Muro legítimo diferente
+      final wallB = Wall(
+        id: 'w4',
+        floorId: 'fl1',
+        startPoint: const Point2D(5, 0),
+        endPoint: const Point2D(5, 4),
+        thickness: 0.15,
+        status: ElementStatus.isNew,
+      );
+
+      final deduplicated = Wall.deduplicate([wallA1, wallA2, wallA3, wallB]);
+      expect(deduplicated.length, equals(2));
+      expect(deduplicated.any((w) => w.id == 'w1'), isTrue);
+      expect(deduplicated.any((w) => w.id == 'w4'), isTrue);
     });
   });
 }

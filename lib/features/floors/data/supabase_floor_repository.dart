@@ -55,7 +55,17 @@ class SupabaseFloorRepository {
       });
     }
 
-    // 3. Guardar Muros
+    // 3. Guardar Muros y limpiar muros eliminados o sustituidos en la base de datos
+    final existingWalls =
+        await _client.from('walls').select('id').eq('floor_id', floor.id);
+    final currentWallIds = floor.walls.map((w) => w.id).toSet();
+    for (final row in existingWalls) {
+      final dbId = row['id'] as String;
+      if (!currentWallIds.contains(dbId)) {
+        await _client.from('walls').delete().eq('id', dbId);
+      }
+    }
+
     for (final wall in floor.walls) {
       await _client.from('walls').upsert({
         'id': _ensureUuid(wall.id),
