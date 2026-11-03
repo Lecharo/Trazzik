@@ -18,6 +18,7 @@ class MaterialItem {
   final String yieldFormula;
   final List<String> targetRoomNames;
   final String? purchaseTip;
+  final String? packagingDetail;
 
   const MaterialItem({
     required this.id,
@@ -29,6 +30,7 @@ class MaterialItem {
     required this.yieldFormula,
     this.targetRoomNames = const [],
     this.purchaseTip,
+    this.packagingDetail,
   });
 
   String get categoryLabel {
