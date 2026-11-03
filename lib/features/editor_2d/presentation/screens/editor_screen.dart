@@ -16,6 +16,7 @@ import 'package:trazzik/features/projects/presentation/screens/lot_setup_screen.
 import 'package:trazzik/features/plan_export/presentation/screens/technical_plan_export_screen.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
 import 'package:trazzik/features/ai_advisor/presentation/widgets/architectural_audit_dialog.dart';
+import 'package:trazzik/features/ai_advisor/presentation/widgets/renovation_planner_dialog.dart';
 import 'package:trazzik/features/zoning_assistant/presentation/widgets/multi_story_brief_dialog.dart';
 import 'package:trazzik/features/zoning_assistant/presentation/widgets/starter_layout_dialog.dart';
 
@@ -486,6 +487,16 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       ),
       PopupMenuItem(
+        value: 'renovation_planner',
+        child: Row(
+          children: [
+            const Icon(Icons.checklist_rtl_rounded, size: 18, color: Color(0xFF00E5FF)),
+            const SizedBox(width: 8),
+            Text(lang == 'es' ? 'Plan de Obra y Materiales IA' : 'AI Renovation & Materials'),
+          ],
+        ),
+      ),
+      PopupMenuItem(
         value: 'area_schedule',
         child: Row(
           children: [
@@ -711,6 +722,9 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         break;
       case 'ai_audit':
         ArchitecturalAuditDialog.show(context);
+        break;
+      case 'renovation_planner':
+        RenovationPlannerDialog.show(context);
         break;
       case 'area_schedule':
         ProjectAreaScheduleDialog.show(context);
@@ -1154,6 +1168,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 ? 'Auditoría y Asesoría Arquitectónica IA'
                 : 'AI Architectural Audit & Advisory',
             onPressed: () => ArchitecturalAuditDialog.show(context),
+          ),
+
+          // Planificador de Obra, Materiales y Cuadrilla IA
+          IconButton(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.checklist_rtl_rounded, size: 20, color: Color(0xFF00E5FF)),
+            tooltip: lang == 'es'
+                ? 'Plan de Obra, Materiales y Cuadrilla IA'
+                : 'AI Renovation, Materials & Crew Planner',
+            onPressed: () => RenovationPlannerDialog.show(context),
           ),
 
           // Cuadro General de Superficies del Proyecto
