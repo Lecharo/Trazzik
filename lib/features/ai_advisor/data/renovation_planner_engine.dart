@@ -331,7 +331,7 @@ class RenovationPlannerEngine {
         headcount: parallelTilerCount,
         estimatedDays: parallelTilerDays,
         scopeDescription: '$parallelTilerCount enchapadores en simultáneo (uno en baños y otro avanzando en pisos de zonas sociales y dormitorios).',
-        equipmentNeeded: ['Doble dotación de cortadoras y llanas dentadas', 'Nivel láser 360°'],
+        equipmentNeeded: ['Doble dotación de cortadoras y llanas dentadas', 'Nivel láser 360 grados'],
         icon: Icons.groups,
       ),
       if (bNum > 0 || kNum > 0)

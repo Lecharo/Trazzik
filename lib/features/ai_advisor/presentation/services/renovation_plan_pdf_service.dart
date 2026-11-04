@@ -40,7 +40,7 @@ class RenovationPlanPdfService {
     required bool isParallelMode,
   }) async {
     final pdf = pw.Document(
-      title: 'Plan de Remodelación y Compras — $projectName',
+      title: 'Plan de Remodelación y Compras - $projectName',
       author: 'Trazzik AI Engine',
       creator: 'Trazzik Architectural Editor',
     );
@@ -99,7 +99,7 @@ class RenovationPlanPdfService {
             crossAxisAlignment: pw.CrossAxisAlignment.start,
             children: [
               pw.Text(
-                'TRAZZIK ARCHITECTURAL SUITE — PLANIFICADOR IA',
+                'TRAZZIK ARCHITECTURAL SUITE | PLANIFICADOR IA',
                 style: pw.TextStyle(
                   fontSize: 8.5,
                   fontWeight: pw.FontWeight.bold,
@@ -151,7 +151,7 @@ class RenovationPlanPdfService {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-            'Documento técnico generado con Trazzik Engine • Cómputos con desperdicio técnico normativo',
+            'Documento técnico generado con Trazzik Engine | Cómputos con desperdicio técnico normativo',
             style: const pw.TextStyle(fontSize: 7.5, color: PdfColors.grey700),
           ),
           pw.Text(
@@ -270,7 +270,7 @@ class RenovationPlanPdfService {
       },
       data: plan.materials.map((m) {
         final qtyStr = m.quantity.toStringAsFixed(m.quantity % 1 == 0 ? 0 : 2);
-        final packaging = m.packagingDetail != null ? '\n📦 ${m.packagingDetail}' : '';
+        final packaging = m.packagingDetail != null ? '\nPresentación: ${m.packagingDetail}' : '';
         return [
           '${m.name}$packaging',
           qtyStr,
@@ -308,7 +308,7 @@ class RenovationPlanPdfService {
                       style: pw.TextStyle(fontSize: 8.5, fontWeight: pw.FontWeight.bold, color: PdfColors.blue900),
                     ),
                     pw.Text(
-                      '${crew.headcount} operario(s) • ${crew.estimatedDays} días hábiles',
+                      '${crew.headcount} operario(s) | ${crew.estimatedDays} días hábiles',
                       style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold, color: PdfColors.teal800),
                     ),
                   ],
@@ -394,7 +394,7 @@ class RenovationPlanPdfService {
                     pw.SizedBox(height: 1),
                     pw.Text(
                       'Especialistas: ${phase.specialists.join(" + ")}' +
-                          (phase.canParallelize ? ' • Estrategia: ${phase.parallelTip}' : ''),
+                          (phase.canParallelize ? ' | Estrategia: ${phase.parallelTip}' : ''),
                       style: pw.TextStyle(
                         fontSize: 6.8,
                         color: phase.canParallelize ? PdfColors.teal900 : PdfColors.blueGrey700,
