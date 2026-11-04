@@ -345,7 +345,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
-  Future<void> _saveFloorToSupabase() async {
+  Future<bool> _saveFloorToSupabase() async {
     final state = ref.read(floorEditorProvider);
     final lang = ref.read(appLocaleProvider);
 
@@ -353,6 +353,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     try {
       final repo = SupabaseFloorRepository();
       await repo.saveFloor(state.floor);
+      ref.read(floorEditorProvider.notifier).markFloorSaved();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -367,6 +368,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ),
         );
       }
+      return true;
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -384,8 +386,188 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           ),
         );
       }
+      return false;
     } finally {
       if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  /// Muestra un diálogo de advertencia cuando hay cambios sin guardar.
+  /// Retorna: 'save', 'discard' o 'cancel'.
+  Future<String?> _showUnsavedChangesDialog({
+    required BuildContext context,
+    required String title,
+    required String message,
+    String confirmLabel = 'Guardar y Continuar',
+    String discardLabel = 'Descartar Cambios',
+  }) async {
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        return AlertDialog(
+          backgroundColor: const Color(0xFF0F172A),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+            side: const BorderSide(color: Color(0xFF00E5FF), width: 1.2),
+          ),
+          title: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF9800).withOpacity(0.2),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: const Icon(Icons.warning_amber_rounded, color: Color(0xFFFF9800), size: 22),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          content: Text(
+            message,
+            style: const TextStyle(color: Colors.white70, fontSize: 12, height: 1.4),
+          ),
+          actionsPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop('cancel'),
+              child: const Text('Cancelar', style: TextStyle(color: Colors.white54, fontSize: 12)),
+            ),
+            OutlinedButton(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.redAccent,
+                side: const BorderSide(color: Colors.redAccent),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              ),
+              onPressed: () => Navigator.of(ctx).pop('discard'),
+              child: Text(discardLabel, style: const TextStyle(fontSize: 11)),
+            ),
+            ElevatedButton(
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF00E5FF),
+                foregroundColor: const Color(0xFF0A192F),
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+              ),
+              onPressed: () => Navigator.of(ctx).pop('save'),
+              child: Text(
+                confirmLabel,
+                style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  /// Maneja el cambio de piso verificando si hay cambios pendientes por guardar.
+  Future<void> _handleSwitchFloor(
+    BuildContext context,
+    FloorEditorNotifier notifier,
+    FloorEditorState state,
+    String newFloorId,
+  ) async {
+    if (newFloorId == state.floor.id) return;
+
+    if (!state.hasUnsavedChanges) {
+      notifier.switchFloor(newFloorId);
+      return;
+    }
+
+    final targetFloor = state.allFloors.firstWhere(
+      (f) => f.id == newFloorId,
+      orElse: () => state.floor,
+    );
+
+    final decision = await _showUnsavedChangesDialog(
+      context: context,
+      title: 'Modificaciones sin Guardar',
+      message:
+          'Realizaste cambios en "${state.floor.name}". ¿Deseás guardarlos antes de pasar a "${targetFloor.name}"?',
+      confirmLabel: 'Guardar y Cambiar',
+      discardLabel: 'Cambiar sin Guardar',
+    );
+
+    if (decision == 'save') {
+      final success = await _saveFloorToSupabase();
+      if (success && mounted) {
+        notifier.switchFloor(newFloorId);
+      }
+    } else if (decision == 'discard') {
+      notifier.switchFloor(newFloorId);
+    }
+  }
+
+  /// Navega a otra pantalla verificando si hay cambios pendientes en el piso actual.
+  Future<void> _navigateWithUnsavedCheck({
+    required BuildContext context,
+    required Widget screen,
+    required String optionName,
+  }) async {
+    final state = ref.read(floorEditorProvider);
+    if (!state.hasUnsavedChanges) {
+      Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+      return;
+    }
+
+    final decision = await _showUnsavedChangesDialog(
+      context: context,
+      title: 'Modificaciones sin Guardar',
+      message:
+          'Tenés cambios en "${state.floor.name}" sin guardar en la nube. ¿Deseás guardarlos antes de abrir $optionName?',
+      confirmLabel: 'Guardar y Abrir',
+      discardLabel: 'Abrir sin Guardar',
+    );
+
+    if (decision == 'save') {
+      final success = await _saveFloorToSupabase();
+      if (success && mounted) {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+      }
+    } else if (decision == 'discard') {
+      if (mounted) {
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => screen));
+      }
+    }
+  }
+
+  /// Maneja la salida del editor (botón atrás o gesto).
+  Future<void> _handleExitEditor(BuildContext context) async {
+    final state = ref.read(floorEditorProvider);
+    if (!state.hasUnsavedChanges) {
+      Navigator.of(context).pop();
+      return;
+    }
+
+    final decision = await _showUnsavedChangesDialog(
+      context: context,
+      title: '¿Salir del Editor?',
+      message:
+          'Hay modificaciones en "${state.floor.name}" que aún no se han guardado en la nube. ¿Deseás guardarlas antes de salir?',
+      confirmLabel: 'Guardar y Salir',
+      discardLabel: 'Salir sin Guardar',
+    );
+
+    if (decision == 'save') {
+      final success = await _saveFloorToSupabase();
+      if (success && mounted) {
+        Navigator.of(context).pop();
+      }
+    } else if (decision == 'discard') {
+      if (mounted) {
+        Navigator.of(context).pop();
+      }
     }
   }
 
@@ -730,13 +912,17 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ProjectAreaScheduleDialog.show(context);
         break;
       case 'viewer_3d':
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const Viewer3dScreen()),
+        _navigateWithUnsavedCheck(
+          context: context,
+          screen: const Viewer3dScreen(),
+          optionName: 'la Maqueta 3D',
         );
         break;
       case 'export_pdf':
-        Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const TechnicalPlanExportScreen()),
+        _navigateWithUnsavedCheck(
+          context: context,
+          screen: const TechnicalPlanExportScreen(),
+          optionName: 'Lámina Técnica (PDF)',
         );
         break;
       case 'demarcate_walls':
@@ -758,8 +944,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         break;
       case 'lot_setup':
         if (state.project != null) {
-          Navigator.of(context).push(
-            MaterialPageRoute(builder: (_) => LotSetupScreen(project: state.project!)),
+          _navigateWithUnsavedCheck(
+            context: context,
+            screen: LotSetupScreen(project: state.project!),
+            optionName: 'Configurar Lote',
           );
         }
         break;
@@ -885,7 +1073,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                     }).toList(),
                     onChanged: (newFloorId) {
                       if (newFloorId != null) {
-                        notifier.switchFloor(newFloorId);
+                        _handleSwitchFloor(context, notifier, state, newFloorId);
                       }
                     },
                   ),
@@ -934,8 +1122,32 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 height: 14,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E5FF)),
               )
-            : const Icon(Icons.cloud_upload_outlined, size: 20, color: Color(0xFF00E5FF)),
-        tooltip: AppStrings.tr('save_floor', lang),
+            : Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Icon(
+                    state.hasUnsavedChanges ? Icons.cloud_upload : Icons.cloud_done_outlined,
+                    size: 20,
+                    color: state.hasUnsavedChanges ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+                  ),
+                  if (state.hasUnsavedChanges)
+                    Positioned(
+                      top: -2,
+                      right: -2,
+                      child: Container(
+                        width: 7,
+                        height: 7,
+                        decoration: const BoxDecoration(
+                          color: Color(0xFFFF5252),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+        tooltip: state.hasUnsavedChanges
+            ? (lang == 'es' ? 'Guardar Cambios Pendientes' : 'Save Unsaved Changes')
+            : (lang == 'es' ? 'Piso Guardado' : 'Floor Saved'),
         onPressed: _isSaving ? null : _saveFloorToSupabase,
       ),
       PopupMenuButton<String>(
@@ -977,10 +1189,21 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       });
     }
 
-    return Scaffold(
-      appBar: AppBar(
-        titleSpacing: 8,
-        title: isMobile
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, result) async {
+        if (didPop) return;
+        await _handleExitEditor(context);
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back, size: 20),
+            tooltip: lang == 'es' ? 'Volver a Proyectos' : 'Back to Projects',
+            onPressed: () => _handleExitEditor(context),
+          ),
+          titleSpacing: 4,
+          title: isMobile
             ? _buildMobileAppBarTitle(context, state, notifier, lang)
             : Row(
           mainAxisSize: MainAxisSize.min,
@@ -1098,7 +1321,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       }).toList(),
                       onChanged: (newFloorId) {
                         if (newFloorId != null) {
-                          notifier.switchFloor(newFloorId);
+                          _handleSwitchFloor(context, notifier, state, newFloorId);
                         }
                       },
                     ),
@@ -1234,13 +1457,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             icon: const Icon(Icons.view_in_ar, size: 20, color: Color(0xFF00E5FF)),
             tooltip: lang == 'es' ? 'Ver Maqueta 3D Axonométrica' : '3D Axonometric Model',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const Viewer3dScreen(),
-                ),
-              );
-            },
+            onPressed: () => _navigateWithUnsavedCheck(
+              context: context,
+              screen: const Viewer3dScreen(),
+              optionName: 'la Maqueta 3D',
+            ),
           ),
 
           // Exportar Plano Técnico PDF / Lámina Imprimible
@@ -1251,13 +1472,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             tooltip: lang == 'es'
                 ? 'Exportar Lámina Técnica (PDF)'
                 : 'Export Technical Plan (PDF)',
-            onPressed: () {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => const TechnicalPlanExportScreen(),
-                ),
-              );
-            },
+            onPressed: () => _navigateWithUnsavedCheck(
+              context: context,
+              screen: const TechnicalPlanExportScreen(),
+              optionName: 'Lámina Técnica (PDF)',
+            ),
           ),
 
           // Deshacer / Rehacer
@@ -1326,9 +1545,13 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 3),
             child: OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
-                foregroundColor: const Color(0xFF00E5FF),
-                side: const BorderSide(color: Color(0xFF00E5FF)),
-                padding: const EdgeInsets.symmetric(horizontal: 8),
+                foregroundColor: state.hasUnsavedChanges ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+                side: BorderSide(
+                  color: state.hasUnsavedChanges ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+                  width: state.hasUnsavedChanges ? 1.5 : 1.0,
+                ),
+                backgroundColor: state.hasUnsavedChanges ? const Color(0xFFFFB300).withOpacity(0.08) : Colors.transparent,
+                padding: const EdgeInsets.symmetric(horizontal: 9),
                 textStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
               ),
               icon: _isSaving
@@ -1337,8 +1560,15 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                       height: 14,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF00E5FF)),
                     )
-                  : const Icon(Icons.cloud_upload_outlined, size: 15),
-              label: Text(AppStrings.tr('save_floor', lang)),
+                  : Icon(
+                      state.hasUnsavedChanges ? Icons.cloud_upload : Icons.cloud_done_outlined,
+                      size: 15,
+                    ),
+              label: Text(
+                state.hasUnsavedChanges
+                    ? (lang == 'es' ? 'Guardar Cambios *' : 'Save Changes *')
+                    : (lang == 'es' ? 'Piso Guardado ✓' : 'Floor Saved ✓'),
+              ),
               onPressed: _isSaving ? null : _saveFloorToSupabase,
             ),
           ),
@@ -1349,8 +1579,10 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             tooltip: 'Más Opciones',
             onSelected: (val) {
               if (val == 'lot_setup' && state.project != null) {
-                Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => LotSetupScreen(project: state.project!)),
+                _navigateWithUnsavedCheck(
+                  context: context,
+                  screen: LotSetupScreen(project: state.project!),
+                  optionName: 'Configurar Lote',
                 );
               } else if (val == 'starter_layout') {
                 StarterLayoutDialog.show(context);
@@ -1606,6 +1838,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 ],
               ),
             ),
+      ),
     );
   }
 }

@@ -191,6 +191,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       issues: issues,
       undoStack: newUndo,
       redoStack: [], // Limpiar redo en nueva acción
+      hasUnsavedChanges: true,
     );
   }
 
@@ -217,7 +218,12 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       issues: issues,
       undoStack: const [],
       redoStack: const [],
+      hasUnsavedChanges: false,
     );
+  }
+
+  void markFloorSaved() {
+    state = state.copyWith(hasUnsavedChanges: false);
   }
 
   void undo() {
@@ -232,6 +238,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       issues: issues,
       undoStack: newUndo,
       redoStack: newRedo,
+      hasUnsavedChanges: true,
     );
   }
 
@@ -247,6 +254,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       issues: issues,
       undoStack: newUndo,
       redoStack: newRedo,
+      hasUnsavedChanges: true,
     );
   }
 
@@ -728,6 +736,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       showZoningGuide: true,
       undoStack: List<Floor>.from(state.undoStack)..add(state.floor),
       redoStack: const [],
+      hasUnsavedChanges: true,
     );
   }
 

@@ -407,6 +407,11 @@ class _PropertiesPanelState extends ConsumerState<PropertiesPanel> {
                         ),
                       ),
                     ),
+                    onChanged: (val) {
+                      if (val.trim().isNotEmpty) {
+                        notifier.setModuleName(selectedModule.id, val.trim());
+                      }
+                    },
                     onSubmitted: (val) => notifier.setModuleName(
                       selectedModule.id,
                       val.trim(),

@@ -20,6 +20,7 @@ class FloorEditorState {
   final List<Floor> undoStack;
   final List<Floor> redoStack;
   final bool showZoningGuide;
+  final bool hasUnsavedChanges;
 
   const FloorEditorState({
     required this.floor,
@@ -35,6 +36,7 @@ class FloorEditorState {
     this.undoStack = const [],
     this.redoStack = const [],
     this.showZoningGuide = false,
+    this.hasUnsavedChanges = false,
   });
 
   Module? get selectedModule {
@@ -71,6 +73,7 @@ class FloorEditorState {
     List<Floor>? undoStack,
     List<Floor>? redoStack,
     bool? showZoningGuide,
+    bool? hasUnsavedChanges,
   }) {
     return FloorEditorState(
       floor: floor ?? this.floor,
@@ -86,6 +89,7 @@ class FloorEditorState {
       undoStack: undoStack ?? this.undoStack,
       redoStack: redoStack ?? this.redoStack,
       showZoningGuide: showZoningGuide ?? this.showZoningGuide,
+      hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
     );
   }
 }
