@@ -581,7 +581,7 @@ class _RenovationPlannerDialogState
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           Icon(
-                            isHalf ? Icons.washroom : Icons.shower,
+                            isHalf ? Icons.wc : Icons.shower,
                             size: 13,
                             color: isHalf ? const Color(0xFFFFB74D) : const Color(0xFF29B6F6),
                           ),
