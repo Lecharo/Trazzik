@@ -6,6 +6,7 @@ enum MaterialCategory {
   sanitary,
   paint,
   fixtures,
+  electrical,
 }
 
 class MaterialItem {
@@ -45,6 +46,8 @@ class MaterialItem {
         return 'Pinturas y Acabados';
       case MaterialCategory.fixtures:
         return 'Griferías y Accesorios';
+      case MaterialCategory.electrical:
+        return 'Iluminación y Redes Eléctricas';
     }
   }
 
@@ -60,6 +63,8 @@ class MaterialItem {
         return Icons.brush_outlined;
       case MaterialCategory.fixtures:
         return Icons.water_drop_outlined;
+      case MaterialCategory.electrical:
+        return Icons.lightbulb_outlined;
     }
   }
 }
@@ -107,6 +112,8 @@ class RenovationPhase {
 class RenovationPlanResult {
   final double totalRenovatedArea;
   final int bathroomCount;
+  final int fullBathroomCount;
+  final int halfBathroomCount;
   final int kitchenCount;
   final List<MaterialItem> materials;
   final List<SpecialistCrew> sequentialCrews;
@@ -119,6 +126,8 @@ class RenovationPlanResult {
   const RenovationPlanResult({
     required this.totalRenovatedArea,
     required this.bathroomCount,
+    this.fullBathroomCount = 0,
+    this.halfBathroomCount = 0,
     required this.kitchenCount,
     required this.materials,
     required this.sequentialCrews,
@@ -133,4 +142,60 @@ class RenovationPlanResult {
   double get timeReductionPercent => totalSequentialDays > 0
       ? ((daysSaved / totalSequentialDays) * 100)
       : 0.0;
+}
+
+class RenovationPlanConfig {
+  final bool renovateFloors;
+  final bool renovateBathrooms;
+  final bool renovateKitchen;
+  final bool renovateWallsPaint;
+  final bool renovateLighting;
+  final Set<String> roomsForFloors;
+  final Set<String> roomsForPaint;
+  final Set<String> roomsForLighting;
+  final Set<String> selectedBathroomIds;
+  final Set<String> forcedHalfBathroomIds;
+  final String? userPrompt;
+
+  const RenovationPlanConfig({
+    this.renovateFloors = true,
+    this.renovateBathrooms = true,
+    this.renovateKitchen = true,
+    this.renovateWallsPaint = false,
+    this.renovateLighting = false,
+    this.roomsForFloors = const {},
+    this.roomsForPaint = const {},
+    this.roomsForLighting = const {},
+    this.selectedBathroomIds = const {},
+    this.forcedHalfBathroomIds = const {},
+    this.userPrompt,
+  });
+
+  RenovationPlanConfig copyWith({
+    bool? renovateFloors,
+    bool? renovateBathrooms,
+    bool? renovateKitchen,
+    bool? renovateWallsPaint,
+    bool? renovateLighting,
+    Set<String>? roomsForFloors,
+    Set<String>? roomsForPaint,
+    Set<String>? roomsForLighting,
+    Set<String>? selectedBathroomIds,
+    Set<String>? forcedHalfBathroomIds,
+    String? userPrompt,
+  }) {
+    return RenovationPlanConfig(
+      renovateFloors: renovateFloors ?? this.renovateFloors,
+      renovateBathrooms: renovateBathrooms ?? this.renovateBathrooms,
+      renovateKitchen: renovateKitchen ?? this.renovateKitchen,
+      renovateWallsPaint: renovateWallsPaint ?? this.renovateWallsPaint,
+      renovateLighting: renovateLighting ?? this.renovateLighting,
+      roomsForFloors: roomsForFloors ?? this.roomsForFloors,
+      roomsForPaint: roomsForPaint ?? this.roomsForPaint,
+      roomsForLighting: roomsForLighting ?? this.roomsForLighting,
+      selectedBathroomIds: selectedBathroomIds ?? this.selectedBathroomIds,
+      forcedHalfBathroomIds: forcedHalfBathroomIds ?? this.forcedHalfBathroomIds,
+      userPrompt: userPrompt ?? this.userPrompt,
+    );
+  }
 }

@@ -207,7 +207,9 @@ class RenovationPlanPdfService {
           _buildSummaryKpi(
             'BAÑOS A REMODELAR',
             '${plan.bathroomCount} baño(s)',
-            'Incluye impermeabilización y kits',
+            plan.halfBathroomCount > 0
+                ? '${plan.fullBathroomCount} completo(s) + ${plan.halfBathroomCount} medio baño'
+                : 'Incluye impermeabilización y kits',
           ),
           _buildSummaryKpi(
             'TIEMPO TOTAL DE OBRA',
@@ -270,9 +272,12 @@ class RenovationPlanPdfService {
       },
       data: plan.materials.map((m) {
         final qtyStr = m.quantity.toStringAsFixed(m.quantity % 1 == 0 ? 0 : 2);
+        final roomText = m.targetRoomNames.isNotEmpty
+            ? '\nDestino: ${m.targetRoomNames.join(", ")}'
+            : '';
         final packaging = m.packagingDetail != null ? '\nPresentación: ${m.packagingDetail}' : '';
         return [
-          '${m.name}$packaging',
+          '${m.name}$roomText$packaging',
           qtyStr,
           m.unit,
           m.yieldFormula,
