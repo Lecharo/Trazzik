@@ -13,6 +13,7 @@ import 'package:trazzik/features/fee_proposal/presentation/services/architect_fe
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/screens/technical_plan_export_screen.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
@@ -229,6 +230,26 @@ void main() {
       expect(find.textContaining('Exportar Lámina Técnica'), findsOneWidget);
       expect(find.byIcon(Icons.tune), findsOneWidget);
       expect(find.byType(TechnicalPlanExportScreen), findsOneWidget);
+    });
+
+    test('DxfExporterService exporta archivo CAD .DXF válido con capas AIA (A-WALL-DEMO, A-WALL-NEW, A-ROOM, A-FURN)', () {
+      final dxf = DxfExporterService.exportFloorToDxf(
+        floor: testFloor,
+        lot: testLot,
+        projectName: 'Casa Valentina CAD',
+      );
+
+      expect(dxf, contains('SECTION'));
+      expect(dxf, contains('\$INSUNITS'));
+      expect(dxf, contains('A-LOT'));
+      expect(dxf, contains('A-WALL-EXIST'));
+      expect(dxf, contains('A-WALL-DEMO'));
+      expect(dxf, contains('A-WALL-NEW'));
+      expect(dxf, contains('A-ROOM'));
+      expect(dxf, contains('A-ANNO-TEXT'));
+      expect(dxf, contains('SALA DE ESTAR'));
+      expect(dxf, contains('COMEDOR'));
+      expect(dxf, endsWith('EOF\n'));
     });
   });
 }

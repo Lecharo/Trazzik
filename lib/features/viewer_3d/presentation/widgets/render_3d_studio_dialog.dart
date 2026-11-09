@@ -7,6 +7,7 @@ import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
+import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
@@ -59,6 +60,7 @@ class Render3dStudioDialog extends ConsumerStatefulWidget {
 class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
   bool _isExportingPdf = false;
   bool _gltfCopied = false;
+  bool _dxfCopied = false;
   bool _exportFullVolumeGltf = true;
 
   Future<void> _exportPdfRenderSheet(String lang) async {
@@ -126,6 +128,28 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
           lang == 'es'
               ? 'Modelo glTF 2.0 (.gltf) generado y copiado al portapapeles (${facesToExport.length} caras).'
               : 'glTF 2.0 (.gltf) model generated and copied to clipboard (${facesToExport.length} faces).',
+        ),
+      ),
+    );
+  }
+
+  Future<void> _exportDxfPlan(String lang) async {
+    final projectName = widget.project?.name ?? 'Trazzik_CAD_Plan';
+    final dxfContent = DxfExporterService.exportFloorToDxf(
+      floor: widget.activeFloor,
+      lot: widget.lot,
+      projectName: projectName,
+    );
+    await Clipboard.setData(ClipboardData(text: dxfContent));
+    if (!mounted) return;
+    setState(() => _dxfCopied = true);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        backgroundColor: const Color(0xFF1D4ED8),
+        content: Text(
+          lang == 'es'
+              ? 'Plano CAD Vectorial (.DXF) de ${widget.activeFloor.name} copiado al portapapeles con capas AIA.'
+              : 'Vector CAD Plan (.DXF) for ${widget.activeFloor.name} copied to clipboard with AIA layers.',
         ),
       ),
     );
@@ -348,6 +372,51 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
                   value: _exportFullVolumeGltf,
                   onChanged: (val) =>
                       setState(() => _exportFullVolumeGltf = val),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              // 3. Export AutoCAD 2D Vector Plan (.DXF)
+              Material(
+                color: colors.cardBg,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: colors.borderSubtle),
+                ),
+                child: ListTile(
+                  contentPadding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 6,
+                  ),
+                  leading: Icon(
+                    _dxfCopied ? Icons.check_circle : Icons.architecture_rounded,
+                    color: const Color(0xFF38BDF8),
+                    size: 26,
+                  ),
+                  title: Text(
+                    lang == 'es'
+                        ? 'Exportar Plano CAD Vectorial AutoCAD (.DXF)'
+                        : 'Export AutoCAD Vector CAD Plan (.DXF)',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 13,
+                    ),
+                  ),
+                  subtitle: Text(
+                    lang == 'es'
+                        ? 'Capas AIA estándar (A-WALL-EXIST, A-WALL-DEMO, A-WALL-NEW, A-ROOM, A-FURN) para AutoCAD, Revit o Rayon.'
+                        : 'Standard AIA layers (A-WALL-EXIST, A-WALL-DEMO, A-WALL-NEW, A-ROOM, A-FURN) for AutoCAD, Revit, or Rayon.',
+                    style: TextStyle(
+                      color: colors.textSecondary,
+                      fontSize: 11.5,
+                    ),
+                  ),
+                  trailing: Icon(
+                    _dxfCopied ? Icons.done_all : Icons.copy_all_rounded,
+                    color: const Color(0xFF38BDF8),
+                  ),
+                  onTap: () => _exportDxfPlan(lang),
                 ),
               ),
               const SizedBox(height: 16),

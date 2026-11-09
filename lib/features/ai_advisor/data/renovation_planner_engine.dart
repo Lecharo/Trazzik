@@ -902,4 +902,65 @@ class RenovationPlannerEngine {
       selectedRoomNames: selectedRoomNames,
     );
   }
+
+  /// Exports a structured RFC-4180 `.csv` spreadsheet containing the room finish
+  /// schedule, itemized BOQ material takeoff, and specialist crew timeline for Excel / Google Sheets.
+  static String exportPlanToCsv({
+    required RenovationPlanResult plan,
+    required List<Module> rooms,
+    String projectName = 'Proyecto Trazzik',
+  }) {
+    final sb = StringBuffer();
+    String esc(String v) {
+      if (v.contains(',') || v.contains('"') || v.contains('\n')) {
+        return '"${v.replaceAll('"', '""')}"';
+      }
+      return v;
+    }
+
+    sb.writeln('PROYECTO,${esc(projectName)}');
+    sb.writeln('AREA INTERVENIDA M2,${plan.totalRenovatedArea.toStringAsFixed(2)}');
+    sb.writeln('DIAS PARALELO,${plan.totalParallelDays}');
+    sb.writeln('DIAS SECUENCIAL,${plan.totalSequentialDays}');
+    sb.writeln('');
+
+    // 1. Room-by-Room Area & Finish Schedule
+    sb.writeln('CUADRO DE AMBIENTES Y ACABADOS');
+    sb.writeln('AMBIENTE,TIPO,AREA_M2,ACABADO_PISO,ACABADO_MURO,ESTADO');
+    for (final r in rooms) {
+      if (r.isOpening || r.isStairs) continue;
+      final floorMat = FinishMaterialCatalog.resolveFloorForModule(r);
+      final wallMat = FinishMaterialCatalog.resolveWallForModule(r);
+      sb.writeln(
+        '${esc(r.name)},${esc(r.moduleType)},${r.area.toStringAsFixed(2)},${esc(floorMat.nameEs)},${esc(wallMat.nameEs)},${esc(r.status.name)}',
+      );
+    }
+    sb.writeln('');
+
+    // 2. Itemized BOQ Materials
+    sb.writeln('COMPUTO METRICO DE MATERIALES (BOQ)');
+    sb.writeln(
+      'ID,CATEGORIA,INSUMO,CANTIDAD,UNIDAD,PRESENTACION,COSTO_UNIT_COP,COSTO_TOTAL_COP,AMBIENTES_DESTINO',
+    );
+    for (final m in plan.materials) {
+      final qtyStr = m.quantity.toStringAsFixed(m.quantity % 1 == 0 ? 0 : 2);
+      final unitCop = m.estimatedUnitCostCop?.toStringAsFixed(0) ?? '';
+      final totalCop = m.estimatedTotalCostCop?.toStringAsFixed(0) ?? '';
+      sb.writeln(
+        '${esc(m.id)},${esc(m.category.name)},${esc(m.name)},$qtyStr,${esc(m.unit)},${esc(m.packagingDetail ?? '')},$unitCop,$totalCop,${esc(m.targetRoomNames.join(' / '))}',
+      );
+    }
+    sb.writeln('');
+
+    // 3. Specialist Crews & Execution Phases
+    sb.writeln('CRONOGRAMA Y RUTA CRITICA');
+    sb.writeln('FASE,TITULO,DIAS_PARALELO,DIAS_SECUENCIAL,ESPECIALISTAS');
+    for (final p in plan.phases) {
+      sb.writeln(
+        '${p.phaseNumber},${esc(p.title)},${p.estimatedDaysParallel},${p.estimatedDaysSequential},${esc(p.specialists.join(' + '))}',
+      );
+    }
+
+    return sb.toString();
+  }
 }

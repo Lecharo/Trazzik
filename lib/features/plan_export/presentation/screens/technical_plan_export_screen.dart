@@ -1,12 +1,13 @@
 import 'dart:async';
-import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
 
@@ -141,6 +142,32 @@ class _TechnicalPlanExportScreenState
           ],
         ),
         actions: [
+          IconButton(
+            icon: Icon(Icons.architecture_rounded, color: colors.accentCyan),
+            tooltip: lang == 'es'
+                ? 'Exportar Plano Vectorial AutoCAD (.DXF)'
+                : 'Export AutoCAD Vector Plan (.DXF)',
+            onPressed: () async {
+              final state = ref.read(floorEditorProvider);
+              final dxf = DxfExporterService.exportFloorToDxf(
+                floor: state.floor,
+                lot: state.lot,
+                projectName: _options.projectName,
+              );
+              await Clipboard.setData(ClipboardData(text: dxf));
+              if (!context.mounted) return;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: const Color(0xFF0F766E),
+                  content: Text(
+                    lang == 'es'
+                        ? 'Plano CAD Vectorial (.DXF) copiado al portapapeles con capas AIA.'
+                        : 'Vector CAD Plan (.DXF) copied to clipboard with AIA layers.',
+                  ),
+                ),
+              );
+            },
+          ),
           IconButton(
             icon: Icon(
               (!isMobile && _isDrawerOpen) ? Icons.view_sidebar : Icons.tune,

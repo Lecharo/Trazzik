@@ -37,6 +37,7 @@ class _RenovationPlannerDialogState
   bool _isParallelMode = true;
   bool _isExportingPdf = false;
   bool _showCopiedBadge = false;
+  bool _showCsvCopiedBadge = false;
   bool _showGranularSettings = false;
 
   Set<String> _roomsForFloors = {};
@@ -205,6 +206,38 @@ class _RenovationPlannerDialogState
             Icon(Icons.check_circle, color: Colors.white, size: 18),
             SizedBox(width: 8),
             Text('¡Lista de compras con trazabilidad por recinto copiada!'),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _exportCsvToClipboard() {
+    final state = ref.read(floorEditorProvider);
+    final projectName = state.project?.name ?? 'Vivienda Trazzik';
+    final csv = RenovationPlannerEngine.exportPlanToCsv(
+      plan: _plan,
+      rooms: _getSourceModules(),
+      projectName: projectName,
+    );
+    Clipboard.setData(ClipboardData(text: csv));
+
+    setState(() => _showCsvCopiedBadge = true);
+    Future.delayed(const Duration(seconds: 3), () {
+      if (mounted) {
+        setState(() => _showCsvCopiedBadge = false);
+      }
+    });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        duration: Duration(seconds: 2),
+        backgroundColor: Color(0xFF0F766E),
+        content: Row(
+          children: [
+            Icon(Icons.table_chart_outlined, color: Colors.white, size: 18),
+            SizedBox(width: 8),
+            Text('¡Cómputo BOQ y Cuadro de Acabados en formato .CSV (Excel) copiado!'),
           ],
         ),
       ),
@@ -826,6 +859,36 @@ class _RenovationPlannerDialogState
                 ),
               ),
               onPressed: _copyShoppingListToClipboard,
+            ),
+            const SizedBox(width: 8),
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                side: BorderSide(
+                  color: _showCsvCopiedBadge
+                      ? const Color(0xFF10B981)
+                      : const Color(0xFF38BDF8),
+                  width: 1.1,
+                ),
+                foregroundColor: Colors.white,
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+              ),
+              icon: Icon(
+                _showCsvCopiedBadge ? Icons.check : Icons.table_chart_outlined,
+                size: 15,
+                color: _showCsvCopiedBadge
+                    ? const Color(0xFF10B981)
+                    : const Color(0xFF38BDF8),
+              ),
+              label: Text(
+                _showCsvCopiedBadge ? '¡CSV Copiado!' : 'Exportar .CSV',
+                style: TextStyle(
+                  color: _showCsvCopiedBadge
+                      ? const Color(0xFF10B981)
+                      : Colors.white,
+                  fontSize: 11,
+                ),
+              ),
+              onPressed: _exportCsvToClipboard,
             ),
           ],
         ),

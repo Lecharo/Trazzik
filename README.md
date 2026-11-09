@@ -73,7 +73,7 @@ lib/
 │   ├── theme/                         # AppTheme & semantic AppColors ThemeExtension (Dark / Light)
 │   └── validation/                    # ValidationEngine (setbacks, overlaps, openings, remodeling rules)
 └── features/
-    ├── ai_advisor/                    # Spatial audit engine, RenovationPlannerEngine (BOQ) & PDF export
+    ├── ai_advisor/                    # Spatial audit engine, RenovationPlannerEngine (BOQ), .CSV & PDF export
     ├── authentication/                # Supabase Auth repository & AuthScreen (with client 3D code entry)
     ├── demolition/                    # ReplacementRelationship domain model & remodeling workflows
     ├── editor_2d/                     # FloorEditorNotifier, 2D canvas painter, inspector & declarative AppBar
@@ -81,9 +81,9 @@ lib/
     ├── floors/                        # Floor domain model & SupabaseFloorRepository
     ├── lots/                          # Lot & ZoningZone domain models
     ├── modules/                       # Module, SubModule & FurnitureCatalog domain models
-    ├── plan_export/                   # 7-discipline TechnicalPlanPainter (incl. PL-3D), PL-CARP millwork & PDF service
+    ├── plan_export/                   # 7-discipline TechnicalPlanPainter (incl. PL-3D), AutoCAD .DXF exporter, PL-CARP & PDF service
     ├── projects/                      # Project domain model, LotSetupScreen & SupabaseProjectRepository
-    ├── viewer_3d/                     # Building3DBuilder, AxonometricCanvas3D, glTF 2.0 exporter, Render Studio & 60-day client links
+    ├── viewer_3d/                     # Building3DBuilder (multi-part 3D furniture), AxonometricCanvas3D (X/Y section cuts, 2700K night mode), glTF 2.0, Roomstyles & 60-day client links
     └── zoning_assistant/              # Starter templates & MultiStoryLayoutGenerator
 ```
 
@@ -107,7 +107,7 @@ All tables enforce **Row Level Security (RLS)** with covering foreign-key indexe
 ## Quality & Verification Checklist
 
 - [x] `flutter analyze --no-pub` reports **0 issues**.
-- [x] `flutter test --no-pub -j 2` passes **113/113 unit and widget tests** (geometry, 7 mandatory remodeling validation rules, multi-story generation, 2D `.select()` rebuild granularity, 3D outward normals & stratified depth sorting, glTF 2.0 PBR export, BOQ custom finish deduplication, and multi-discipline PDF generation including `PL-3D`).
+- [x] `flutter test --no-pub -j 2` passes **116/116 unit and widget tests** (geometry, 7 mandatory remodeling validation rules, multi-story generation, 2D `.select()` rebuild granularity, 3D outward normals & stratified depth sorting, multi-part 3D furniture & X/Y section cuts, 1-click Roomstyles, glTF 2.0 PBR & AutoCAD `.DXF` CAD export, BOQ `.CSV` export & custom finish deduplication, and multi-discipline PDF generation including `PL-3D`).
 - [x] Supabase Security & Performance Advisors report **0 `unindexed_foreign_keys`**, **0 `auth_rls_initplan`**, **0 `multiple_permissive_policies`**, and **0 `function_search_path_mutable`**.
 - [x] Full Dark Mode & Light Mode semantic contrast via `AppColors` and bilingual (`ES` / `EN`) UI support.
 

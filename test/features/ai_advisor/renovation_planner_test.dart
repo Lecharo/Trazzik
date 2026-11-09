@@ -175,6 +175,18 @@ void main() {
         plan.sequentialCrews.any((c) => c.roleName.contains('Plomero')),
         isFalse,
       );
+
+      // Verificar exportación a formato .CSV (Excel / Google Sheets)
+      final csv = RenovationPlannerEngine.exportPlanToCsv(
+        plan: plan,
+        rooms: roomsWithCustomFinishes,
+        projectName: 'Remodelación Integral',
+      );
+      expect(csv, contains('PROYECTO,Remodelación Integral'));
+      expect(csv, contains('CUADRO DE AMBIENTES Y ACABADOS'));
+      expect(csv, contains('COMPUTO METRICO DE MATERIALES (BOQ)'));
+      expect(csv, contains('Madera Roble Europeo'));
+      expect(csv, contains('Arena Japandi'));
     });
   });
 }
