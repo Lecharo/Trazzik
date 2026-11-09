@@ -21,12 +21,14 @@ class Point3D {
 
 /// Cara poligonal plana 3D para renderizado axonométrico con iluminación y ordenamiento de profundidad
 class Face3D {
+  static const Point3D defaultSunLight = Point3D(0.577, -0.577, 0.577);
+
   final List<Point3D> vertices;
   final Color baseColor;
   final String? label;
   final bool isEdgeVisible;
 
-  const Face3D({
+  Face3D({
     required this.vertices,
     required this.baseColor,
     this.label,
@@ -34,7 +36,9 @@ class Face3D {
   });
 
   /// Centroide tridimensional de la cara
-  Point3D get centroid {
+  late final Point3D centroid = _computeCentroid();
+
+  Point3D _computeCentroid() {
     if (vertices.isEmpty) return const Point3D(0, 0, 0);
     double sx = 0, sy = 0, sz = 0;
     for (final v in vertices) {
@@ -47,7 +51,9 @@ class Face3D {
   }
 
   /// Vector normal de la cara
-  Point3D get normal {
+  late final Point3D normal = _computeNormal();
+
+  Point3D _computeNormal() {
     if (vertices.length < 3) return const Point3D(0, 0, 1);
     final p0 = vertices[0];
     final p1 = vertices[1];
@@ -71,6 +77,9 @@ class Face3D {
     return Point3D(nx / len, ny / len, nz / len);
   }
 
+  /// Color precalculado con la fuente solar direccional estándar (45° cenital)
+  late final Color defaultShadedColor = computeShadedColor(defaultSunLight);
+
   /// Calcula el color sombreado según la fuente de luz direccional (Sol arquitectónico cenital a 45°)
   Color computeShadedColor(Point3D lightDir) {
     final norm = normal;
@@ -81,10 +90,10 @@ class Face3D {
     final brightness = 0.45 + 0.55 * intensity;
 
     return Color.fromARGB(
-      baseColor.alpha,
-      (baseColor.red * brightness).round().clamp(0, 255),
-      (baseColor.green * brightness).round().clamp(0, 255),
-      (baseColor.blue * brightness).round().clamp(0, 255),
+      (baseColor.a * 255.0).round().clamp(0, 255),
+      (baseColor.r * 255.0 * brightness).round().clamp(0, 255),
+      (baseColor.g * 255.0 * brightness).round().clamp(0, 255),
+      (baseColor.b * 255.0 * brightness).round().clamp(0, 255),
     );
   }
 }

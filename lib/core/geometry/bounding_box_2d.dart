@@ -46,6 +46,24 @@ class BoundingBox2D {
         other.maxY <= minY + Point2D.epsilon);
   }
 
+  /// Returns true when this box and [other] overlap or touch within [Point2D.epsilon].
+  bool overlaps(BoundingBox2D other) {
+    return !(other.minX > maxX + Point2D.epsilon ||
+        other.maxX < minX - Point2D.epsilon ||
+        other.minY > maxY + Point2D.epsilon ||
+        other.maxY < minY - Point2D.epsilon);
+  }
+
+  /// Returns a new [BoundingBox2D] expanded outward on all sides by [delta].
+  BoundingBox2D inflate(double delta) {
+    return BoundingBox2D(
+      minX: minX - delta,
+      minY: minY - delta,
+      maxX: maxX + delta,
+      maxY: maxY + delta,
+    );
+  }
+
   bool containsPoint(Point2D p) {
     return p.x >= minX - Point2D.epsilon &&
         p.x <= maxX + Point2D.epsilon &&

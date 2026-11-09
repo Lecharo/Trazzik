@@ -31,10 +31,12 @@ class Polygon2D {
         'vertices': vertices.map((v) => v.toJson()).toList(),
       };
 
-  BoundingBox2D get boundingBox => BoundingBox2D.fromPoints(vertices);
+  late final BoundingBox2D boundingBox = BoundingBox2D.fromPoints(vertices);
 
   /// Área calculada con la fórmula del agrimensor (Shoelace Formula)
-  double get area {
+  late final double area = _computeArea();
+
+  double _computeArea() {
     double sum = 0.0;
     final n = vertices.length;
     for (int i = 0; i < n; i++) {
@@ -46,7 +48,9 @@ class Polygon2D {
   }
 
   /// Perímetro acumulado en metros
-  double get perimeter {
+  late final double perimeter = _computePerimeter();
+
+  double _computePerimeter() {
     double sum = 0.0;
     final n = vertices.length;
     for (int i = 0; i < n; i++) {
@@ -56,7 +60,9 @@ class Polygon2D {
   }
 
   /// Verifica si el orden de los vértices es en sentido horario
-  bool get isClockwise {
+  late final bool isClockwise = _computeIsClockwise();
+
+  bool _computeIsClockwise() {
     double sum = 0.0;
     final n = vertices.length;
     for (int i = 0; i < n; i++) {

@@ -3,20 +3,18 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
-import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/validation/validation_engine.dart';
-import 'package:trazzik/features/demolition/domain/replacement_relationship.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/editor_2d/presentation/notifiers/mvp_floor_seed.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
-import 'package:trazzik/features/lots/domain/zoning_type.dart';
-import 'package:trazzik/features/lots/domain/zoning_zone.dart';
 import 'package:trazzik/features/modules/domain/furniture_template.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
+import 'package:trazzik/features/walls/domain/wall_generation_engine.dart';
 import 'package:trazzik/features/zoning_assistant/domain/multi_story_brief.dart';
 import 'package:trazzik/features/zoning_assistant/domain/multi_story_layout_generator.dart';
 import 'package:trazzik/features/zoning_assistant/domain/starter_layout_template.dart';
@@ -27,9 +25,33 @@ final floorEditorProvider =
 );
 
 class FloorEditorNotifier extends Notifier<FloorEditorState> {
+  static const int maxUndoHistory = 50;
+
+  bool _isInteracting = false;
+  Floor? _interactionInitialFloor;
+  bool _interactionMutated = false;
+
+  void _resetInteractionState() {
+    _isInteracting = false;
+    _interactionInitialFloor = null;
+    _interactionMutated = false;
+  }
+
+  static List<Floor> _pushBoundedUndo(
+    List<Floor> currentStack,
+    Floor snapshot,
+  ) {
+    final updated = List<Floor>.from(currentStack)..add(snapshot);
+    if (updated.length > maxUndoHistory) {
+      return updated.sublist(updated.length - maxUndoHistory);
+    }
+    return updated;
+  }
+
   @override
   FloorEditorState build() {
-    return _buildInitialMVPState();
+    _resetInteractionState();
+    return MvpFloorSeed.buildInitialState();
   }
 
   void loadProjectData({
@@ -38,6 +60,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     List<Floor> allFloors = const [],
     Project? project,
   }) {
+    _resetInteractionState();
     final cleanFloor = floor.copyWith(walls: Wall.deduplicate(floor.walls));
     final cleanAllFloors = allFloors.map((f) => f.copyWith(walls: Wall.deduplicate(f.walls))).toList();
     final floorsList = cleanAllFloors.isNotEmpty ? cleanAllFloors : [cleanFloor];
@@ -53,99 +76,18 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       panOffset: const Offset(80.0, 80.0),
       undoStack: const [],
       redoStack: const [],
-    );
-  }
-
-  static FloorEditorState _buildInitialMVPState() {
-    // 1. Lote 15.30 x 20.00 m
-    final lotBoundary = Polygon2D.fromRect(0, 0, 15.30, 20.0);
-    final lot = Lot(
-      id: 'lot-mvp',
-      projectId: 'proj-remodelacion-casa',
-      boundary: lotBoundary,
-      orientationDegrees: 0.0,
-      zones: [
-        ZoningZone(
-          id: 'zone-buildable',
-          lotId: 'lot-mvp',
-          name: 'Zona Construible',
-          type: ZoningType.buildableUnoccupied,
-          boundary: Polygon2D.fromRect(0, 0, 15.30, 15.0),
-        ),
-        ZoningZone(
-          id: 'zone-setback',
-          lotId: 'lot-mvp',
-          name: 'Retiro Posterior No Construible',
-          type: ZoningType.nonBuildable,
-          boundary: Polygon2D.fromRect(0, 15.0, 15.30, 5.0),
-        ),
-      ],
-    );
-
-    // 2. Piso 1: 138 m² máximo permitido
-    final floorBoundary = Polygon2D.fromRect(1.0, 1.0, 12.0, 13.0);
-
-    // 3. Distribución EXISTENTE
-    final existingKitchen = Module(
-      id: 'mod-kitchen-existing',
-      floorId: 'floor-1',
-      name: 'Cocina Existente',
-      moduleType: 'KITCHEN',
-      geometry: Polygon2D.fromRect(2.0, 2.0, 2.10, 3.20),
-      status: ElementStatus.existing,
-    );
-
-    final existingLiving = Module(
-      id: 'mod-living-existing',
-      floorId: 'floor-1',
-      name: 'Sala Existente',
-      moduleType: 'LIVING_ROOM',
-      geometry: Polygon2D.fromRect(4.50, 2.0, 4.50, 4.00),
-      status: ElementStatus.preserved,
-    );
-
-    final existingDining = Module(
-      id: 'mod-dining-existing',
-      floorId: 'floor-1',
-      name: 'Comedor Existente',
-      moduleType: 'DINING_ROOM',
-      geometry: Polygon2D.fromRect(4.50, 6.50, 3.80, 3.50),
-      status: ElementStatus.preserved,
-    );
-
-    final existingBath = Module(
-      id: 'mod-bath-existing',
-      floorId: 'floor-1',
-      name: 'Baño Existente',
-      moduleType: 'BATHROOM',
-      geometry: Polygon2D.fromRect(2.0, 5.50, 2.00, 2.50),
-      status: ElementStatus.preserved,
-    );
-
-    final initialFloor = Floor(
-      id: 'floor-1',
-      buildingId: 'bldg-1',
-      floorNumber: 1,
-      name: 'Piso 1 - Nivel 0.00m',
-      boundary: floorBoundary,
-      maxAllowedArea: 138.0,
-      modules: [existingKitchen, existingLiving, existingDining, existingBath],
-    );
-
-    final initialIssues = ValidationEngine.validateFloor(floor: initialFloor, lot: lot);
-
-    return FloorEditorState(
-      floor: initialFloor,
-      lot: lot,
-      issues: initialIssues,
-      selectedModuleId: existingKitchen.id,
+      undoStacksByFloor: const {},
+      redoStacksByFloor: const {},
+      dirtyFloorIds: const {},
+      deletedFloorIds: const {},
     );
   }
 
   void selectModule(String? id) {
     state = state.copyWith(
       selectedModuleId: id,
-      clearWallSelection: id != null,
+      clearSelection: id == null,
+      clearWallSelection: true,
       clearSubModuleSelection: true,
     );
   }
@@ -154,6 +96,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(
       selectedModuleId: moduleId,
       selectedSubModuleId: subModuleId,
+      clearSelection: moduleId == null,
       clearWallSelection: true,
       clearSubModuleSelection: subModuleId == null,
     );
@@ -162,6 +105,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   void selectWall(String? id) {
     state = state.copyWith(
       selectedWallId: id,
+      clearWallSelection: id == null,
       clearSelection: id != null,
       clearSubModuleSelection: true,
     );
@@ -176,161 +120,220 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(zoom: clampedZoom);
   }
 
+  /// Starts an interactive gesture transaction (such as dragging on canvas)
+  /// so intermediate frames coalesce into one Undo step and defer validation.
+  void beginInteraction() {
+    if (_isInteracting) {
+      endInteraction();
+    }
+    _isInteracting = true;
+    _interactionInitialFloor = state.floor;
+    _interactionMutated = false;
+  }
+
+  /// Finalizes an interactive gesture transaction and runs floor validation once.
+  void endInteraction() {
+    if (!_isInteracting) return;
+    final mutated = _interactionMutated;
+    _resetInteractionState();
+
+    if (mutated) {
+      final issues = ValidationEngine.validateFloor(
+        floor: state.floor,
+        lot: state.lot,
+      );
+      final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+        ..[state.floor.id] = state.undoStack;
+      final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+        ..[state.floor.id] = state.redoStack;
+
+      state = state.copyWith(
+        issues: issues,
+        undoStacksByFloor: updatedUndoMap,
+        redoStacksByFloor: updatedRedoMap,
+      );
+    }
+  }
+
   /// Aplica una nueva versión del piso registrando la anterior en el historial de Undo
   void _applyFloorChange(Floor newFloor) {
-    final newUndo = List<Floor>.from(state.undoStack)..add(state.floor);
-    final issues = ValidationEngine.validateFloor(floor: newFloor, lot: state.lot);
+    final baseAll = state.allFloors.isNotEmpty ? state.allFloors : [state.floor];
+    final hasFloorInAll = baseAll.any((f) => f.id == newFloor.id);
+    final updatedAllFloors = hasFloorInAll
+        ? baseAll.map((f) => f.id == newFloor.id ? newFloor : f).toList()
+        : [...baseAll, newFloor];
+    final updatedDirtyIds = {...state.dirtyFloorIds, newFloor.id};
 
-    final updatedAllFloors = state.allFloors.map((f) {
-      return f.id == newFloor.id ? newFloor : f;
-    }).toList();
+    if (_isInteracting) {
+      final List<Floor> nextUndo;
+      if (!_interactionMutated) {
+        nextUndo = _pushBoundedUndo(
+          state.undoStack,
+          _interactionInitialFloor ?? state.floor,
+        );
+        _interactionMutated = true;
+      } else {
+        nextUndo = state.undoStack;
+      }
+
+      state = state.copyWith(
+        floor: newFloor,
+        allFloors: updatedAllFloors,
+        undoStack: nextUndo,
+        redoStack: const [],
+        dirtyFloorIds: updatedDirtyIds,
+        hasUnsavedChanges: true,
+      );
+      return;
+    }
+
+    final newUndo = _pushBoundedUndo(state.undoStack, state.floor);
+    final issues = ValidationEngine.validateFloor(floor: newFloor, lot: state.lot);
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[newFloor.id] = newUndo;
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[newFloor.id] = const [];
 
     state = state.copyWith(
       floor: newFloor,
       allFloors: updatedAllFloors,
       issues: issues,
       undoStack: newUndo,
-      redoStack: [], // Limpiar redo en nueva acción
+      redoStack: const [], // Limpiar redo en nueva acción
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: updatedDirtyIds,
       hasUnsavedChanges: true,
     );
   }
 
   void switchFloor(String targetFloorId) {
+    if (_isInteracting) {
+      endInteraction();
+    }
     if (state.floor.id == targetFloorId) return;
 
-    // 1. Guardar el estado actual del piso activo dentro de allFloors
-    final updatedAllFloors = state.allFloors.map((f) {
+    // 1. Guardar el estado e historial del piso saliente
+    final baseAll = state.allFloors.isNotEmpty ? state.allFloors : [state.floor];
+    final updatedAllFloors = baseAll.map((f) {
       return f.id == state.floor.id ? state.floor : f;
     }).toList();
 
-    // 2. Obtener el piso destino
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[state.floor.id] = state.undoStack;
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[state.floor.id] = state.redoStack;
+
+    // 2. Obtener el piso destino y restaurar su historial propio
     final targetFloor = updatedAllFloors.firstWhere(
       (f) => f.id == targetFloorId,
       orElse: () => state.floor,
     );
 
     final issues = ValidationEngine.validateFloor(floor: targetFloor, lot: state.lot);
+    final keepUnsaved =
+        state.dirtyFloorIds.isNotEmpty || state.deletedFloorIds.isNotEmpty;
 
     state = state.copyWith(
       floor: targetFloor,
       allFloors: updatedAllFloors,
       clearSelection: true,
+      clearWallSelection: true,
+      clearSubModuleSelection: true,
       issues: issues,
-      undoStack: const [],
-      redoStack: const [],
-      hasUnsavedChanges: false,
+      undoStack: updatedUndoMap[targetFloor.id] ?? const [],
+      redoStack: updatedRedoMap[targetFloor.id] ?? const [],
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      hasUnsavedChanges: keepUnsaved,
     );
   }
 
   void markFloorSaved() {
-    state = state.copyWith(hasUnsavedChanges: false);
+    state = state.copyWith(
+      dirtyFloorIds: const {},
+      deletedFloorIds: const {},
+      hasUnsavedChanges: false,
+    );
   }
 
   void undo() {
+    if (_isInteracting) {
+      endInteraction();
+    }
     if (state.undoStack.isEmpty) return;
     final previousFloor = state.undoStack.last;
     final newUndo = List<Floor>.from(state.undoStack)..removeLast();
-    final newRedo = List<Floor>.from(state.redoStack)..add(state.floor);
+    final newRedo = _pushBoundedUndo(state.redoStack, state.floor);
     final issues = ValidationEngine.validateFloor(floor: previousFloor, lot: state.lot);
+
+    final updatedAllFloors = state.allFloors.map((f) {
+      return f.id == previousFloor.id ? previousFloor : f;
+    }).toList();
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[previousFloor.id] = newUndo;
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[previousFloor.id] = newRedo;
+    final updatedDirtyIds = {...state.dirtyFloorIds, previousFloor.id};
 
     state = state.copyWith(
       floor: previousFloor,
+      allFloors: updatedAllFloors,
       issues: issues,
       undoStack: newUndo,
       redoStack: newRedo,
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: updatedDirtyIds,
       hasUnsavedChanges: true,
     );
   }
 
   void redo() {
+    if (_isInteracting) {
+      endInteraction();
+    }
     if (state.redoStack.isEmpty) return;
     final nextFloor = state.redoStack.last;
     final newRedo = List<Floor>.from(state.redoStack)..removeLast();
-    final newUndo = List<Floor>.from(state.undoStack)..add(state.floor);
+    final newUndo = _pushBoundedUndo(state.undoStack, state.floor);
     final issues = ValidationEngine.validateFloor(floor: nextFloor, lot: state.lot);
+
+    final updatedAllFloors = state.allFloors.map((f) {
+      return f.id == nextFloor.id ? nextFloor : f;
+    }).toList();
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[nextFloor.id] = newUndo;
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[nextFloor.id] = newRedo;
+    final updatedDirtyIds = {...state.dirtyFloorIds, nextFloor.id};
 
     state = state.copyWith(
       floor: nextFloor,
+      allFloors: updatedAllFloors,
       issues: issues,
       undoStack: newUndo,
       redoStack: newRedo,
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: updatedDirtyIds,
       hasUnsavedChanges: true,
     );
   }
 
-  /// Marca el módulo seleccionado como A_DEMOLER (punto 44 del MVP)
-  void markSelectedAsDemolish() {
-    final selected = state.selectedModule;
-    if (selected == null) return;
-
-    final updatedModules = state.floor.modules.map((m) {
-      if (m.id == selected.id) {
-        return m.copyWith(status: ElementStatus.toDemolish);
-      }
-      return m;
-    }).toList();
-
-    _applyFloorChange(state.floor.copyWith(modules: updatedModules));
-  }
-
-  /// Crea la Cocina Nueva (2.80 x 3.80) reemplazando la cocina demolida (punto 44 del MVP)
-  void addProposedNewKitchen() {
-    final oldKitchen = state.floor.modules.firstWhere(
-      (m) => m.id == 'mod-kitchen-existing',
-      orElse: () => state.floor.modules.first,
-    );
-
-    // Cocina nueva con ampliación: 2.80 x 3.80 comenzando en la misma esquina (2.0, 2.0)
-    final newKitchenGeom = Polygon2D.fromRect(2.0, 2.0, 2.80, 3.80);
-
-    final overlap = GeometryEngine.calculateOverlapArea(newKitchenGeom, oldKitchen.geometry);
-    final expansion = GeometryEngine.calculateExpansionArea(newKitchenGeom, oldKitchen.geometry);
-
-    final newKitchenModule = Module(
-      id: 'mod-kitchen-new',
-      floorId: state.floor.id,
-      name: 'Cocina Nueva (Propuesta)',
-      moduleType: 'KITCHEN',
-      geometry: newKitchenGeom,
-      status: ElementStatus.isNew,
-    );
-
-    final replacement = ReplacementRelationship(
-      id: 'rel-kitchen-replacement',
-      floorId: state.floor.id,
-      existingElementId: oldKitchen.id,
-      proposedElementId: newKitchenModule.id,
-      relationshipType: RelationshipType.expand,
-      overlapArea: overlap,
-      expandedArea: expansion,
-      notes: 'Cocina nueva reemplaza y amplía la cocina existente.',
-    );
-
-    // Evitar duplicar si ya existe
-    final filteredModules =
-        state.floor.modules.where((m) => m.id != 'mod-kitchen-new').toList();
-    filteredModules.add(newKitchenModule);
-
-    final updatedFloor = state.floor.copyWith(
-      modules: filteredModules,
-      replacementRelationships: [replacement],
-    );
-
-    _applyFloorChange(updatedFloor);
-    state = state.copyWith(selectedModuleId: newKitchenModule.id);
-  }
-
-  /// Desplaza el módulo seleccionado en metros
+  /// Desplaza el módulo seleccionado en metros junto con su mobiliario interior
   void moveSelectedModule(double dxMeters, double dyMeters) {
     final selected = state.selectedModule;
     if (selected == null) return;
+    if (dxMeters.abs() < 1e-6 && dyMeters.abs() < 1e-6) return;
 
-    final translatedVertices = selected.geometry.vertices
-        .map((p) => p.translate(dxMeters, dyMeters))
+    final updatedSubs = selected.subModules
+        .map((s) => s.copyWith(geometry: s.geometry.translate(dxMeters, dyMeters)))
         .toList();
 
     final updatedModule = selected.copyWith(
-      geometry: Polygon2D(translatedVertices),
+      geometry: selected.geometry.translate(dxMeters, dyMeters),
+      subModules: updatedSubs,
     );
 
     final updatedModules = state.floor.modules.map((m) {
@@ -370,14 +373,22 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   void duplicateModule(String moduleId) {
     final original = state.floor.modules.firstWhere((m) => m.id == moduleId);
-    final newId = const Uuid().v4();
-    final duplicated = Module(
+    const uuid = Uuid();
+    final newId = uuid.v4();
+    final clonedSubs = original.subModules
+        .map(
+          (s) => s.copyWith(
+            id: uuid.v4(),
+            moduleId: newId,
+            geometry: s.geometry.translate(0.50, 0.50),
+          ),
+        )
+        .toList();
+    final duplicated = original.copyWith(
       id: newId,
-      floorId: original.floorId,
       name: '${original.name} (Copia)',
-      moduleType: original.moduleType,
       geometry: original.geometry.translate(0.50, 0.50),
-      status: original.status,
+      subModules: clonedSubs,
     );
     addModule(duplicated);
   }
@@ -389,8 +400,14 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final snappedY = snapToGrid(newY);
     final dx = snappedX - bb.minX;
     final dy = snappedY - bb.minY;
+    if (dx.abs() < 1e-6 && dy.abs() < 1e-6) return;
     final updatedGeom = mod.geometry.translate(dx, dy);
-    updateModule(mod.copyWith(geometry: updatedGeom));
+    final updatedSubs = mod.subModules.isEmpty
+        ? mod.subModules
+        : mod.subModules
+            .map((s) => s.copyWith(geometry: s.geometry.translate(dx, dy)))
+            .toList();
+    updateModule(mod.copyWith(geometry: updatedGeom, subModules: updatedSubs));
   }
 
   void setModuleDimensions(String moduleId, double newWidth, double newHeight) {
@@ -479,9 +496,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final updatedModules = state.floor.modules.map((m) {
       final updatedGeom = m.geometry.mirrorY(axisY);
 
-      final isStairsOrOpening = m.moduleType.toUpperCase().contains('STAIRS') ||
-          m.moduleType.toUpperCase().contains('DOOR') ||
-          m.moduleType.toUpperCase().contains('WINDOW');
+      final isStairsOrOpening = m.isStairs || m.isOpening;
 
       // Espejar también los muebles dentro del recinto respetando su posición relativa
       final updatedSubs = m.subModules.map((s) {
@@ -521,9 +536,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final updatedModules = state.floor.modules.map((m) {
       final updatedGeom = m.geometry.mirrorX(axisX);
 
-      final isStairsOrOpening = m.moduleType.toUpperCase().contains('STAIRS') ||
-          m.moduleType.toUpperCase().contains('DOOR') ||
-          m.moduleType.toUpperCase().contains('WINDOW');
+      final isStairsOrOpening = m.isStairs || m.isOpening;
 
       // Espejar también los muebles dentro del recinto
       final updatedSubs = m.subModules.map((s) {
@@ -552,10 +565,20 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     _applyFloorChange(updatedFloor);
   }
 
-  /// Rota 180 grados la distribución completa del piso
+  /// Rota 180 grados la distribución completa del piso en una sola acción de Undo
   void rotateFloor180() {
-    invertFloorVertical();
-    invertFloorHorizontal();
+    final alreadyInteracting = _isInteracting;
+    if (!alreadyInteracting) {
+      beginInteraction();
+    }
+    try {
+      invertFloorVertical();
+      invertFloorHorizontal();
+    } finally {
+      if (!alreadyInteracting) {
+        endInteraction();
+      }
+    }
   }
 
   /// Añade una pieza de mobiliario o equipamiento al recinto seleccionado
@@ -623,9 +646,14 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
     final sub = mod.subModules.firstWhere((s) => s.id == subModuleId);
     final bb = sub.geometry.boundingBox;
+    final snappedX = snapToGrid(newX);
+    final snappedY = snapToGrid(newY);
+    if ((snappedX - bb.minX).abs() < 1e-6 && (snappedY - bb.minY).abs() < 1e-6) {
+      return;
+    }
     final updatedGeom = Polygon2D.fromRect(
-      snapToGrid(newX),
-      snapToGrid(newY),
+      snappedX,
+      snappedY,
       bb.width,
       bb.height,
     );
@@ -751,6 +779,9 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Aplica un programa arquitectónico personalizado coordinado para dos pisos
   void applyMultiStoryBrief(MultiStoryBrief brief) {
+    if (_isInteracting) {
+      endInteraction();
+    }
     final generatedFloors = MultiStoryLayoutGenerator.generateTwoStoryLayout(
       lot: state.lot,
       brief: brief,
@@ -759,6 +790,37 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
     final pb = generatedFloors.first;
     final issues = ValidationEngine.validateFloor(floor: pb, lot: state.lot);
+    final generatedIds = generatedFloors.map((f) => f.id).toSet();
+
+    final replacedIds = state.allFloors
+        .map((f) => f.id)
+        .where((id) => !generatedIds.contains(id));
+
+    final updatedDirtyIds = {
+      ...state.dirtyFloorIds.where(generatedIds.contains),
+      ...generatedIds,
+    };
+    final updatedDeletedIds = {
+      ...state.deletedFloorIds,
+      ...replacedIds,
+    }..removeAll(generatedIds);
+
+    final priorPbFloor = state.allFloors.where((f) => f.id == pb.id).firstOrNull;
+    final pbUndoBase = pb.id == state.floor.id
+        ? state.undoStack
+        : (state.undoStacksByFloor[pb.id] ?? const []);
+    final nextPbUndo = priorPbFloor != null
+        ? _pushBoundedUndo(pbUndoBase, priorPbFloor)
+        : pbUndoBase;
+
+    final updatedUndoMap = <String, List<Floor>>{
+      for (final entry in state.undoStacksByFloor.entries)
+        if (generatedIds.contains(entry.key)) entry.key: entry.value,
+      pb.id: nextPbUndo,
+    };
+    final updatedRedoMap = <String, List<Floor>>{
+      for (final id in generatedIds) id: const [],
+    };
 
     state = state.copyWith(
       floor: pb,
@@ -768,274 +830,26 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       clearSubModuleSelection: true,
       issues: issues,
       showZoningGuide: true,
-      undoStack: List<Floor>.from(state.undoStack)..add(state.floor),
+      undoStack: nextPbUndo,
       redoStack: const [],
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: updatedDirtyIds,
+      deletedFloorIds: updatedDeletedIds,
       hasUnsavedChanges: true,
     );
-  }
-
-  static bool _isOpenSocialModule(Module m) {
-    final t = m.moduleType.toUpperCase();
-    final n = m.name.toUpperCase();
-    return t == 'LIVING_ROOM' ||
-        t == 'DINING_ROOM' ||
-        t == 'LIVING_DINING' ||
-        t == 'STUDIO' ||
-        t == 'STUDY' ||
-        t == 'CORRIDOR' ||
-        t == 'HALLWAY' ||
-        t == 'FOYER' ||
-        t == 'TERRACE' ||
-        t == 'BALCONY' ||
-        t == 'GALLERY' ||
-        t == 'STAIRS' ||
-        n.contains('ESCALERA') ||
-        n.contains('SALA') ||
-        n.contains('COMEDOR') ||
-        n.contains('ESTUDIO') ||
-        n.contains('PASILLO') ||
-        n.contains('HALL') ||
-        n.contains('ZAGUAN') ||
-        n.contains('ZAGUÁN') ||
-        n.contains('VESTIBULO') ||
-        n.contains('VESTÍBULO');
-  }
-
-  static List<List<Point2D>> _cutSegmentAtOpenings(
-    Point2D p1,
-    Point2D p2,
-    List<Module> openings,
-  ) {
-    final len = p1.distanceTo(p2);
-    if (len < 0.20) return [];
-    final ux = (p2.x - p1.x) / len;
-    final uy = (p2.y - p1.y) / len;
-
-    for (final opening in openings) {
-      final obb = opening.geometry.boundingBox;
-      final cx = obb.minX + obb.width / 2;
-      final cy = obb.minY + obb.height / 2;
-
-      final crossDist = ((cx - p1.x) * uy - (cy - p1.y) * ux).abs();
-      if (crossDist <= 0.60) {
-        final t = (cx - p1.x) * ux + (cy - p1.y) * uy;
-        final openDim = math.max(obb.width, obb.height);
-        final half = openDim / 2;
-
-        if (t >= -0.20 && t <= len + 0.20) {
-          final t1 = math.max(0.0, t - half);
-          final t2 = math.min(len, t + half);
-
-          final pieces = <List<Point2D>>[];
-          if (t1 > 0.15) {
-            pieces.add([p1, Point2D(p1.x + ux * t1, p1.y + uy * t1)]);
-          }
-          if (len - t2 > 0.15) {
-            pieces.add([Point2D(p1.x + ux * t2, p1.y + uy * t2), p2]);
-          }
-          return pieces;
-        }
-      }
-    }
-    return [
-      [p1, p2]
-    ];
   }
 
   /// Genera y demarca automáticamente los muros perimetrales e interiores
   /// a partir del contorno de los recintos, descontando automáticamente vanos
   /// y dejando pasos libres entre recintos sociales abiertos contiguos (ej. Sala, Comedor, Estudio).
   int generateWallsFromModules({double defaultThickness = 0.15}) {
-    final modules = state.floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') && !t.contains('WINDOW') && !t.contains('GATE');
-    }).toList();
-
-    if (modules.isEmpty) return 0;
-
-    final openings = state.floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE');
-    }).toList();
-
-    final createdWalls = <Wall>[];
-
-    // 1. Recolectar segmentos perimetrales de los recintos
-    // Omitiendo automáticamente divisorios interiores entre ambientes sociales abiertos contiguos
-    final rawSegments = <List<Point2D>>[];
-    for (final mod in modules) {
-      final isModOpen = _isOpenSocialModule(mod);
-      final vertices = mod.geometry.vertices;
-      final count = vertices.length;
-
-      for (int i = 0; i < count; i++) {
-        final p1 = vertices[i];
-        final p2 = vertices[(i + 1) % count];
-        final len = p1.distanceTo(p2);
-        if (len < 0.20) continue;
-
-        // Si el módulo no es abierto (ej. Dormitorio, Baño), siempre necesita sus muros
-        if (!isModOpen) {
-          rawSegments.add([p1, p2]);
-          continue;
-        }
-
-        // Si es un ambiente social abierto (ej. Sala, Comedor, Estudio, Pasillo):
-        // Analizamos si cada tramo linda con el exterior (muro perimetral obligatorio)
-        // o con otro ambiente social abierto (vano/paso libre sin tabique sólido).
-        final ux = (p2.x - p1.x) / len;
-        final uy = (p2.y - p1.y) / len;
-        final nx = -uy;
-        final ny = ux;
-
-        const sliceStep = 0.10;
-        final steps = (len / sliceStep).floor();
-        double currentStart = 0.0;
-        bool inWallSlice = false;
-
-        for (int s = 0; s < steps; s++) {
-          final tMid = (s + 0.5) * sliceStep;
-          final midX = p1.x + ux * tMid;
-          final midY = p1.y + uy * tMid;
-
-          // Probar hacia afuera y hacia adentro del recinto
-          final pA = Point2D(midX + nx * 0.05, midY + ny * 0.05);
-          final pB = Point2D(midX - nx * 0.05, midY - ny * 0.05);
-          final isAInside = mod.geometry.containsPoint(pA);
-          final testOutside = isAInside ? pB : pA;
-
-          Module? neighbor;
-          for (final other in modules) {
-            if (other.id != mod.id && other.geometry.containsPoint(testOutside)) {
-              neighbor = other;
-              break;
-            }
-          }
-
-          // Si linda con otro módulo abierto (ej. Sala con Comedor, o Sala con Estudio): NO poner muro
-          // Si no linda con nadie (exterior/lote) o linda con un dormitorio/baño: SÍ poner muro
-          final shouldHaveWall = neighbor == null || !_isOpenSocialModule(neighbor);
-
-          if (shouldHaveWall) {
-            if (!inWallSlice) {
-              inWallSlice = true;
-              currentStart = s * sliceStep;
-            }
-          } else {
-            if (inWallSlice) {
-              inWallSlice = false;
-              final segP1 = Point2D(p1.x + ux * currentStart, p1.y + uy * currentStart);
-              final segP2 = Point2D(p1.x + ux * (s * sliceStep), p1.y + uy * (s * sliceStep));
-              if (segP1.distanceTo(segP2) >= 0.15) {
-                rawSegments.add([segP1, segP2]);
-              }
-            }
-          }
-        }
-
-        if (inWallSlice) {
-          final segP1 = Point2D(p1.x + ux * currentStart, p1.y + uy * currentStart);
-          final segP2 = Point2D(p1.x + ux * len, p1.y + uy * len);
-          if (segP1.distanceTo(segP2) >= 0.15) {
-            rawSegments.add([segP1, segP2]);
-          }
-        }
-      }
-    }
-
-    // 2. Fusionar segmentos colineales que se tocan o superponen
-    final unifiedSegments = <List<Point2D>>[];
-    final horizGroups = <int, List<List<double>>>{}; // key: rounded Y*20 -> [minX, maxX, avgY]
-    final vertGroups = <int, List<List<double>>>{};  // key: rounded X*20 -> [minY, maxY, avgX]
-
-    for (final seg in rawSegments) {
-      final p1 = seg[0];
-      final p2 = seg[1];
-      final isHoriz = (p1.y - p2.y).abs() <= 0.05;
-      final isVert = (p1.x - p2.x).abs() <= 0.05;
-
-      if (isHoriz) {
-        final avgY = (p1.y + p2.y) / 2;
-        final key = (avgY * 20).round();
-        final minX = math.min(p1.x, p2.x);
-        final maxX = math.max(p1.x, p2.x);
-        horizGroups.putIfAbsent(key, () => []).add([minX, maxX, avgY]);
-      } else if (isVert) {
-        final avgX = (p1.x + p2.x) / 2;
-        final key = (avgX * 20).round();
-        final minY = math.min(p1.y, p2.y);
-        final maxY = math.max(p1.y, p2.y);
-        vertGroups.putIfAbsent(key, () => []).add([minY, maxY, avgX]);
-      } else {
-        unifiedSegments.add(seg);
-      }
-    }
-
-    // Fusionar intervalos horizontales
-    for (final entry in horizGroups.entries) {
-      final intervals = entry.value;
-      intervals.sort((a, b) => a[0].compareTo(b[0]));
-      final merged = <List<double>>[];
-      for (final interval in intervals) {
-        if (merged.isEmpty) {
-          merged.add(List<double>.from(interval));
-        } else {
-          final last = merged.last;
-          if (interval[0] <= last[1] + 0.05) {
-            last[1] = math.max(last[1], interval[1]);
-          } else {
-            merged.add(List<double>.from(interval));
-          }
-        }
-      }
-      for (final m in merged) {
-        final y = m[2];
-        unifiedSegments.add([Point2D(m[0], y), Point2D(m[1], y)]);
-      }
-    }
-
-    // Fusionar intervalos verticales
-    for (final entry in vertGroups.entries) {
-      final intervals = entry.value;
-      intervals.sort((a, b) => a[0].compareTo(b[0]));
-      final merged = <List<double>>[];
-      for (final interval in intervals) {
-        if (merged.isEmpty) {
-          merged.add(List<double>.from(interval));
-        } else {
-          final last = merged.last;
-          if (interval[0] <= last[1] + 0.05) {
-            last[1] = math.max(last[1], interval[1]);
-          } else {
-            merged.add(List<double>.from(interval));
-          }
-        }
-      }
-      for (final m in merged) {
-        final x = m[2];
-        unifiedSegments.add([Point2D(x, m[0]), Point2D(x, m[1])]);
-      }
-    }
-
-    // 3. Descontar vanos de aberturas (puertas, ventanas, portones) y crear muros
-    for (final seg in unifiedSegments) {
-      final p1 = seg[0];
-      final p2 = seg[1];
-      final wallPieces = _cutSegmentAtOpenings(p1, p2, openings);
-
-      for (final piece in wallPieces) {
-        createdWalls.add(
-          Wall(
-            id: const Uuid().v4(),
-            floorId: state.floor.id,
-            startPoint: piece[0],
-            endPoint: piece[1],
-            thickness: defaultThickness,
-            height: state.floor.heightMeters,
-            status: ElementStatus.isNew,
-          ),
-        );
-      }
+    final createdWalls = WallGenerationEngine.generateWallsForFloor(
+      state.floor,
+      defaultThickness: defaultThickness,
+    );
+    if (createdWalls.isEmpty && state.floor.modules.every((m) => m.isOpening)) {
+      return 0;
     }
 
     final updatedFloor = state.floor.copyWith(walls: createdWalls);
@@ -1045,42 +859,11 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Demarca muros en todo el contorno del recinto especificado (p. ej. para cerrar un estudio o ambiente)
   int addWallsForModule(String moduleId, {double defaultThickness = 0.15}) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
-    final openings = state.floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE');
-    }).toList();
-
-    final vertices = mod.geometry.vertices;
-    final count = vertices.length;
-    final newWalls = <Wall>[];
-
-    for (int i = 0; i < count; i++) {
-      final p1 = vertices[i];
-      final p2 = vertices[(i + 1) % count];
-      if (p1.distanceTo(p2) < 0.20) continue;
-
-      final pieces = _cutSegmentAtOpenings(p1, p2, openings);
-      for (final piece in pieces) {
-        final exists = state.floor.walls.any((w) =>
-            (w.startPoint.distanceTo(piece[0]) < 0.15 && w.endPoint.distanceTo(piece[1]) < 0.15) ||
-            (w.startPoint.distanceTo(piece[1]) < 0.15 && w.endPoint.distanceTo(piece[0]) < 0.15));
-
-        if (!exists) {
-          newWalls.add(
-            Wall(
-              id: const Uuid().v4(),
-              floorId: state.floor.id,
-              startPoint: piece[0],
-              endPoint: piece[1],
-              thickness: defaultThickness,
-              height: state.floor.heightMeters,
-              status: ElementStatus.isNew,
-            ),
-          );
-        }
-      }
-    }
+    final newWalls = WallGenerationEngine.generateAdditionalWallsForModule(
+      floor: state.floor,
+      moduleId: moduleId,
+      defaultThickness: defaultThickness,
+    );
 
     if (newWalls.isNotEmpty) {
       final updatedWalls = List<Wall>.from(state.floor.walls)..addAll(newWalls);
@@ -1151,12 +934,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       heightMeters: heightMeters ?? state.floor.heightMeters,
       levelMeters: levelMeters ?? state.floor.levelMeters,
     );
-    final updatedAll = state.allFloors.map((f) {
-      if (f.id == updatedFloor.id) return updatedFloor;
-      return f;
-    }).toList();
     _applyFloorChange(updatedFloor);
-    state = state.copyWith(allFloors: updatedAll);
   }
 
   void toggleModuleLock(String moduleId) {
@@ -1190,6 +968,9 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Crea una variante o escenario de diseño duplicando la planta actual con nuevos IDs
   void createDesignVariant(String variantName) {
+    if (_isInteracting) {
+      endInteraction();
+    }
     final newFloorId = const Uuid().v4();
     final clonedModules = state.floor.modules.map((m) {
       final newModId = const Uuid().v4();
@@ -1218,24 +999,80 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       replacementRelationships: const [],
     );
 
-    final updatedAll = List<Floor>.from(state.allFloors)..add(newFloor);
-    _applyFloorChange(newFloor);
-    state = state.copyWith(allFloors: updatedAll);
+    final baseAll = state.allFloors.isNotEmpty ? state.allFloors : [state.floor];
+    final syncedAll = baseAll
+        .map((f) => f.id == state.floor.id ? state.floor : f)
+        .toList()
+      ..add(newFloor);
+
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[state.floor.id] = state.undoStack
+      ..[newFloorId] = const [];
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[state.floor.id] = state.redoStack
+      ..[newFloorId] = const [];
+    final issues = ValidationEngine.validateFloor(floor: newFloor, lot: state.lot);
+
+    state = state.copyWith(
+      floor: newFloor,
+      allFloors: syncedAll,
+      clearSelection: true,
+      clearWallSelection: true,
+      clearSubModuleSelection: true,
+      issues: issues,
+      undoStack: const [],
+      redoStack: const [],
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: {...state.dirtyFloorIds, newFloorId},
+      hasUnsavedChanges: true,
+    );
   }
 
   /// Elimina una variante o piso de diseño secundario
   void deleteDesignVariant(String floorId) {
+    if (_isInteracting) {
+      endInteraction();
+    }
     if (state.allFloors.length <= 1) return;
-    final updatedAll = state.allFloors.where((f) => f.id != floorId).toList();
-    final nextFloor = updatedAll.firstWhere(
-      (f) => f.id != floorId,
-      orElse: () => updatedAll.first,
+
+    final syncedAll = state.allFloors
+        .map((f) => f.id == state.floor.id ? state.floor : f)
+        .where((f) => f.id != floorId)
+        .toList();
+    if (syncedAll.isEmpty) return;
+
+    final nextFloor = state.floor.id == floorId ? syncedAll.first : state.floor;
+
+    final updatedUndoMap = Map<String, List<Floor>>.from(state.undoStacksByFloor)
+      ..[state.floor.id] = state.undoStack
+      ..remove(floorId);
+    final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
+      ..[state.floor.id] = state.redoStack
+      ..remove(floorId);
+    final updatedDirtyIds = Set<String>.from(state.dirtyFloorIds)..remove(floorId);
+    final updatedDeletedIds = {...state.deletedFloorIds, floorId};
+    final issues = ValidationEngine.validateFloor(floor: nextFloor, lot: state.lot);
+
+    state = state.copyWith(
+      floor: nextFloor,
+      allFloors: syncedAll,
+      clearSelection: state.floor.id == floorId,
+      clearWallSelection: state.floor.id == floorId,
+      clearSubModuleSelection: state.floor.id == floorId,
+      issues: issues,
+      undoStack: updatedUndoMap[nextFloor.id] ?? const [],
+      redoStack: updatedRedoMap[nextFloor.id] ?? const [],
+      undoStacksByFloor: updatedUndoMap,
+      redoStacksByFloor: updatedRedoMap,
+      dirtyFloorIds: updatedDirtyIds,
+      deletedFloorIds: updatedDeletedIds,
+      hasUnsavedChanges: true,
     );
-    _applyFloorChange(nextFloor);
-    state = state.copyWith(allFloors: updatedAll);
   }
 
   void resetToMVP() {
-    state = _buildInitialMVPState();
+    _resetInteractionState();
+    state = MvpFloorSeed.buildInitialState();
   }
 }

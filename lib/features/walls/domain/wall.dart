@@ -1,4 +1,3 @@
-import 'dart:math' as math;
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
@@ -13,7 +12,7 @@ class Wall {
   final double height;
   final ElementStatus status;
 
-  const Wall({
+  Wall({
     required this.id,
     required this.floorId,
     required this.startPoint,
@@ -23,7 +22,7 @@ class Wall {
     required this.status,
   });
 
-  double get length => startPoint.distanceTo(endPoint);
+  late final double length = startPoint.distanceTo(endPoint);
 
   double get grossArea => length * height;
 
@@ -48,7 +47,9 @@ class Wall {
   }
 
   /// Genera la huella poligonal 2D del muro considerando su espesor centrado en el eje.
-  Polygon2D get footprint {
+  late final Polygon2D footprint = _computeFootprint();
+
+  Polygon2D _computeFootprint() {
     final dx = endPoint.x - startPoint.x;
     final dy = endPoint.y - startPoint.y;
     final len = length;
@@ -90,17 +91,41 @@ class Wall {
 
   /// Elimina muros duplicados o idénticos (mismo trazo espacial sin importar la dirección)
   static List<Wall> deduplicate(Iterable<Wall> walls) {
+    const cellSize = 0.05;
     final unique = <Wall>[];
+    final buckets = <(int, int), List<Wall>>{};
+
+    (int, int) cellFor(Point2D p) =>
+        ((p.x / cellSize).floor(), (p.y / cellSize).floor());
+
     for (final w in walls) {
-      final isDuplicate = unique.any((existing) {
-        final sameDir = (existing.startPoint.distanceTo(w.startPoint) < 0.05 &&
-            existing.endPoint.distanceTo(w.endPoint) < 0.05);
-        final oppDir = (existing.startPoint.distanceTo(w.endPoint) < 0.05 &&
-            existing.endPoint.distanceTo(w.startPoint) < 0.05);
-        return sameDir || oppDir;
-      });
+      final startCell = cellFor(w.startPoint);
+      final endCell = cellFor(w.endPoint);
+      var isDuplicate = false;
+
+      for (int dx = -1; dx <= 1 && !isDuplicate; dx++) {
+        for (int dy = -1; dy <= 1 && !isDuplicate; dy++) {
+          final candidates = buckets[(startCell.$1 + dx, startCell.$2 + dy)];
+          if (candidates == null) continue;
+          for (final existing in candidates) {
+            final sameDir = existing.startPoint.distanceTo(w.startPoint) < 0.05 &&
+                existing.endPoint.distanceTo(w.endPoint) < 0.05;
+            final oppDir = existing.startPoint.distanceTo(w.endPoint) < 0.05 &&
+                existing.endPoint.distanceTo(w.startPoint) < 0.05;
+            if (sameDir || oppDir) {
+              isDuplicate = true;
+              break;
+            }
+          }
+        }
+      }
+
       if (!isDuplicate) {
         unique.add(w);
+        buckets.putIfAbsent(startCell, () => <Wall>[]).add(w);
+        if (endCell != startCell) {
+          buckets.putIfAbsent(endCell, () => <Wall>[]).add(w);
+        }
       }
     }
     return unique;

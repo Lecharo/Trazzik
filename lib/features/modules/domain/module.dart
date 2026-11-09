@@ -108,6 +108,80 @@ class Module {
 
   double get area => geometry.area;
 
+  /// Whether this module represents a wall/perimeter opening (door, window, or gate).
+  late final bool isOpening = _computeIsOpening();
+
+  bool _computeIsOpening() {
+    final normalizedType = moduleType.toUpperCase();
+    return normalizedType.contains('DOOR') ||
+        normalizedType.contains('WINDOW') ||
+        normalizedType.contains('GATE');
+  }
+
+  late final bool isDoor = moduleType.toUpperCase().contains('DOOR');
+  late final bool isSlidingDoor =
+      isDoor && moduleType.toUpperCase().contains('SLIDING');
+  late final bool isSwingDoor = isDoor && !isSlidingDoor;
+  late final bool isWindow = moduleType.toUpperCase().contains('WINDOW');
+  late final bool isGate = moduleType.toUpperCase().contains('GATE');
+  late final bool isStairs = moduleType.toUpperCase().contains('STAIR');
+
+  /// Whether this module is a primary habitable space subject to natural light/ventilation rules.
+  late final bool isHabitableRoom = () {
+    final t = moduleType.toUpperCase();
+    return t == 'BEDROOM' ||
+        t == 'LIVING_ROOM' ||
+        t == 'DINING_ROOM' ||
+        t == 'LIVING_DINING' ||
+        t == 'STUDIO' ||
+        t == 'STUDY' ||
+        t == 'OFFICE';
+  }();
+
+  /// Whether this module is a circulation/distribution space.
+  late final bool isCirculation = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t == 'CORRIDOR' ||
+        t == 'HALLWAY' ||
+        t == 'FOYER' ||
+        n.contains('PASILLO') ||
+        n.contains('HALL') ||
+        n.contains('DISTRIBUIDOR') ||
+        n.contains('CIRCULACION');
+  }();
+
+  /// Compact architectural room code used in 2D and 3D badges.
+  late final String shortCode = compactRoomCode(name);
+
+  static String compactRoomCode(String rawName) {
+    final upper = rawName.toUpperCase();
+    if (upper.contains('LAVAD') ||
+        upper.contains('LAVANDER') ||
+        upper.contains('ROPAS')) {
+      return 'LAV.';
+    }
+    if (upper.contains('BAÑO') || upper.contains('TOILET')) return 'BAÑO';
+    if (upper.contains('COCINA')) return 'COCINA';
+    if (upper.contains('ESCALERA')) return 'ESC.';
+    if (upper.contains('ESTAR') ||
+        upper.contains('SALA') ||
+        upper.contains('LIVING')) {
+      return 'ESTAR';
+    }
+    if (upper.contains('COMEDOR')) return 'COMEDOR';
+    if (upper.contains('DORMITORIO') || upper.contains('HABITACI')) {
+      return 'DORM.';
+    }
+    if (upper.contains('GARAJE') || upper.contains('COCHERA')) return 'GAR.';
+    if (upper.contains('ESTUDIO') || upper.contains('OFICINA')) {
+      return 'ESTUDIO';
+    }
+    if (upper.contains('PATIO') || upper.contains('JARD')) return 'PATIO';
+    if (upper.contains('TERRAZA') || upper.contains('BALC')) return 'BALCÓN';
+    return rawName.length > 7 ? '${rawName.substring(0, 6)}.' : rawName;
+  }
+
   Module copyWith({
     String? id,
     String? floorId,
@@ -144,6 +218,7 @@ class Module {
           ...geometry.toJson(),
           'flip_x': flipX,
           'flip_y': flipY,
+          'is_locked': isLocked,
         },
         'status': status.name,
         'sub_modules': subModules.map((s) => s.toJson()).toList(),
@@ -166,7 +241,8 @@ class Module {
           const [],
       flipX: json['flip_x'] as bool? ?? geomRaw['flip_x'] as bool? ?? false,
       flipY: json['flip_y'] as bool? ?? geomRaw['flip_y'] as bool? ?? false,
-      isLocked: json['is_locked'] as bool? ?? false,
+      isLocked:
+          json['is_locked'] as bool? ?? geomRaw['is_locked'] as bool? ?? false,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

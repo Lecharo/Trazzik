@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-import 'bounding_box_2d.dart';
 import 'point_2d.dart';
 import 'polygon_2d.dart';
 
@@ -187,6 +185,18 @@ class GeometryEngine {
     }
 
     return true;
+  }
+
+  /// Shortest Euclidean distance from point [p] to line segment [a]-[b].
+  static double distanceToSegment(Point2D p, Point2D a, Point2D b) {
+    final dx = b.x - a.x;
+    final dy = b.y - a.y;
+    final lenSq = dx * dx + dy * dy;
+    if (lenSq == 0) return p.distanceTo(a);
+    final t = ((p.x - a.x) * dx + (p.y - a.y) * dy) / lenSq;
+    final clampedT = t.clamp(0.0, 1.0);
+    final proj = Point2D(a.x + clampedT * dx, a.y + clampedT * dy);
+    return p.distanceTo(proj);
   }
 
   static bool _isPointOnPerimeter(Point2D p, Polygon2D polygon) {

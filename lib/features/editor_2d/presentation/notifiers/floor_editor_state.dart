@@ -19,6 +19,10 @@ class FloorEditorState {
   final Offset panOffset;
   final List<Floor> undoStack;
   final List<Floor> redoStack;
+  final Map<String, List<Floor>> undoStacksByFloor;
+  final Map<String, List<Floor>> redoStacksByFloor;
+  final Set<String> dirtyFloorIds;
+  final Set<String> deletedFloorIds;
   final bool showZoningGuide;
   final bool hasUnsavedChanges;
   final bool isRenderedMode;
@@ -36,10 +40,31 @@ class FloorEditorState {
     this.panOffset = const Offset(80.0, 80.0),
     this.undoStack = const [],
     this.redoStack = const [],
+    this.undoStacksByFloor = const {},
+    this.redoStacksByFloor = const {},
+    this.dirtyFloorIds = const {},
+    this.deletedFloorIds = const {},
     this.showZoningGuide = false,
     this.hasUnsavedChanges = false,
     this.isRenderedMode = true,
   });
+
+  /// Returns all modified floors pending persistence across the project.
+  List<Floor> get dirtyFloors {
+    final sourceFloors = allFloors.isNotEmpty ? allFloors : [floor];
+    return sourceFloors
+        .where((f) => dirtyFloorIds.contains(f.id))
+        .map((f) => f.id == floor.id ? floor : f)
+        .toList();
+  }
+
+  /// Returns dirty floors to persist, falling back to the active floor on manual save.
+  List<Floor> get floorsToSave {
+    final dirty = dirtyFloors;
+    if (dirty.isNotEmpty) return dirty;
+    if (deletedFloorIds.isNotEmpty) return const [];
+    return [floor];
+  }
 
   Module? get selectedModule {
     if (selectedModuleId == null) return null;
@@ -74,6 +99,10 @@ class FloorEditorState {
     Offset? panOffset,
     List<Floor>? undoStack,
     List<Floor>? redoStack,
+    Map<String, List<Floor>>? undoStacksByFloor,
+    Map<String, List<Floor>>? redoStacksByFloor,
+    Set<String>? dirtyFloorIds,
+    Set<String>? deletedFloorIds,
     bool? showZoningGuide,
     bool? hasUnsavedChanges,
     bool? isRenderedMode,
@@ -91,6 +120,10 @@ class FloorEditorState {
       panOffset: panOffset ?? this.panOffset,
       undoStack: undoStack ?? this.undoStack,
       redoStack: redoStack ?? this.redoStack,
+      undoStacksByFloor: undoStacksByFloor ?? this.undoStacksByFloor,
+      redoStacksByFloor: redoStacksByFloor ?? this.redoStacksByFloor,
+      dirtyFloorIds: dirtyFloorIds ?? this.dirtyFloorIds,
+      deletedFloorIds: deletedFloorIds ?? this.deletedFloorIds,
       showZoningGuide: showZoningGuide ?? this.showZoningGuide,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
       isRenderedMode: isRenderedMode ?? this.isRenderedMode,

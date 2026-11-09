@@ -1,11 +1,13 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
-import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
+import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 
 /// Pantalla completa de Maqueta Axonométrica 3D del Proyecto
@@ -23,10 +25,51 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   double _pitch = 0.70; // ~40° inclinación axonométrica
   double _zoom = 48.0;
   Offset _panOffset = Offset.zero;
+  int _cameraRevision = 0;
   bool _zoomInitialized = false;
   bool _showLabels = true; // Rótulos activados por defecto
   double _wallHeight = 1.20; // 1.20m Maqueta axonométrica (o 2.60m volumen completo)
   BoxConstraints? _lastConstraints;
+
+  // Caché de escena 3D para evitar regenerar mallas al cambiar cámara o etiquetas
+  List<Face3D>? _cachedFaces;
+  List<Floor>? _cachedFloors;
+  Lot? _cachedLot;
+  double? _cachedExplodedFactor;
+  String? _cachedSelectedFloorId;
+  double? _cachedWallHeight;
+
+  List<Face3D> _resolveSceneFaces({
+    required List<Floor> floors,
+    required Lot lot,
+  }) {
+    final canReuse = _cachedFaces != null &&
+        _cachedFloors != null &&
+        listEquals(_cachedFloors, floors) &&
+        identical(_cachedLot, lot) &&
+        _cachedExplodedFactor == _explodedFactor &&
+        _cachedSelectedFloorId == _selectedFloorId &&
+        _cachedWallHeight == _wallHeight;
+    if (canReuse) {
+      return _cachedFaces!;
+    }
+
+    final built = Building3DBuilder.buildScene(
+      floors: floors,
+      lot: lot,
+      explodedFactor: _explodedFactor,
+      soloFloorId: _selectedFloorId,
+      showLotGround: true,
+      wallHeight: _wallHeight,
+    );
+    _cachedFaces = built;
+    _cachedFloors = List<Floor>.unmodifiable(floors);
+    _cachedLot = lot;
+    _cachedExplodedFactor = _explodedFactor;
+    _cachedSelectedFloorId = _selectedFloorId;
+    _cachedWallHeight = _wallHeight;
+    return built;
+  }
 
   double _computeFitZoom(Lot lot, BoxConstraints? constraints) {
     final bb = lot.boundary.boundingBox;
@@ -56,12 +99,14 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   void _zoomIn() {
     setState(() {
       _zoom = (_zoom * 1.25).clamp(10.0, 200.0);
+      _cameraRevision++;
     });
   }
 
   void _zoomOut() {
     setState(() {
       _zoom = (_zoom / 1.25).clamp(10.0, 200.0);
+      _cameraRevision++;
     });
   }
 
@@ -69,6 +114,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     setState(() {
       _zoom = _computeFitZoom(lot, constraints ?? _lastConstraints);
       _panOffset = Offset.zero;
+      _cameraRevision++;
     });
   }
 
@@ -80,6 +126,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       _panOffset = Offset.zero;
       _explodedFactor = 0.0;
       _wallHeight = 1.20;
+      _cameraRevision++;
     });
     if (_lastConstraints != null) {
       final lot = ref.read(floorEditorProvider).lot;
@@ -107,26 +154,25 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           _pitch = 1.35; // Vista trasera / patio posterior
           break;
       }
+      _cameraRevision++;
     });
   }
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(floorEditorProvider);
+    final floor = ref.watch(floorEditorProvider.select((s) => s.floor));
+    final allFloors = ref.watch(floorEditorProvider.select((s) => s.allFloors));
+    final lot = ref.watch(floorEditorProvider.select((s) => s.lot));
+    final projectName = ref.watch(
+          floorEditorProvider.select((s) => s.project?.name),
+        ) ??
+        'Proyecto Arquitectónico';
     final lang = ref.watch(appLocaleProvider);
 
-    final floors = state.allFloors.isNotEmpty ? state.allFloors : [state.floor];
-    final projectName = state.project?.name ?? 'Proyecto Arquitectónico';
+    final floors = allFloors.isNotEmpty ? allFloors : [floor];
 
-    // Generar escena 3D en tiempo real según estado de pisos y muros
-    final faces = Building3DBuilder.buildScene(
-      floors: floors,
-      lot: state.lot,
-      explodedFactor: _explodedFactor,
-      soloFloorId: _selectedFloorId,
-      showLotGround: true,
-      wallHeight: _wallHeight,
-    );
+    // Escena 3D memoizada (no se regenera al orbitar, hacer zoom o alternar rótulos)
+    final faces = _resolveSceneFaces(floors: floors, lot: lot);
 
     final isMobile = MediaQuery.of(context).size.width < 700;
 
@@ -174,7 +220,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               decoration: BoxDecoration(
                 color: const Color(0xFF0F172A),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
               ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
@@ -360,7 +406,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       body: LayoutBuilder(
         builder: (context, constraints) {
           _lastConstraints = constraints;
-          _calculateInitialZoom(state.lot, constraints);
+          _calculateInitialZoom(lot, constraints);
 
           return Stack(
             children: [
@@ -372,15 +418,17 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   pitch: _pitch,
                   zoom: _zoom,
                   panOffset: _panOffset,
+                  cameraRevision: _cameraRevision,
+                  orientationDegrees: lot.orientationDegrees,
                   showLabels: _showLabels,
                   onOrbitChanged: (ny, np) {
                     _yaw = ny;
                     _pitch = np;
                   },
-              onZoomChanged: (nz) => _zoom = nz,
-              onPanChanged: (np) => _panOffset = np,
-            ),
-          ),
+                  onZoomChanged: (nz) => _zoom = nz,
+                  onPanChanged: (np) => _panOffset = np,
+                ),
+              ),
 
           // 2. Control flotante: Despiece Vertical / Maqueta Explotada
           if (_selectedFloorId == null && floors.length > 1)
@@ -391,12 +439,12 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 width: 320,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B).withOpacity(0.92),
+                  color: const Color(0xFF1E293B).withValues(alpha: 0.92),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.35)),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.35)),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.4),
+                      color: Colors.black.withValues(alpha: 0.4),
                       blurRadius: 10,
                       offset: const Offset(0, 4),
                     ),
@@ -471,7 +519,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withOpacity(0.80),
+                color: const Color(0xFF0F172A).withValues(alpha: 0.80),
                 borderRadius: BorderRadius.circular(8),
                 border: Border.all(color: Colors.white12),
               ),
@@ -496,12 +544,12 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
               decoration: BoxDecoration(
-                color: const Color(0xFF1E293B).withOpacity(0.92),
+                color: const Color(0xFF1E293B).withValues(alpha: 0.92),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.35)),
+                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.35)),
                 boxShadow: [
                   BoxShadow(
-                    color: Colors.black.withOpacity(0.4),
+                    color: Colors.black.withValues(alpha: 0.4),
                     blurRadius: 10,
                     offset: const Offset(0, 4),
                   ),
@@ -529,7 +577,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   IconButton(
                     icon: const Icon(Icons.fit_screen, color: Color(0xFF00E5FF)),
                     tooltip: lang == 'es' ? 'Ajustar al lote' : 'Fit to Lot',
-                    onPressed: () => _fitView(state.lot, constraints),
+                    onPressed: () => _fitView(lot, constraints),
                     iconSize: 20,
                     visualDensity: VisualDensity.compact,
                   ),
