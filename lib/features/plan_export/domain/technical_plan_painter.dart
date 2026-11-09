@@ -17,11 +17,13 @@ import 'package:trazzik/features/walls/domain/wall_generation_engine.dart';
 /// Painter de alta resolución para renderizado de planos arquitectónicos técnicos ejecutivos.
 class TechnicalPlanPainter extends CustomPainter {
   final Floor floor;
+  final List<Floor> allFloors;
   final Lot? lot;
   final PlanExportOptions options;
 
   TechnicalPlanPainter({
     required this.floor,
+    this.allFloors = const [],
     this.lot,
     required this.options,
   });
@@ -185,27 +187,13 @@ class TechnicalPlanPainter extends CustomPainter {
       dividerPaint,
     );
 
-    Point3D computeCenter(List<Face3D> faces) {
-      double sx = 0, sy = 0, sz = 0;
-      int n = 0;
-      for (final f in faces) {
-        for (final v in f.vertices) {
-          sx += v.x;
-          sy += v.y;
-          sz += v.z;
-          n++;
-        }
-      }
-      return n > 0
-          ? Point3D(sx / n, sy / n, sz / n)
-          : const Point3D(5.0, 7.5, 1.5);
-    }
-
     void renderViewport({
       required double panelLeft,
       required String title,
       required Color badgeColor,
+      required List<Floor> targetFloors,
       required double wallHeight,
+      required double explodedFactor,
       required double yaw,
       required double pitch,
       required bool isPerspective,
@@ -240,13 +228,13 @@ class TechnicalPlanPainter extends CustomPainter {
       final viewportRect =
           Rect.fromLTWH(panelLeft + pad, topBannerH, viewW, viewH);
       final faces = Building3DBuilder.buildScene(
-        floors: [floor],
+        floors: targetFloors,
         lot: effectiveLot,
         wallHeight: wallHeight,
         includeShadows: true,
         sunPreset: sunPreset,
       );
-      final center3D = computeCenter(faces);
+      final center3D = AxonometricSceneRenderer.computeSceneCenter(faces);
 
       canvas.save();
       canvas.clipRRect(
@@ -261,6 +249,7 @@ class TechnicalPlanPainter extends CustomPainter {
         yaw: yaw,
         pitch: pitch,
         zoom: fitZoom,
+        explodedFactor: explodedFactor,
         isPerspective: isPerspective,
         sunPreset: sunPreset,
         showLabels: showLabels,
@@ -280,11 +269,15 @@ class TechnicalPlanPainter extends CustomPainter {
       );
     }
 
+    final stackedFloors = allFloors.isNotEmpty ? allFloors : <Floor>[floor];
+
     renderViewport(
       panelLeft: 0,
       title: '1. MAQUETA AXONOMÉTRICA DE CORTE INTERIOR (H = 1.20 m)',
       badgeColor: const Color(0xFF0284C7),
+      targetFloors: [floor],
       wallHeight: 1.20,
+      explodedFactor: 0.0,
       yaw: -0.35,
       pitch: 0.70,
       isPerspective: false,
@@ -296,7 +289,9 @@ class TechnicalPlanPainter extends CustomPainter {
       panelLeft: halfW,
       title: '2. VOLUMETRÍA COMPLETA Y ASOLEAMIENTO EN PERSPECTIVA (H = 2.60 m)',
       badgeColor: const Color(0xFF0F766E),
+      targetFloors: stackedFloors,
       wallHeight: 2.60,
+      explodedFactor: stackedFloors.length > 1 ? 0.22 : 0.0,
       yaw: 0.42,
       pitch: 0.72,
       isPerspective: true,

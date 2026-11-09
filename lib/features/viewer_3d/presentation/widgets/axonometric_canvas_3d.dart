@@ -131,21 +131,8 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   late Point3D _sceneCenter;
   double _baseZoom = 48.0;
 
-  static Point3D computeSceneCenter(List<Face3D> faces) {
-    double avgX = 0, avgY = 0, avgZ = 0;
-    int pointCount = 0;
-    for (final face in faces) {
-      for (final v in face.vertices) {
-        avgX += v.x;
-        avgY += v.y;
-        avgZ += v.z;
-        pointCount++;
-      }
-    }
-    return pointCount > 0
-        ? Point3D(avgX / pointCount, avgY / pointCount, avgZ / pointCount)
-        : const Point3D(5, 7.5, 2.5);
-  }
+  static Point3D computeSceneCenter(List<Face3D> faces) =>
+      AxonometricSceneRenderer.computeSceneCenter(faces);
 
   @override
   void initState() {
@@ -364,6 +351,40 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
 
 /// Shared offscreen & onscreen 3D scene rendering utilities.
 class AxonometricSceneRenderer {
+  /// Computes the geometric 3D bounding-box center of [faces], excluding shadow
+  /// polygons so furniture density or shadow planes never skew the 360° orbit pivot.
+  static Point3D computeSceneCenter(List<Face3D> faces) {
+    double minX = double.infinity,
+        minY = double.infinity,
+        minZ = double.infinity;
+    double maxX = double.negativeInfinity,
+        maxY = double.negativeInfinity,
+        maxZ = double.negativeInfinity;
+    int count = 0;
+
+    for (final face in faces) {
+      if (face.layer == FaceLayer3D.shadow) continue;
+      for (final v in face.vertices) {
+        if (v.x < minX) minX = v.x;
+        if (v.y < minY) minY = v.y;
+        if (v.z < minZ) minZ = v.z;
+        if (v.x > maxX) maxX = v.x;
+        if (v.y > maxY) maxY = v.y;
+        if (v.z > maxZ) maxZ = v.z;
+        count++;
+      }
+    }
+
+    if (count == 0) {
+      return const Point3D(5.0, 7.5, 1.5);
+    }
+    return Point3D(
+      (minX + maxX) / 2.0,
+      (minY + maxY) / 2.0,
+      (minZ + maxZ) / 2.0,
+    );
+  }
+
   static Size? _cachedBgSize;
   static bool? _cachedBgDark;
   static Shader? _cachedBgShader;

@@ -319,6 +319,14 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               onSelected: (val) {
                 if (val == 'reset') {
                   _resetCamera();
+                } else if (val == 'toggle_perspective') {
+                  setState(() => _isPerspective = !_isPerspective);
+                } else if (val == 'cycle_sun') {
+                  setState(() {
+                    final nextIdx =
+                        (_sunPreset.index + 1) % SunPreset3D.values.length;
+                    _sunPreset = SunPreset3D.values[nextIdx];
+                  });
                 } else if (val == 'render_studio') {
                   Render3dStudioDialog.show(
                     context,
@@ -374,6 +382,48 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   ),
                 ),
                 const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'toggle_perspective',
+                  child: Row(
+                    children: [
+                      Icon(
+                        _isPerspective ? Icons.vrpano : Icons.grid_4x4,
+                        size: 18,
+                        color: const Color(0xFF00E5FF),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        lang == 'es'
+                            ? (_isPerspective
+                                ? 'Cambiar a Axonométrica'
+                                : 'Cambiar a Perspectiva 3D')
+                            : (_isPerspective
+                                ? 'Switch to Axonometric'
+                                : 'Switch to 3D Perspective'),
+                      ),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
+                  value: 'cycle_sun',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.wb_sunny_outlined,
+                        size: 18,
+                        color: _sunPreset == SunPreset3D.goldenHourWest
+                            ? Colors.amber
+                            : const Color(0xFF38BDF8),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        lang == 'es'
+                            ? 'Luz Solar (${_sunPreset.name})'
+                            : 'Sun Lighting (${_sunPreset.name})',
+                      ),
+                    ],
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'reset',
                   child: Row(

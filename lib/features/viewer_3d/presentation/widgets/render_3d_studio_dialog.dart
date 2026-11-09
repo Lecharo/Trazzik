@@ -10,6 +10,7 @@ import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
+import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/domain/gltf_exporter_service.dart';
 
@@ -58,6 +59,7 @@ class Render3dStudioDialog extends ConsumerStatefulWidget {
 class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
   bool _isExportingPdf = false;
   bool _gltfCopied = false;
+  bool _exportFullVolumeGltf = true;
 
   Future<void> _exportPdfRenderSheet(String lang) async {
     setState(() => _isExportingPdf = true);
@@ -96,8 +98,19 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
 
   Future<void> _exportGltfModel(String lang) async {
     final projectName = widget.project?.name ?? 'Trazzik_3D_Model';
+    final targetFloors = widget.allFloors.isNotEmpty
+        ? widget.allFloors
+        : <Floor>[widget.activeFloor];
+    final facesToExport = _exportFullVolumeGltf
+        ? Building3DBuilder.buildScene(
+            floors: targetFloors,
+            lot: widget.lot,
+            wallHeight: 2.60,
+            includeShadows: false,
+          )
+        : widget.currentFaces;
     final gltfJson = GltfExporterService.exportToGltfJson(
-      faces: widget.currentFaces,
+      faces: facesToExport,
       projectName: projectName,
     );
     await Clipboard.setData(ClipboardData(text: gltfJson));
@@ -108,8 +121,8 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
         backgroundColor: const Color(0xFF0F766E),
         content: Text(
           lang == 'es'
-              ? 'Modelo glTF 2.0 (.gltf) generado y copiado al portapapeles (${widget.currentFaces.length} caras).'
-              : 'glTF 2.0 (.gltf) model generated and copied to clipboard (${widget.currentFaces.length} faces).',
+              ? 'Modelo glTF 2.0 (.gltf) generado y copiado al portapapeles (${facesToExport.length} caras).'
+              : 'glTF 2.0 (.gltf) model generated and copied to clipboard (${facesToExport.length} faces).',
         ),
       ),
     );
@@ -281,6 +294,45 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
                     color: const Color(0xFF10B981),
                   ),
                   onTap: () => _exportGltfModel(lang),
+                ),
+              ),
+              const SizedBox(height: 10),
+
+              Material(
+                color: colors.cardBg,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(10),
+                  side: BorderSide(color: colors.borderSubtle),
+                ),
+                child: SwitchListTile.adaptive(
+                  dense: true,
+                  activeThumbColor: colors.accent,
+                  title: Text(
+                    lang == 'es'
+                        ? 'Exportar glTF en Volumen Completo (2.60 m, todos los pisos)'
+                        : 'Export glTF in Full Volume (2.60 m, all floors)',
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontWeight: FontWeight.w600,
+                      fontSize: 12,
+                    ),
+                  ),
+                  subtitle: Text(
+                    lang == 'es'
+                        ? (_exportFullVolumeGltf
+                            ? 'Exporta el edificio completo a 2.60 m de altura.'
+                            : 'Exporta la vista actual del visor (p. ej. corte a 1.20 m).')
+                        : (_exportFullVolumeGltf
+                            ? 'Exports the full 2.60 m multi-story building.'
+                            : 'Exports the current viewport height (e.g., 1.20 m cutaway).'),
+                    style: TextStyle(
+                      color: colors.textSecondary,
+                      fontSize: 11,
+                    ),
+                  ),
+                  value: _exportFullVolumeGltf,
+                  onChanged: (val) =>
+                      setState(() => _exportFullVolumeGltf = val),
                 ),
               ),
               const SizedBox(height: 16),

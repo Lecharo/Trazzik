@@ -56,8 +56,13 @@ class TechnicalPlanPdfService {
             )
           : options;
 
-      // 1. Renderizar el plano 2D a imagen de alta resolución (300 DPI equivalente)
-      final planImageBytes = await _renderPlanToPng(floor, lot, sheetOpts);
+      // 1. Renderizar el plano 2D/3D a imagen de alta resolución (300 DPI equivalente)
+      final planImageBytes = await _renderPlanToPng(
+        floor,
+        allFloors,
+        lot,
+        sheetOpts,
+      );
       final pwPlanImage = pw.MemoryImage(planImageBytes);
 
       // 2. Lámina Ejecutiva de Planta por Especialidad
@@ -253,6 +258,7 @@ class TechnicalPlanPdfService {
   /// y liberando recursos nativos GPU/CPU inmediatamente después de codificar.
   static Future<Uint8List> _renderPlanToPng(
     Floor floor,
+    List<Floor> allFloors,
     Lot? lot,
     PlanExportOptions options,
   ) async {
@@ -271,6 +277,7 @@ class TechnicalPlanPdfService {
 
     final painter = TechnicalPlanPainter(
       floor: floor,
+      allFloors: allFloors,
       lot: lot,
       options: options,
     );
