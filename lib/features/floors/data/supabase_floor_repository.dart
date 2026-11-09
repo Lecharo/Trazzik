@@ -1,9 +1,12 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
-import 'package:trazzik/features/demolition/domain/replacement_relationship.dart';
+import 'package:trazzik/core/supabase/supabase_providers.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
-import 'package:trazzik/features/modules/domain/module.dart';
-import 'package:trazzik/features/walls/domain/wall.dart';
+
+final floorRepositoryProvider = Provider<SupabaseFloorRepository>((ref) {
+  return SupabaseFloorRepository(ref.watch(supabaseClientProvider));
+});
 
 /// Repositorio de pisos, módulos y elementos constructivos en Supabase.
 class SupabaseFloorRepository {
@@ -12,150 +15,209 @@ class SupabaseFloorRepository {
     r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
   );
 
-  static String _ensureUuid(String id) {
-    return _uuidRegex.hasMatch(id) ? id : const Uuid().v4();
+  static String _resolveStableUuid(
+    String id,
+    Map<String, String> resolvedMap,
+  ) {
+    if (_uuidRegex.hasMatch(id)) return id;
+    return resolvedMap.putIfAbsent(id, () => const Uuid().v4());
   }
 
   SupabaseFloorRepository([SupabaseClient? client])
       : _client = client ?? Supabase.instance.client;
 
-  Future<void> saveFloor(Floor floor) async {
-    // 1. Guardar entidad Floor
-    await _client.from('floors').upsert({
-      'id': floor.id,
-      'building_id': floor.buildingId,
-      'floor_number': floor.floorNumber,
-      'name': floor.name,
-      'level_meters': floor.levelMeters,
-      'height_meters': floor.heightMeters,
-      'boundary': floor.boundary.toJson(),
-      'max_allowed_area': floor.maxAllowedArea,
-    });
+  Future<void> saveProjectFloors({
+    required List<Floor> dirtyFloors,
+    Set<String> deletedFloorIds = const {},
+  }) async {
+    if (deletedFloorIds.isNotEmpty) {
+      await deleteFloors(deletedFloorIds);
+    }
 
-    // 2. Guardar Módulos y limpiar eliminados
-    final existingModules =
-        await _client.from('modules').select('id').eq('floor_id', floor.id);
-    final currentModuleIds = floor.modules.map((m) => m.id).toSet();
-    for (final row in existingModules) {
-      final dbId = row['id'] as String;
-      if (!currentModuleIds.contains(dbId)) {
-        await _client.from('modules').delete().eq('id', dbId);
+    if (dirtyFloors.isEmpty) return;
+
+    final resolvedIds = <String, String>{};
+    final floorPayloads = <Map<String, dynamic>>[];
+    final resolvedFloorIds = <String>[];
+    final modulePayloads = <Map<String, dynamic>>[];
+    final wallPayloads = <Map<String, dynamic>>[];
+    final relPayloads = <Map<String, dynamic>>[];
+
+    for (final floor in dirtyFloors) {
+      final resolvedFloorId = _resolveStableUuid(floor.id, resolvedIds);
+      resolvedFloorIds.add(resolvedFloorId);
+
+      floorPayloads.add({
+        'id': resolvedFloorId,
+        'building_id': floor.buildingId,
+        'floor_number': floor.floorNumber,
+        'name': floor.name,
+        'level_meters': floor.levelMeters,
+        'height_meters': floor.heightMeters,
+        'boundary': floor.boundary.toJson(),
+        'max_allowed_area': floor.maxAllowedArea,
+      });
+
+      for (final module in floor.modules) {
+        final resolvedId = _resolveStableUuid(module.id, resolvedIds);
+        modulePayloads.add({
+          'id': resolvedId,
+          'floor_id': resolvedFloorId,
+          'name': module.name,
+          'module_type': module.moduleType,
+          'geometry': {
+            ...module.geometry.toJson(),
+            'flip_x': module.flipX,
+            'flip_y': module.flipY,
+            'is_locked': module.isLocked,
+          },
+          'status': module.status.name,
+          'sub_modules': module.subModules.map((s) => s.toJson()).toList(),
+        });
+      }
+
+      for (final wall in floor.walls) {
+        final resolvedId = _resolveStableUuid(wall.id, resolvedIds);
+        wallPayloads.add({
+          'id': resolvedId,
+          'floor_id': resolvedFloorId,
+          'start_point': wall.startPoint.toJson(),
+          'end_point': wall.endPoint.toJson(),
+          'thickness': wall.thickness,
+          'height': wall.height,
+          'status': wall.status.name,
+        });
+      }
+
+      for (final rel in floor.replacementRelationships) {
+        final resolvedId = _resolveStableUuid(rel.id, resolvedIds);
+        relPayloads.add({
+          'id': resolvedId,
+          'floor_id': resolvedFloorId,
+          'existing_element_id':
+              _resolveStableUuid(rel.existingElementId, resolvedIds),
+          'proposed_element_id':
+              _resolveStableUuid(rel.proposedElementId, resolvedIds),
+          'relationship_type': rel.relationshipType.name,
+          'overlap_area': rel.overlapArea,
+          'expanded_area': rel.expandedArea,
+          'notes': rel.notes,
+        });
       }
     }
 
-    for (final module in floor.modules) {
-      await _client.from('modules').upsert({
-        'id': _ensureUuid(module.id),
-        'floor_id': floor.id,
-        'name': module.name,
-        'module_type': module.moduleType,
-        'geometry': module.geometry.toJson(),
-        'status': module.status.name,
-        'sub_modules': module.subModules.map((s) => s.toJson()).toList(),
-      });
+    // 1. Upsert masivo de todos los niveles modificados en un solo round-trip
+    await _client.from('floors').upsert(floorPayloads);
+
+    // 2. Consultar IDs existentes de todos los niveles modificados en paralelo
+    final existingResults = await Future.wait([
+      _client
+          .from('modules')
+          .select('id')
+          .inFilter('floor_id', resolvedFloorIds),
+      _client
+          .from('walls')
+          .select('id')
+          .inFilter('floor_id', resolvedFloorIds),
+      _client
+          .from('replacement_relationships')
+          .select('id')
+          .inFilter('floor_id', resolvedFloorIds),
+    ]);
+
+    final existingModules = existingResults[0];
+    final existingWalls = existingResults[1];
+    final existingRels = existingResults[2];
+
+    // 3. Eliminar elementos obsoletos en lote (primero relaciones para respetar FKs)
+    final currentRelIds = relPayloads.map((r) => r['id'] as String).toSet();
+    final removedRelIds = existingRels
+        .map((row) => row['id'] as String)
+        .where((id) => !currentRelIds.contains(id))
+        .toList();
+    if (removedRelIds.isNotEmpty) {
+      await _client
+          .from('replacement_relationships')
+          .delete()
+          .inFilter('id', removedRelIds);
     }
 
-    // 3. Guardar Muros y limpiar muros eliminados o sustituidos en la base de datos
-    final existingWalls =
-        await _client.from('walls').select('id').eq('floor_id', floor.id);
-    final currentWallIds = floor.walls.map((w) => w.id).toSet();
-    for (final row in existingWalls) {
-      final dbId = row['id'] as String;
-      if (!currentWallIds.contains(dbId)) {
-        await _client.from('walls').delete().eq('id', dbId);
-      }
-    }
+    final currentModuleIds =
+        modulePayloads.map((m) => m['id'] as String).toSet();
+    final removedModuleIds = existingModules
+        .map((row) => row['id'] as String)
+        .where((id) => !currentModuleIds.contains(id))
+        .toList();
 
-    for (final wall in floor.walls) {
-      await _client.from('walls').upsert({
-        'id': _ensureUuid(wall.id),
-        'floor_id': floor.id,
-        'start_point': wall.startPoint.toJson(),
-        'end_point': wall.endPoint.toJson(),
-        'thickness': wall.thickness,
-        'height': wall.height,
-        'status': wall.status.name,
-      });
-    }
+    final currentWallIds = wallPayloads.map((w) => w['id'] as String).toSet();
+    final removedWallIds = existingWalls
+        .map((row) => row['id'] as String)
+        .where((id) => !currentWallIds.contains(id))
+        .toList();
 
-    // 4. Guardar Relaciones de Reemplazo y limpiar eliminadas
-    final existingRels = await _client
-        .from('replacement_relationships')
-        .select('id')
-        .eq('floor_id', floor.id);
-    final currentRelIds =
-        floor.replacementRelationships.map((r) => r.id).toSet();
-    for (final row in existingRels) {
-      final dbId = row['id'] as String;
-      if (!currentRelIds.contains(dbId)) {
-        await _client
-            .from('replacement_relationships')
-            .delete()
-            .eq('id', dbId);
-      }
-    }
+    await Future.wait([
+      if (removedModuleIds.isNotEmpty)
+        _client.from('modules').delete().inFilter('id', removedModuleIds),
+      if (removedWallIds.isNotEmpty)
+        _client.from('walls').delete().inFilter('id', removedWallIds),
+    ]);
 
-    for (final rel in floor.replacementRelationships) {
-      await _client.from('replacement_relationships').upsert({
-        'id': _ensureUuid(rel.id),
-        'floor_id': floor.id,
-        'existing_element_id': _ensureUuid(rel.existingElementId),
-        'proposed_element_id': _ensureUuid(rel.proposedElementId),
-        'relationship_type': rel.relationshipType.name,
-        'overlap_area': rel.overlapArea,
-        'expanded_area': rel.expandedArea,
-        'notes': rel.notes,
-      });
+    // 4. Upsert masivo en lote transversal (módulos y muros en paralelo, luego relaciones)
+    await Future.wait([
+      if (modulePayloads.isNotEmpty)
+        _client.from('modules').upsert(modulePayloads),
+      if (wallPayloads.isNotEmpty)
+        _client.from('walls').upsert(wallPayloads),
+    ]);
+
+    if (relPayloads.isNotEmpty) {
+      await _client.from('replacement_relationships').upsert(relPayloads);
     }
   }
 
+  Future<void> deleteFloors(Iterable<String> floorIds) async {
+    final validIds = floorIds.where(_uuidRegex.hasMatch).toList();
+    if (validIds.isEmpty) return;
+
+    await _client
+        .from('replacement_relationships')
+        .delete()
+        .inFilter('floor_id', validIds);
+
+    await Future.wait([
+      _client.from('modules').delete().inFilter('floor_id', validIds),
+      _client.from('walls').delete().inFilter('floor_id', validIds),
+    ]);
+
+    await _client.from('floors').delete().inFilter('id', validIds);
+  }
+
+  Future<void> saveFloor(Floor floor) =>
+      saveProjectFloors(dirtyFloors: [floor]);
+
   Future<Floor?> getFloorById(String id) async {
-    final floorData =
-        await _client.from('floors').select().eq('id', id).maybeSingle();
+    final floorData = await _client
+        .from('floors')
+        .select('*, modules(*), walls(*), replacement_relationships(*)')
+        .eq('id', id)
+        .maybeSingle();
 
     if (floorData == null) return null;
 
-    final modulesData =
-        await _client.from('modules').select().eq('floor_id', id);
-    final wallsData =
-        await _client.from('walls').select().eq('floor_id', id);
-    final replacementsData =
-        await _client.from('replacement_relationships').select().eq('floor_id', id);
-
-    final jsonMap = Map<String, dynamic>.from(floorData);
-    jsonMap['modules'] = modulesData;
-    jsonMap['walls'] = wallsData;
-    jsonMap['replacement_relationships'] = replacementsData;
-
-    return Floor.fromJson(jsonMap);
+    return Floor.fromJson(Map<String, dynamic>.from(floorData));
   }
 
   Future<List<Floor>> getFloorsByBuildingId(String buildingId) async {
     final floorsData = await _client
         .from('floors')
-        .select()
+        .select('*, modules(*), walls(*), replacement_relationships(*)')
         .eq('building_id', buildingId)
         .order('floor_number', ascending: true);
 
-    final floors = <Floor>[];
-    for (final fRow in floorsData) {
-      final id = fRow['id'] as String;
-      final modulesData =
-          await _client.from('modules').select().eq('floor_id', id);
-      final wallsData =
-          await _client.from('walls').select().eq('floor_id', id);
-      final replacementsData = await _client
-          .from('replacement_relationships')
-          .select()
-          .eq('floor_id', id);
+    if (floorsData.isEmpty) return const [];
 
-      final jsonMap = Map<String, dynamic>.from(fRow);
-      jsonMap['modules'] = modulesData;
-      jsonMap['walls'] = wallsData;
-      jsonMap['replacement_relationships'] = replacementsData;
-
-      floors.add(Floor.fromJson(jsonMap));
-    }
-    return floors;
+    return floorsData
+        .map((fRow) => Floor.fromJson(Map<String, dynamic>.from(fRow)))
+        .toList();
   }
 }

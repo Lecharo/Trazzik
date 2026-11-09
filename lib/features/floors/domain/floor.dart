@@ -18,7 +18,7 @@ class Floor {
   final List<Wall> walls;
   final List<ReplacementRelationship> replacementRelationships;
 
-  const Floor({
+  Floor({
     required this.id,
     required this.buildingId,
     required this.floorNumber,
@@ -35,36 +35,35 @@ class Floor {
   double get floorGeometricArea => boundary.area;
 
   /// Superficie útil interior habitable (módulos propuestos o conservados que no son vanos de puertas o ventanas)
-  double get usableSpacesArea {
-    return modules
-        .where((m) =>
-            (m.status == ElementStatus.isNew || m.status == ElementStatus.preserved) &&
-            !m.moduleType.toUpperCase().contains('DOOR') &&
-            !m.moduleType.toUpperCase().contains('WINDOW'))
-        .fold(0.0, (acc, m) => acc + m.area);
-  }
+  late final double usableSpacesArea = modules
+      .where(
+        (m) =>
+            (m.status == ElementStatus.isNew ||
+                m.status == ElementStatus.preserved) &&
+            !m.isOpening,
+      )
+      .fold(0.0, (acc, m) => acc + m.area);
 
   /// Superficie en planta ocupada por la huella de muros y tabiques en m²
-  double get wallsFootprintArea {
-    return walls
-        .where((w) => w.status == ElementStatus.isNew || w.status == ElementStatus.preserved)
-        .fold(0.0, (acc, w) => acc + (w.length * w.thickness));
-  }
+  late final double wallsFootprintArea = walls
+      .where(
+        (w) =>
+            w.status == ElementStatus.isNew ||
+            w.status == ElementStatus.preserved,
+      )
+      .fold(0.0, (acc, w) => acc + (w.length * w.thickness));
 
   /// Longitud lineal total de muros y tabiques en metros
-  double get wallsTotalLinearMeters {
-    return walls
-        .where((w) => w.status == ElementStatus.isNew || w.status == ElementStatus.preserved)
-        .fold(0.0, (acc, w) => acc + w.length);
-  }
+  late final double wallsTotalLinearMeters = walls
+      .where(
+        (w) =>
+            w.status == ElementStatus.isNew ||
+            w.status == ElementStatus.preserved,
+      )
+      .fold(0.0, (acc, w) => acc + w.length);
 
   /// Área construida total (ambientes útiles + huella de muros si existen)
-  double get calculatedBuiltArea {
-    final spacesArea = modules
-        .where((m) => m.status == ElementStatus.isNew || m.status == ElementStatus.preserved)
-        .fold(0.0, (acc, m) => acc + m.area);
-    return spacesArea + wallsFootprintArea;
-  }
+  late final double calculatedBuiltArea = usableSpacesArea + wallsFootprintArea;
 
   Floor copyWith({
     String? id,

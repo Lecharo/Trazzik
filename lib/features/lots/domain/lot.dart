@@ -1,5 +1,21 @@
+import 'dart:math' as math;
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'zoning_zone.dart';
+
+/// Normative setback distances extracted from [Lot.zones] in meters.
+class LotSetbacks {
+  final double front;
+  final double rear;
+  final double left;
+  final double right;
+
+  const LotSetbacks({
+    this.front = 0.0,
+    this.rear = 0.0,
+    this.left = 0.0,
+    this.right = 0.0,
+  });
+}
 
 /// Terreno o Lote de implantación del proyecto.
 class Lot {
@@ -18,6 +34,35 @@ class Lot {
   });
 
   double get totalArea => boundary.area;
+
+  /// Resolves front, rear, left, and right setback distances from [zones].
+  LotSetbacks get setbacks {
+    double front = 0.0;
+    double rear = 0.0;
+    double left = 0.0;
+    double right = 0.0;
+
+    for (final zone in zones) {
+      final name = zone.name.toLowerCase();
+      final zBbox = zone.boundary.boundingBox;
+      if (name.contains('frontal')) {
+        front = math.max(front, zBbox.height);
+      } else if (name.contains('posterior')) {
+        rear = math.max(rear, zBbox.height);
+      } else if (name.contains('izquierdo')) {
+        left = math.max(left, zBbox.width);
+      } else if (name.contains('derecho')) {
+        right = math.max(right, zBbox.width);
+      }
+    }
+
+    return LotSetbacks(
+      front: front,
+      rear: rear,
+      left: left,
+      right: right,
+    );
+  }
 
   Lot copyWith({
     String? id,

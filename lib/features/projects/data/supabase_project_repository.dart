@@ -1,9 +1,16 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
+import 'package:trazzik/core/supabase/supabase_providers.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
+import 'package:trazzik/features/projects/domain/project_building.dart';
 
-/// Repositorio de proyectos y lotes en Supabase.
+final projectRepositoryProvider = Provider<SupabaseProjectRepository>((ref) {
+  return SupabaseProjectRepository(ref.watch(supabaseClientProvider));
+});
+
+/// Repositorio de proyectos, lotes y edificaciones en Supabase.
 class SupabaseProjectRepository {
   final SupabaseClient _client;
 
@@ -64,11 +71,7 @@ class SupabaseProjectRepository {
         .select()
         .order('updated_at', ascending: false);
 
-    final list = <Project>[];
-    for (final item in response) {
-      list.add(Project.fromJson(item));
-    }
-    return list;
+    return response.map<Project>(Project.fromJson).toList();
   }
 
   Future<void> deleteProject(String projectId) async {
@@ -103,15 +106,21 @@ class SupabaseProjectRepository {
     // 2. Eliminar zonas anteriores para reescribir limpiamente
     await _client.from('zoning_zones').delete().eq('lot_id', actualLotId);
 
-    // 3. Guardar zonas asociadas
-    for (final zone in lot.zones) {
-      await _client.from('zoning_zones').insert({
-        'id': zone.id.length == 36 ? zone.id : const Uuid().v4(),
-        'lot_id': actualLotId,
-        'name': zone.name,
-        'type': zone.type.name,
-        'boundary': zone.boundary.toJson(),
-      });
+    // 3. Guardar zonas asociadas en un único batch insert
+    if (lot.zones.isNotEmpty) {
+      const uuid = Uuid();
+      final zonePayloads = lot.zones
+          .map(
+            (zone) => {
+              'id': zone.id.length == 36 ? zone.id : uuid.v4(),
+              'lot_id': actualLotId,
+              'name': zone.name,
+              'type': zone.type.name,
+              'boundary': zone.boundary.toJson(),
+            },
+          )
+          .toList();
+      await _client.from('zoning_zones').insert(zonePayloads);
     }
 
     return lot.copyWith(id: actualLotId);
@@ -120,19 +129,76 @@ class SupabaseProjectRepository {
   Future<Lot?> getLotByProjectId(String projectId) async {
     final lotData = await _client
         .from('lots')
-        .select()
+        .select('*, zoning_zones(*)')
         .eq('project_id', projectId)
         .maybeSingle();
 
     if (lotData == null) return null;
 
-    final zonesData =
-        await _client.from('zoning_zones').select().eq('lot_id', lotData['id']);
-
     final jsonMap = Map<String, dynamic>.from(lotData);
     jsonMap['boundary'] = lotData['boundary_polygon'];
-    jsonMap['zones'] = zonesData;
+    jsonMap['zones'] = lotData['zoning_zones'] ?? const [];
 
     return Lot.fromJson(jsonMap);
+  }
+
+  Future<ProjectBuilding?> getPrimaryBuildingByLotId(String lotId) async {
+    final rows = await _client
+        .from('buildings')
+        .select()
+        .eq('lot_id', lotId)
+        .order('order_index', ascending: true)
+        .limit(1);
+
+    if (rows.isEmpty) return null;
+    return ProjectBuilding.fromJson(rows.first);
+  }
+
+  Future<ProjectBuilding> savePrimaryBuilding({
+    required String lotId,
+    String? preferredBuildingId,
+    required String name,
+    required int floorsCount,
+  }) async {
+    final existing = await getPrimaryBuildingByLotId(lotId);
+    final actualBuildingId =
+        existing?.id ?? preferredBuildingId ?? const Uuid().v4();
+
+    if (existing != null) {
+      try {
+        await _client.from('buildings').update({
+          'name': name,
+          'floors_count': floorsCount,
+        }).eq('id', actualBuildingId);
+      } catch (_) {
+        await _client.from('buildings').update({
+          'name': name,
+        }).eq('id', actualBuildingId);
+      }
+    } else {
+      try {
+        await _client.from('buildings').insert({
+          'id': actualBuildingId,
+          'lot_id': lotId,
+          'name': name,
+          'floors_count': floorsCount,
+          'order_index': 1,
+        });
+      } catch (_) {
+        await _client.from('buildings').insert({
+          'id': actualBuildingId,
+          'lot_id': lotId,
+          'name': name,
+          'order_index': 1,
+        });
+      }
+    }
+
+    return ProjectBuilding(
+      id: actualBuildingId,
+      lotId: lotId,
+      name: name,
+      floorsCount: floorsCount,
+    );
   }
 }
