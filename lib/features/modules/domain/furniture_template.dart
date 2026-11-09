@@ -355,4 +355,51 @@ class FurnitureTemplate {
     if (matches.isNotEmpty) return matches.first.defaultHeight;
     return 0.75;
   }
+
+  /// Canonical 3D volume color for furniture and fixtures by catalog type.
+  static Color getDefault3dColor(String type) {
+    switch (type.toUpperCase()) {
+      case 'BED':
+        return const Color(0xFF90A4AE);
+      case 'SOFA':
+      case 'ARMCHAIR':
+        return const Color(0xFF546E7A);
+      case 'DINING_TABLE':
+      case 'ROUND_TABLE':
+      case 'DESK':
+      case 'TABLE':
+        return const Color(0xFF8D6E63);
+      case 'COFFEE_TABLE':
+      case 'SIDE_TABLE':
+      case 'NIGHTSTAND':
+        return const Color(0xFFA1887F);
+      case 'CHAIR':
+        return const Color(0xFF795548);
+      case 'CABINET':
+      case 'WARDROBE':
+        return const Color(0xFF6D4C41);
+      case 'BOOKSHELF':
+      case 'TV_UNIT':
+        return const Color(0xFF5D4037);
+      case 'WALL_CABINET':
+        return const Color(0xFF8D6E63);
+      case 'SINK_COUNTER':
+      case 'KITCHEN_ISLAND':
+      case 'VANITY':
+      case 'LAUNDRY_SINK':
+        return const Color(0xFF78909C);
+      case 'STOVE':
+        return const Color(0xFF37474F);
+      case 'REFRIGERATOR':
+      case 'SHOWER':
+        return const Color(0xFFB0BEC5);
+      case 'TOILET':
+      case 'BATHTUB':
+        return const Color(0xFFECEFF1);
+      case 'WASHING_MACHINE':
+        return const Color(0xFFCFD8DC);
+      default:
+        return const Color(0xFF78909C);
+    }
+  }
 }

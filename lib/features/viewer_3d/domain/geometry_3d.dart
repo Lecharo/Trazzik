@@ -2,6 +2,38 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 
+/// Semantic render layer within a floor to guarantee deterministic painter ordering
+/// (e.g., floor finishes are never drawn on top of furniture or walls on the same story).
+enum FaceLayer3D {
+  terrain,
+  slab,
+  floorFinish,
+  shadow,
+  structureAndFurniture,
+  openingPanel,
+}
+
+/// Architectural daylight presets for 3D shading and cast shadows.
+enum SunPreset3D {
+  studioNoon(
+    Point3D(0.577, -0.577, 0.577),
+    Offset(-0.28, 0.28),
+  ),
+  morningEast(
+    Point3D(0.72, -0.42, 0.55),
+    Offset(-0.38, 0.22),
+  ),
+  goldenHourWest(
+    Point3D(-0.68, -0.58, 0.45),
+    Offset(0.42, 0.34),
+  );
+
+  final Point3D lightDirection;
+  final Offset shadowOffsetPerMeter;
+
+  const SunPreset3D(this.lightDirection, this.shadowOffsetPerMeter);
+}
+
 /// Punto en el espacio euclidiano 3D (X: Ancho, Y: Fondo, Z: Cota/Elevación en metros)
 class Point3D {
   final double x;
@@ -33,6 +65,10 @@ class Face3D {
   final FinishPatternType? pattern;
   final Color? patternColor;
   final bool isWallFace;
+  final FaceLayer3D layer;
+  final int floorIndex;
+  final bool isTwoSided;
+  final bool isRoomLabel;
 
   Face3D({
     required this.vertices,
@@ -44,6 +80,10 @@ class Face3D {
     this.pattern,
     this.patternColor,
     this.isWallFace = false,
+    this.layer = FaceLayer3D.structureAndFurniture,
+    this.floorIndex = 0,
+    this.isTwoSided = false,
+    this.isRoomLabel = false,
   });
 
   /// Centroide tridimensional de la cara
@@ -59,6 +99,23 @@ class Face3D {
     }
     final n = vertices.length.toDouble();
     return Point3D(sx / n, sy / n, sz / n);
+  }
+
+  /// True only when this face is a 4-vertex horizontal rectangle aligned with the X/Y axes.
+  late final bool isAxisAlignedQuad = _computeIsAxisAlignedQuad();
+
+  bool _computeIsAxisAlignedQuad() {
+    if (vertices.length != 4) return false;
+    const eps = 1e-3;
+    for (int i = 0; i < 4; i++) {
+      final a = vertices[i];
+      final b = vertices[(i + 1) % 4];
+      final dx = (a.x - b.x).abs();
+      final dy = (a.y - b.y).abs();
+      final isAxisEdge = (dx <= eps && dy > eps) || (dy <= eps && dx > eps);
+      if (!isAxisEdge) return false;
+    }
+    return true;
   }
 
   /// Vector normal de la cara
@@ -93,12 +150,17 @@ class Face3D {
 
   /// Calcula el color sombreado según la fuente de luz direccional (Sol arquitectónico cenital a 45°)
   Color computeShadedColor(Point3D lightDir) {
+    if (layer == FaceLayer3D.shadow) {
+      return baseColor;
+    }
     final norm = normal;
     // Producto punto
-    final dot = norm.x * lightDir.x + norm.y * lightDir.y + norm.z * lightDir.z;
+    final rawDot =
+        norm.x * lightDir.x + norm.y * lightDir.y + norm.z * lightDir.z;
+    final dot = isTwoSided ? rawDot.abs() : rawDot;
     final intensity = (dot.clamp(-0.2, 1.0) + 0.2) / 1.2;
-    // Factor de luminosidad ambiente mínima (0.45 a 1.0)
-    final brightness = 0.45 + 0.55 * intensity;
+    // Factor de luminosidad ambiente mínima (0.48 a 1.0)
+    final brightness = 0.48 + 0.52 * intensity;
 
     return Color.fromARGB(
       (baseColor.a * 255.0).round().clamp(0, 255),

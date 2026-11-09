@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/modules/domain/furniture_template.dart';
@@ -28,6 +29,15 @@ class SubModule {
 
   /// Altura arquitectónica efectiva (usa la personalizada o el estándar del catálogo)
   double get resolvedHeight => height ?? FurnitureTemplate.getDefaultHeight(type);
+
+  /// Effective floor-to-base elevation in meters (wall cabinets default to 1.50m above finished floor).
+  double get resolvedElevation =>
+      (type.toUpperCase() == 'WALL_CABINET' && elevation <= 0.01)
+          ? 1.50
+          : elevation;
+
+  /// Canonical 3D volume color for this furniture piece.
+  Color get default3dColor => FurnitureTemplate.getDefault3dColor(type);
 
   SubModule copyWith({
     String? id,
@@ -128,6 +138,7 @@ class Module {
   late final bool isSwingDoor = isDoor && !isSlidingDoor;
   late final bool isWindow = moduleType.toUpperCase().contains('WINDOW');
   late final bool isGate = moduleType.toUpperCase().contains('GATE');
+  late final bool isDoorOrGate = isDoor || isGate;
   late final bool isStairs = moduleType.toUpperCase().contains('STAIR');
 
   /// Canonical room-type helpers used across 2D, 3D, PDF export, and AI BOQ.

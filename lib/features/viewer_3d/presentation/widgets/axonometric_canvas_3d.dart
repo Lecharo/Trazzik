@@ -5,14 +5,18 @@ import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 
-/// Interactive 3D axonometric canvas with 360° orbit, zoom, procedural surface
-/// textures, and 3D polygon hit-testing for live finish configuration.
+/// Interactive 3D axonometric & perspective canvas with 360° orbit, zoom,
+/// multi-layered procedural surface textures, solar lighting presets,
+/// zero-rebuild exploded floor projection, and 3D polygon hit-testing.
 class AxonometricCanvas3D extends StatefulWidget {
   final List<Face3D> faces;
   final double yaw; // Horizontal angle (radians)
   final double pitch; // Vertical angle (radians)
   final double zoom; // Scale in pixels per meter
   final Offset panOffset;
+  final double explodedFactor; // 0.0 to 1.0 (applied at projection time)
+  final bool isPerspective;
+  final SunPreset3D sunPreset;
   final int cameraRevision;
   final double orientationDegrees;
   final Function(double newYaw, double newPitch)? onOrbitChanged;
@@ -31,6 +35,9 @@ class AxonometricCanvas3D extends StatefulWidget {
     this.pitch = 0.70, // ~40° front axonometric tilt
     this.zoom = 48.0,
     this.panOffset = Offset.zero,
+    this.explodedFactor = 0.0,
+    this.isPerspective = false,
+    this.sunPreset = SunPreset3D.studioNoon,
     this.cameraRevision = 0,
     this.orientationDegrees = 0.0,
     this.onOrbitChanged,
@@ -51,12 +58,18 @@ class _Viewport3D {
   final double pitch;
   final double zoom;
   final Offset pan;
+  final double explodedFactor;
+  final bool isPerspective;
+  final SunPreset3D sunPreset;
 
   const _Viewport3D({
     required this.yaw,
     required this.pitch,
     required this.zoom,
     required this.pan,
+    this.explodedFactor = 0.0,
+    this.isPerspective = false,
+    this.sunPreset = SunPreset3D.studioNoon,
   });
 
   _Viewport3D copyWith({
@@ -64,16 +77,22 @@ class _Viewport3D {
     double? pitch,
     double? zoom,
     Offset? pan,
+    double? explodedFactor,
+    bool? isPerspective,
+    SunPreset3D? sunPreset,
   }) {
     return _Viewport3D(
       yaw: yaw ?? this.yaw,
       pitch: pitch ?? this.pitch,
       zoom: zoom ?? this.zoom,
       pan: pan ?? this.pan,
+      explodedFactor: explodedFactor ?? this.explodedFactor,
+      isPerspective: isPerspective ?? this.isPerspective,
+      sunPreset: sunPreset ?? this.sunPreset,
     );
   }
 
-  /// Shared axonometric 3D-to-2D projection used by both hit-testing and rendering.
+  /// Shared 3D-to-2D projection used by both hit-testing and rendering.
   (Offset screenPos, double depth) projectPoint(
     Point3D p,
     Point3D sceneCenter,
@@ -81,19 +100,27 @@ class _Viewport3D {
     double cosYaw,
     double sinYaw,
     double cosPitch,
-    double sinPitch,
-  ) {
+    double sinPitch, {
+    int floorIndex = 0,
+  }) {
+    final effectiveZ =
+        p.z + (floorIndex > 0 ? floorIndex * explodedFactor * 2.50 : 0.0);
     final rx = p.x - sceneCenter.x;
     final ry = p.y - sceneCenter.y;
-    final rz = p.z - sceneCenter.z;
+    final rz = effectiveZ - sceneCenter.z;
 
     final x1 = rx * cosYaw - ry * sinYaw;
     final y1 = rx * sinYaw + ry * cosYaw;
     final z1 = rz;
 
-    final sx = screenCenter.dx + x1 * zoom;
-    final sy = screenCenter.dy + (y1 * cosPitch - z1 * sinPitch) * zoom;
     final depth = y1 * sinPitch + z1 * cosPitch;
+    final perspScale = isPerspective
+        ? (42.0 / (42.0 - depth.clamp(-24.0, 26.0))).clamp(0.68, 1.52)
+        : 1.0;
+    final effZoom = zoom * perspScale;
+
+    final sx = screenCenter.dx + x1 * effZoom;
+    final sy = screenCenter.dy + (y1 * cosPitch - z1 * sinPitch) * effZoom;
 
     return (Offset(sx, sy), depth);
   }
@@ -104,7 +131,7 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   late Point3D _sceneCenter;
   double _baseZoom = 48.0;
 
-  static Point3D _computeSceneCenter(List<Face3D> faces) {
+  static Point3D computeSceneCenter(List<Face3D> faces) {
     double avgX = 0, avgY = 0, avgZ = 0;
     int pointCount = 0;
     for (final face in faces) {
@@ -123,13 +150,16 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   @override
   void initState() {
     super.initState();
-    _sceneCenter = _computeSceneCenter(widget.faces);
+    _sceneCenter = computeSceneCenter(widget.faces);
     _viewportNotifier = ValueNotifier(
       _Viewport3D(
         yaw: widget.yaw,
         pitch: widget.pitch,
         zoom: widget.zoom,
         pan: widget.panOffset,
+        explodedFactor: widget.explodedFactor,
+        isPerspective: widget.isPerspective,
+        sunPreset: widget.sunPreset,
       ),
     );
   }
@@ -138,20 +168,32 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   void didUpdateWidget(covariant AxonometricCanvas3D oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (!identical(widget.faces, oldWidget.faces)) {
-      _sceneCenter = _computeSceneCenter(widget.faces);
+      _sceneCenter = computeSceneCenter(widget.faces);
     }
     final cameraControlledExternally =
         widget.cameraRevision != oldWidget.cameraRevision ||
             widget.yaw != oldWidget.yaw ||
             widget.pitch != oldWidget.pitch ||
             widget.zoom != oldWidget.zoom ||
-            widget.panOffset != oldWidget.panOffset;
+            widget.panOffset != oldWidget.panOffset ||
+            widget.explodedFactor != oldWidget.explodedFactor ||
+            widget.isPerspective != oldWidget.isPerspective ||
+            widget.sunPreset != oldWidget.sunPreset;
     if (cameraControlledExternally) {
+      final current = _viewportNotifier.value;
+      final useWidgetPose = widget.cameraRevision != oldWidget.cameraRevision ||
+          widget.yaw != oldWidget.yaw ||
+          widget.pitch != oldWidget.pitch ||
+          widget.zoom != oldWidget.zoom ||
+          widget.panOffset != oldWidget.panOffset;
       _viewportNotifier.value = _Viewport3D(
-        yaw: widget.yaw,
-        pitch: widget.pitch,
-        zoom: widget.zoom,
-        pan: widget.panOffset,
+        yaw: useWidgetPose ? widget.yaw : current.yaw,
+        pitch: useWidgetPose ? widget.pitch : current.pitch,
+        zoom: useWidgetPose ? widget.zoom : current.zoom,
+        pan: useWidgetPose ? widget.panOffset : current.pan,
+        explodedFactor: widget.explodedFactor,
+        isPerspective: widget.isPerspective,
+        sunPreset: widget.sunPreset,
       );
     }
   }
@@ -175,10 +217,16 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
     final cosPitch = math.cos(viewport.pitch);
     final sinPitch = math.sin(viewport.pitch);
 
-    final projected = <({Face3D face, List<Offset> pts, double depth})>[];
+    final projected = <({
+      Face3D face,
+      List<Offset> pts,
+      double depth,
+      double maxDepth,
+    })>[];
     for (final face in widget.faces) {
       if (face.moduleId == null || face.vertices.length < 3) continue;
       double depthSum = 0;
+      double maxD = double.negativeInfinity;
       final pts = <Offset>[];
       for (final v in face.vertices) {
         final (pt, d) = viewport.projectPoint(
@@ -189,19 +237,31 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
           sinYaw,
           cosPitch,
           sinPitch,
+          floorIndex: face.floorIndex,
         );
         pts.add(pt);
         depthSum += d;
+        if (d > maxD) maxD = d;
       }
       projected.add((
         face: face,
         pts: pts,
         depth: depthSum / face.vertices.length,
+        maxDepth: maxD,
       ));
     }
 
-    // Sort back-to-front, then test front-to-back (last to first)
-    projected.sort((a, b) => a.depth.compareTo(b.depth));
+    // Sort with exact same stratified order as the painter, then test front-to-back
+    projected.sort((a, b) {
+      final floorCmp = a.face.floorIndex.compareTo(b.face.floorIndex);
+      if (floorCmp != 0) return floorCmp;
+      final layerCmp = a.face.layer.index.compareTo(b.face.layer.index);
+      if (layerCmp != 0) return layerCmp;
+      final depthCmp = a.depth.compareTo(b.depth);
+      if (depthCmp != 0) return depthCmp;
+      return a.maxDepth.compareTo(b.maxDepth);
+    });
+
     for (int i = projected.length - 1; i >= 0; i--) {
       final item = projected[i];
       if (_pointInPolygon(tapPos, item.pts)) {
@@ -223,7 +283,11 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
       final xi = polygon[i].dx, yi = polygon[i].dy;
       final xj = polygon[j].dx, yj = polygon[j].dy;
       final intersect = ((yi > pt.dy) != (yj > pt.dy)) &&
-          (pt.dx < (xj - xi) * (pt.dy - yi) / ((yj - yi) == 0 ? 1e-9 : (yj - yi)) + xi);
+          (pt.dx <
+              (xj - xi) *
+                      (pt.dy - yi) /
+                      ((yj - yi) == 0 ? 1e-9 : (yj - yi)) +
+                  xi);
       if (intersect) inside = !inside;
     }
     return inside;
@@ -231,6 +295,7 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
 
   @override
   Widget build(BuildContext context) {
+    final isDarkTheme = Theme.of(context).brightness == Brightness.dark;
     return LayoutBuilder(
       builder: (context, constraints) {
         final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
@@ -285,6 +350,7 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
                     orientationDegrees: widget.orientationDegrees,
                     selectedModuleId: widget.selectedModuleId,
                     highlightWallSelection: widget.highlightWallSelection,
+                    isDarkTheme: isDarkTheme,
                   ),
                 ),
               ),
@@ -296,52 +362,102 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   }
 }
 
-class _AxonometricPainter extends CustomPainter {
-  final List<Face3D> faces;
-  final Point3D sceneCenter;
-  final ValueNotifier<_Viewport3D> viewportListenable;
-  final bool showLabels;
-  final double orientationDegrees;
-  final String? selectedModuleId;
-  final bool highlightWallSelection;
+/// Shared offscreen & onscreen 3D scene rendering utilities.
+class AxonometricSceneRenderer {
+  static Size? _cachedBgSize;
+  static bool? _cachedBgDark;
+  static Shader? _cachedBgShader;
 
-  _AxonometricPainter({
-    required this.faces,
-    required this.sceneCenter,
-    required this.viewportListenable,
-    required this.showLabels,
-    required this.orientationDegrees,
-    this.selectedModuleId,
-    this.highlightWallSelection = false,
-  }) : super(repaint: viewportListenable);
+  static final Map<String, TextPainter> _labelPainterCache = {};
 
-  @override
-  void paint(Canvas canvas, Size size) {
-    final viewport = viewportListenable.value;
-    final yaw = viewport.yaw;
-    final pitch = viewport.pitch;
-    final zoom = viewport.zoom;
-    final panOffset = viewport.pan;
-    final center = Offset(size.width / 2 + panOffset.dx, size.height / 2 + panOffset.dy);
+  static final Paint _fillPaint = Paint()..style = PaintingStyle.fill;
+  static final Paint _strokePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.0;
+  static final Paint _selectedFloorFillPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = const Color(0xFF00E5FF).withValues(alpha: 0.14);
+  static final Paint _selectedFloorBorderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.6
+    ..color = const Color(0xFF00E5FF);
+  static final Paint _selectedWallFillPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = const Color(0xFF38BDF8).withValues(alpha: 0.16);
+  static final Paint _selectedWallBorderPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 2.0
+    ..color = const Color(0xFF38BDF8);
+  static final Paint _textureLinePaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 0.85;
+  static final Paint _glassHighlightPaint = Paint()
+    ..style = PaintingStyle.stroke
+    ..strokeWidth = 1.15
+    ..color = Colors.white.withValues(alpha: 0.38);
 
-    // 1. Studio radial gradient background
-    final bgPaint = Paint()
-      ..shader = RadialGradient(
-        center: Alignment.center,
-        radius: 1.2,
-        colors: const [
-          Color(0xFF1E2836),
-          Color(0xFF0F172A),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, bgPaint);
+  /// Renders a complete 3D scene onto [canvas] for interactive viewports,
+  /// high-resolution PNG exports, and PDF technical sheets (`PL-3D`).
+  static void paintScene({
+    required Canvas canvas,
+    required Size size,
+    required List<Face3D> faces,
+    required Point3D sceneCenter,
+    required double yaw,
+    required double pitch,
+    required double zoom,
+    Offset panOffset = Offset.zero,
+    double explodedFactor = 0.0,
+    bool isPerspective = false,
+    SunPreset3D sunPreset = SunPreset3D.studioNoon,
+    bool showLabels = true,
+    double orientationDegrees = 0.0,
+    String? selectedModuleId,
+    bool highlightWallSelection = false,
+    bool isDarkTheme = true,
+    bool drawBackground = true,
+    bool drawCompass = true,
+  }) {
+    final viewport = _Viewport3D(
+      yaw: yaw,
+      pitch: pitch,
+      zoom: zoom,
+      pan: panOffset,
+      explodedFactor: explodedFactor,
+      isPerspective: isPerspective,
+      sunPreset: sunPreset,
+    );
+    final center = Offset(
+      size.width / 2 + panOffset.dx,
+      size.height / 2 + panOffset.dy,
+    );
+
+    // 1. Studio radial gradient background (cached by size and theme brightness)
+    if (drawBackground) {
+      if (_cachedBgShader == null ||
+          _cachedBgSize != size ||
+          _cachedBgDark != isDarkTheme) {
+        _cachedBgSize = size;
+        _cachedBgDark = isDarkTheme;
+        _cachedBgShader = RadialGradient(
+          center: Alignment.center,
+          radius: 1.2,
+          colors: isDarkTheme
+              ? const [Color(0xFF1E2836), Color(0xFF0F172A)]
+              : const [Color(0xFFF1F5F9), Color(0xFFDCE5F0)],
+        ).createShader(Offset.zero & size);
+      }
+      final bgPaint = Paint()..shader = _cachedBgShader;
+      canvas.drawRect(Offset.zero & size, bgPaint);
+    }
 
     final cosYaw = math.cos(yaw);
     final sinYaw = math.sin(yaw);
     final cosPitch = math.cos(pitch);
     final sinPitch = math.sin(pitch);
 
-    (Offset screenPos, double depth) project(Point3D p) => viewport.projectPoint(
+    (Offset screenPos, double depth) project(Point3D p, int floorIdx) =>
+        viewport.projectPoint(
           p,
           sceneCenter,
           center,
@@ -349,59 +465,69 @@ class _AxonometricPainter extends CustomPainter {
           sinYaw,
           cosPitch,
           sinPitch,
+          floorIndex: floorIdx,
         );
 
-    // 3. Project and depth-sort faces (Painter's Algorithm back-to-front)
+    // 2. Project and stratify-sort faces (Floor -> Semantic Layer -> Depth)
     final projectedFaces = <_ProjectedFace>[];
+    final lightDir = sunPreset.lightDirection;
+    final useDefaultSun = sunPreset == SunPreset3D.studioNoon;
 
     for (final face in faces) {
       if (face.vertices.length < 3) continue;
 
       double depthSum = 0;
+      double maxD = double.negativeInfinity;
       final screenPoints = <Offset>[];
 
       for (final v in face.vertices) {
-        final (screenPt, depth) = project(v);
+        final (screenPt, depth) = project(v, face.floorIndex);
         screenPoints.add(screenPt);
         depthSum += depth;
+        if (depth > maxD) maxD = depth;
       }
 
       final avgDepth = depthSum / face.vertices.length;
+      final shadedColor = useDefaultSun
+          ? face.defaultShadedColor
+          : face.computeShadedColor(lightDir);
 
       projectedFaces.add(
         _ProjectedFace(
           points: screenPoints,
           vertices3D: face.vertices,
           depth: avgDepth,
-          color: face.defaultShadedColor,
+          maxDepth: maxD,
+          color: shadedColor,
           isEdgeVisible: face.isEdgeVisible,
           label: face.label,
           moduleId: face.moduleId,
           pattern: face.pattern,
           patternColor: face.patternColor,
           isWallFace: face.isWallFace,
+          layer: face.layer,
+          floorIndex: face.floorIndex,
+          isRoomLabel: face.isRoomLabel,
+          isAxisAlignedQuad: face.isAxisAlignedQuad,
         ),
       );
     }
 
-    projectedFaces.sort((a, b) => a.depth.compareTo(b.depth));
+    projectedFaces.sort((a, b) {
+      final floorCmp = a.floorIndex.compareTo(b.floorIndex);
+      if (floorCmp != 0) return floorCmp;
+      final layerCmp = a.layer.index.compareTo(b.layer.index);
+      if (layerCmp != 0) return layerCmp;
+      final depthCmp = a.depth.compareTo(b.depth);
+      if (depthCmp != 0) return depthCmp;
+      return a.maxDepth.compareTo(b.maxDepth);
+    });
 
-    // 4. Draw projected faces, procedural 3D textures, and selection highlights
-    final fillPaint = Paint()..style = PaintingStyle.fill;
-    final strokePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0
-      ..color = const Color(0xFF101924).withValues(alpha: 0.45);
-    final selectedFloorBorderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.6
-      ..color = const Color(0xFF00E5FF);
-    final selectedWallBorderPaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 2.0
-      ..color = const Color(0xFF38BDF8);
+    // 3. Draw projected faces, multi-layered procedural 3D textures, and selection highlights
+    _strokePaint.color = isDarkTheme
+        ? const Color(0xFF101924).withValues(alpha: 0.45)
+        : const Color(0xFF334155).withValues(alpha: 0.35);
 
-    // Level-of-Detail (LOD): skip sub-pixel texture lines when zoomed far out
     final enableTextures = zoom >= 18.0;
     final lodFactor = zoom < 30.0 ? 1.8 : 1.0;
 
@@ -413,8 +539,8 @@ class _AxonometricPainter extends CustomPainter {
       }
       path.close();
 
-      fillPaint.color = pFace.color;
-      canvas.drawPath(path, fillPaint);
+      _fillPaint.color = pFace.color;
+      canvas.drawPath(path, _fillPaint);
 
       if (enableTextures &&
           pFace.pattern != null &&
@@ -422,73 +548,107 @@ class _AxonometricPainter extends CustomPainter {
         _drawFacePattern3D(canvas, path, pFace, project, lodFactor);
       }
 
+      // Subtle diagonal glass specular reflection on window panels
+      if (pFace.layer == FaceLayer3D.openingPanel &&
+          pFace.points.length == 4 &&
+          pFace.color.a < 0.85) {
+        final p0 = pFace.points[0];
+        final p1 = pFace.points[1];
+        final p2 = pFace.points[2];
+        final p3 = pFace.points[3];
+        final s1 = Offset.lerp(p0, p3, 0.25)!;
+        final e1 = Offset.lerp(p1, p2, 0.65)!;
+        final s2 = Offset.lerp(p0, p3, 0.45)!;
+        final e2 = Offset.lerp(p1, p2, 0.82)!;
+        canvas.drawLine(s1, e1, _glassHighlightPaint);
+        canvas.drawLine(s2, e2, _glassHighlightPaint);
+      }
+
       if (pFace.isEdgeVisible) {
-        canvas.drawPath(path, strokePaint);
+        canvas.drawPath(path, _strokePaint);
       }
 
       if (selectedModuleId != null && pFace.moduleId == selectedModuleId) {
         if (!pFace.isWallFace) {
-          canvas.drawPath(
-            path,
-            Paint()
-              ..style = PaintingStyle.fill
-              ..color = const Color(0xFF00E5FF).withValues(alpha: 0.14),
-          );
-          canvas.drawPath(path, selectedFloorBorderPaint);
+          canvas.drawPath(path, _selectedFloorFillPaint);
+          canvas.drawPath(path, _selectedFloorBorderPaint);
         } else if (highlightWallSelection) {
-          canvas.drawPath(
-            path,
-            Paint()
-              ..style = PaintingStyle.fill
-              ..color = const Color(0xFF38BDF8).withValues(alpha: 0.16),
-          );
-          canvas.drawPath(path, selectedWallBorderPaint);
+          canvas.drawPath(path, _selectedWallFillPaint);
+          canvas.drawPath(path, _selectedWallBorderPaint);
         }
       }
     }
 
-    // 5. Room labels projected in 3D
-    _drawRoomLabels(canvas, projectedFaces);
+    // 4. Room labels projected in 3D (cached TextPainters)
+    if (showLabels) {
+      _drawRoomLabels(
+        canvas,
+        projectedFaces,
+        selectedModuleId: selectedModuleId,
+        isDarkTheme: isDarkTheme,
+      );
+    }
 
-    // 6. North compass in bottom-left corner
-    _drawCompass(canvas, size, yaw);
+    // 5. North compass in bottom-left corner
+    if (drawCompass) {
+      _drawCompass(
+        canvas,
+        size,
+        yaw,
+        orientationDegrees: orientationDegrees,
+        isDarkTheme: isDarkTheme,
+      );
+    }
   }
 
-  void _drawFacePattern3D(
+  static void _drawFacePattern3D(
     Canvas canvas,
     Path clipPath,
     _ProjectedFace pFace,
-    (Offset, double) Function(Point3D) project,
+    (Offset, double) Function(Point3D, int) project,
     double lodFactor,
   ) {
     final verts = pFace.vertices3D;
     if (verts.length < 3) return;
 
-    final accent = (pFace.patternColor ?? Colors.white).withValues(alpha: 0.32);
-    final linePaint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.85
-      ..color = accent;
+    final accent = (pFace.patternColor ?? Colors.white).withValues(alpha: 0.34);
+    _textureLinePaint.color = accent;
 
     // Fast path for 4-vertex wall faces: bilinear 2D edge interpolation without GPU clipPath
     if (pFace.isWallFace) {
       if (verts.length == 4 && pFace.points.length == 4) {
+        // Notice: outward-wound wall side faces have vertices [b_start, b_end, t_end, t_start]
         final b0 = verts[0];
         final t0 = verts[3];
         final wallH = (t0.z - b0.z).abs();
         if (wallH > 0.20) {
-          final baseStep =
-              pFace.pattern == FinishPatternType.exposedBrick ? 0.18 : 0.35;
+          final isBrick = pFace.pattern == FinishPatternType.exposedBrick;
+          final baseStep = isBrick ? 0.18 : 0.35;
           final stepZ = baseStep * lodFactor;
           final pB0 = pFace.points[0];
           final pB1 = pFace.points[1];
           final pT1 = pFace.points[2];
           final pT0 = pFace.points[3];
+          int row = 0;
           for (double dz = stepZ; dz < wallH; dz += stepZ) {
             final t = (dz / wallH).clamp(0.0, 1.0);
             final start = Offset.lerp(pB0, pT0, t)!;
             final end = Offset.lerp(pB1, pT1, t)!;
-            canvas.drawLine(start, end, linePaint);
+            canvas.drawLine(start, end, _textureLinePaint);
+
+            // Staggered vertical brick joints for exposedBrick
+            if (isBrick && lodFactor <= 1.2) {
+              final prevT = ((dz - stepZ) / wallH).clamp(0.0, 1.0);
+              final prevStart = Offset.lerp(pB0, pT0, prevT)!;
+              final prevEnd = Offset.lerp(pB1, pT1, prevT)!;
+              final offsetPhase = (row.isEven ? 0.15 : 0.35);
+              for (double u = offsetPhase; u < 0.92; u += 0.38) {
+                final jBot = Offset.lerp(prevStart, prevEnd, u)!;
+                final jTop = Offset.lerp(start, end, u)!;
+                canvas.drawLine(jBot, jTop, _textureLinePaint);
+              }
+            }
+            row++;
           }
         }
       }
@@ -508,15 +668,17 @@ class _AxonometricPainter extends CustomPainter {
     final spanY = maxY - minY;
     if (spanX <= 0.05 || spanY <= 0.05) return;
 
-    // Check if floor polygon is an axis-aligned rectangle (4 vertices) to avoid clipPath stencil cost
-    final isAxisAlignedQuad = verts.length == 4 &&
+    // Only skip clipPath when the polygon is a verified axis-aligned rectangle
+    final canSkipClip = pFace.isAxisAlignedQuad &&
         pFace.pattern != FinishPatternType.marbleVeins &&
         pFace.pattern != FinishPatternType.naturalGrass;
 
-    if (!isAxisAlignedQuad) {
+    if (!canSkipClip) {
       canvas.save();
       canvas.clipPath(clipPath);
     }
+
+    final fIdx = pFace.floorIndex;
 
     switch (pFace.pattern!) {
       case FinishPatternType.woodPlanks:
@@ -524,10 +686,22 @@ class _AxonometricPainter extends CustomPainter {
         final baseStep =
             pFace.pattern == FinishPatternType.outdoorDeck ? 0.22 : 0.28;
         final step = baseStep * lodFactor;
+        int plankRow = 0;
         for (double y = minY + step; y < maxY; y += step) {
-          final (p1, _) = project(Point3D(minX, y, z));
-          final (p2, _) = project(Point3D(maxX, y, z));
-          canvas.drawLine(p1, p2, linePaint);
+          final (p1, _) = project(Point3D(minX, y, z), fIdx);
+          final (p2, _) = project(Point3D(maxX, y, z), fIdx);
+          canvas.drawLine(p1, p2, _textureLinePaint);
+
+          // Staggered plank butt-joints
+          if (lodFactor <= 1.2 && spanX > 1.20) {
+            final prevY = y - step;
+            final jointX = minX +
+                ((plankRow.isEven ? 0.32 : 0.68) * spanX).clamp(0.25, spanX - 0.25);
+            final (j1, _) = project(Point3D(jointX, prevY, z), fIdx);
+            final (j2, _) = project(Point3D(jointX, y, z), fIdx);
+            canvas.drawLine(j1, j2, _textureLinePaint);
+          }
+          plankRow++;
         }
         break;
       case FinishPatternType.porcelainGrid:
@@ -536,31 +710,39 @@ class _AxonometricPainter extends CustomPainter {
             pFace.pattern == FinishPatternType.hydraulicTile ? 0.40 : 0.65;
         final step = baseStep * lodFactor;
         for (double x = minX + step; x < maxX; x += step) {
-          final (p1, _) = project(Point3D(x, minY, z));
-          final (p2, _) = project(Point3D(x, maxY, z));
-          canvas.drawLine(p1, p2, linePaint);
+          final (p1, _) = project(Point3D(x, minY, z), fIdx);
+          final (p2, _) = project(Point3D(x, maxY, z), fIdx);
+          canvas.drawLine(p1, p2, _textureLinePaint);
         }
         for (double y = minY + step; y < maxY; y += step) {
-          final (p1, _) = project(Point3D(minX, y, z));
-          final (p2, _) = project(Point3D(maxX, y, z));
-          canvas.drawLine(p1, p2, linePaint);
+          final (p1, _) = project(Point3D(minX, y, z), fIdx);
+          final (p2, _) = project(Point3D(maxX, y, z), fIdx);
+          canvas.drawLine(p1, p2, _textureLinePaint);
         }
         break;
       case FinishPatternType.marbleVeins:
         final step = 0.85 * lodFactor;
         for (double d = minX - spanY; d < maxX; d += step) {
-          final (p1, _) = project(Point3D(d, minY, z));
-          final (p2, _) = project(Point3D(d + spanY * 0.65, maxY, z));
-          canvas.drawLine(p1, p2, linePaint);
+          final (p1, _) = project(Point3D(d, minY, z), fIdx);
+          final (p2, _) = project(Point3D(d + spanY * 0.65, maxY, z), fIdx);
+          canvas.drawLine(p1, p2, _textureLinePaint);
+          if (lodFactor <= 1.2) {
+            final (s1, _) = project(Point3D(d + 0.22, minY, z), fIdx);
+            final (s2, _) =
+                project(Point3D(d + spanY * 0.48, maxY * 0.85 + minY * 0.15, z), fIdx);
+            canvas.drawLine(s1, s2, _textureLinePaint);
+          }
         }
         break;
       case FinishPatternType.naturalGrass:
         final step = 0.75 * lodFactor;
         for (double x = minX + 0.35; x < maxX; x += step) {
           for (double y = minY + 0.35; y < maxY; y += step) {
-            final (pt, _) = project(Point3D(x, y, z));
-            canvas.drawLine(pt, Offset(pt.dx - 2, pt.dy - 4), linePaint);
-            canvas.drawLine(pt, Offset(pt.dx + 2, pt.dy - 3), linePaint);
+            final (pt, _) = project(Point3D(x, y, z), fIdx);
+            canvas.drawLine(
+                pt, Offset(pt.dx - 2, pt.dy - 4), _textureLinePaint);
+            canvas.drawLine(
+                pt, Offset(pt.dx + 2, pt.dy - 3), _textureLinePaint);
           }
         }
         break;
@@ -571,27 +753,53 @@ class _AxonometricPainter extends CustomPainter {
         break;
     }
 
-    if (!isAxisAlignedQuad) {
+    if (!canSkipClip) {
       canvas.restore();
     }
   }
 
-  static String _toShortCode(String name) => Module.compactRoomCode(name);
+  static TextPainter _resolveLabelPainter(
+    String shortCode,
+    bool isSelected,
+    bool isDarkTheme,
+  ) {
+    final key = '$shortCode|$isSelected|$isDarkTheme';
+    final cached = _labelPainterCache[key];
+    if (cached != null) return cached;
 
-  void _drawRoomLabels(Canvas canvas, List<_ProjectedFace> projectedFaces) {
-    if (!showLabels) return;
+    if (_labelPainterCache.length > 256) {
+      _labelPainterCache.clear();
+    }
 
+    final textColor = isSelected
+        ? const Color(0xFF0F172A)
+        : (isDarkTheme ? Colors.white : const Color(0xFF0F172A));
+    final tp = TextPainter(
+      text: TextSpan(
+        text: shortCode,
+        style: TextStyle(
+          color: textColor,
+          fontSize: 8.5,
+          fontWeight: FontWeight.bold,
+          letterSpacing: 0.3,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    _labelPainterCache[key] = tp;
+    return tp;
+  }
+
+  static void _drawRoomLabels(
+    Canvas canvas,
+    List<_ProjectedFace> projectedFaces, {
+    required String? selectedModuleId,
+    required bool isDarkTheme,
+  }) {
     for (final pFace in projectedFaces) {
       final label = pFace.label;
-      if (label == null ||
-          label.isEmpty ||
-          label == 'Terreno' ||
-          label == 'Muro' ||
-          label == 'Muro Exterior' ||
-          label == 'Tabique' ||
-          label.contains('Losa')) {
-        continue;
-      }
+      if (label == null || label.isEmpty) continue;
+      if (!pFace.isRoomLabel) continue;
       if (pFace.points.isEmpty) continue;
 
       double sumX = 0, sumY = 0;
@@ -602,21 +810,11 @@ class _AxonometricPainter extends CustomPainter {
       final cx = sumX / pFace.points.length;
       final cy = sumY / pFace.points.length;
 
-      final isSelected = selectedModuleId != null && pFace.moduleId == selectedModuleId;
-      final shortCode = _toShortCode(label);
-      final textSpan = TextSpan(
-        text: shortCode,
-        style: TextStyle(
-          color: isSelected ? const Color(0xFF0F172A) : Colors.white,
-          fontSize: 8.5,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.3,
-        ),
-      );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
+      final isSelected =
+          selectedModuleId != null && pFace.moduleId == selectedModuleId;
+      final shortCode = Module.compactRoomCode(label);
+      final textPainter =
+          _resolveLabelPainter(shortCode, isSelected, isDarkTheme);
 
       const paddingH = 4.0;
       const paddingV = 2.0;
@@ -628,12 +826,20 @@ class _AxonometricPainter extends CustomPainter {
       );
 
       final bgPaint = Paint()
-        ..color = isSelected ? const Color(0xFF00E5FF) : const Color(0xDD0F172A)
+        ..color = isSelected
+            ? const Color(0xFF00E5FF)
+            : (isDarkTheme
+                ? const Color(0xDD0F172A)
+                : const Color(0xEEFFFFFF))
         ..style = PaintingStyle.fill;
       canvas.drawRRect(badgeRect, bgPaint);
 
       final borderPaint = Paint()
-        ..color = const Color(0xFF00E5FF).withValues(alpha: isSelected ? 1.0 : 0.50)
+        ..color = isSelected
+            ? const Color(0xFF00E5FF)
+            : (isDarkTheme
+                ? const Color(0xFF00E5FF).withValues(alpha: 0.50)
+                : const Color(0xFF0284C7).withValues(alpha: 0.65))
         ..style = PaintingStyle.stroke
         ..strokeWidth = isSelected ? 1.5 : 1.0;
       canvas.drawRRect(badgeRect, borderPaint);
@@ -645,17 +851,27 @@ class _AxonometricPainter extends CustomPainter {
     }
   }
 
-  void _drawCompass(Canvas canvas, Size size, double yaw) {
+  static void _drawCompass(
+    Canvas canvas,
+    Size size,
+    double yaw, {
+    required double orientationDegrees,
+    required bool isDarkTheme,
+  }) {
     final compassCenter = Offset(50, size.height - 50);
     const radius = 24.0;
 
     final bgPaint = Paint()
-      ..color = const Color(0xFF0F172A).withValues(alpha: 0.85)
+      ..color = isDarkTheme
+          ? const Color(0xFF0F172A).withValues(alpha: 0.85)
+          : Colors.white.withValues(alpha: 0.90)
       ..style = PaintingStyle.fill;
     canvas.drawCircle(compassCenter, radius, bgPaint);
 
     final borderPaint = Paint()
-      ..color = const Color(0xFF00E5FF).withValues(alpha: 0.4)
+      ..color = isDarkTheme
+          ? const Color(0xFF00E5FF).withValues(alpha: 0.4)
+          : const Color(0xFF0284C7).withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     canvas.drawCircle(compassCenter, radius, borderPaint);
@@ -671,18 +887,53 @@ class _AxonometricPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(compassCenter, Offset(nx, ny), northPaint);
 
-    final tp = TextPainter(
-      text: const TextSpan(
-        text: 'N',
-        style: TextStyle(
-          color: Color(0xFFEF5350),
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
+    final tp = _resolveLabelPainter('N', false, true);
     tp.paint(canvas, Offset(nx - 4, ny - 14));
+  }
+}
+
+class _AxonometricPainter extends CustomPainter {
+  final List<Face3D> faces;
+  final Point3D sceneCenter;
+  final ValueNotifier<_Viewport3D> viewportListenable;
+  final bool showLabels;
+  final double orientationDegrees;
+  final String? selectedModuleId;
+  final bool highlightWallSelection;
+  final bool isDarkTheme;
+
+  _AxonometricPainter({
+    required this.faces,
+    required this.sceneCenter,
+    required this.viewportListenable,
+    required this.showLabels,
+    required this.orientationDegrees,
+    this.selectedModuleId,
+    this.highlightWallSelection = false,
+    this.isDarkTheme = true,
+  }) : super(repaint: viewportListenable);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final viewport = viewportListenable.value;
+    AxonometricSceneRenderer.paintScene(
+      canvas: canvas,
+      size: size,
+      faces: faces,
+      sceneCenter: sceneCenter,
+      yaw: viewport.yaw,
+      pitch: viewport.pitch,
+      zoom: viewport.zoom,
+      panOffset: viewport.pan,
+      explodedFactor: viewport.explodedFactor,
+      isPerspective: viewport.isPerspective,
+      sunPreset: viewport.sunPreset,
+      showLabels: showLabels,
+      orientationDegrees: orientationDegrees,
+      selectedModuleId: selectedModuleId,
+      highlightWallSelection: highlightWallSelection,
+      isDarkTheme: isDarkTheme,
+    );
   }
 
   @override
@@ -692,6 +943,7 @@ class _AxonometricPainter extends CustomPainter {
         oldDelegate.orientationDegrees != orientationDegrees ||
         oldDelegate.selectedModuleId != selectedModuleId ||
         oldDelegate.highlightWallSelection != highlightWallSelection ||
+        oldDelegate.isDarkTheme != isDarkTheme ||
         oldDelegate.viewportListenable != viewportListenable;
   }
 }
@@ -700,6 +952,7 @@ class _ProjectedFace {
   final List<Offset> points;
   final List<Point3D> vertices3D;
   final double depth;
+  final double maxDepth;
   final Color color;
   final bool isEdgeVisible;
   final String? label;
@@ -707,11 +960,16 @@ class _ProjectedFace {
   final FinishPatternType? pattern;
   final Color? patternColor;
   final bool isWallFace;
+  final FaceLayer3D layer;
+  final int floorIndex;
+  final bool isRoomLabel;
+  final bool isAxisAlignedQuad;
 
   _ProjectedFace({
     required this.points,
     required this.vertices3D,
     required this.depth,
+    required this.maxDepth,
     required this.color,
     required this.isEdgeVisible,
     this.label,
@@ -719,5 +977,9 @@ class _ProjectedFace {
     this.pattern,
     this.patternColor,
     this.isWallFace = false,
+    this.layer = FaceLayer3D.structureAndFurniture,
+    this.floorIndex = 0,
+    this.isRoomLabel = false,
+    this.isAxisAlignedQuad = false,
   });
 }

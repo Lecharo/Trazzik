@@ -46,6 +46,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   bool _zoomInitialized = false;
   bool _showLabels = true; // Rótulos activados por defecto
   double _wallHeight = 1.20; // 1.20m Maqueta axonométrica (o 2.60m volumen completo)
+  bool _isPerspective = false;
+  SunPreset3D _sunPreset = SunPreset3D.studioNoon;
   BoxConstraints? _lastConstraints;
   String? _selectedModuleId;
   String? _selectedModuleFloorId;
@@ -63,13 +65,13 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     _clientShareToken = widget.initialShareToken;
   }
 
-  // Caché de escena 3D para evitar regenerar mallas al cambiar cámara o etiquetas
+  // Caché de escena 3D para evitar regenerar mallas al cambiar cámara, etiquetas o despiece vertical
   List<Face3D>? _cachedFaces;
   List<Floor>? _cachedFloors;
   Lot? _cachedLot;
-  double? _cachedExplodedFactor;
   String? _cachedSelectedFloorId;
   double? _cachedWallHeight;
+  SunPreset3D? _cachedSunPreset;
 
   List<Face3D> _resolveSceneFaces({
     required List<Floor> floors,
@@ -79,9 +81,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         _cachedFloors != null &&
         listEquals(_cachedFloors, floors) &&
         identical(_cachedLot, lot) &&
-        _cachedExplodedFactor == _explodedFactor &&
         _cachedSelectedFloorId == _selectedFloorId &&
-        _cachedWallHeight == _wallHeight;
+        _cachedWallHeight == _wallHeight &&
+        _cachedSunPreset == _sunPreset;
     if (canReuse) {
       return _cachedFaces!;
     }
@@ -89,17 +91,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     final built = Building3DBuilder.buildScene(
       floors: floors,
       lot: lot,
-      explodedFactor: _explodedFactor,
+      explodedFactor: 0.0,
       soloFloorId: _selectedFloorId,
       showLotGround: true,
       wallHeight: _wallHeight,
+      sunPreset: _sunPreset,
     );
     _cachedFaces = built;
     _cachedFloors = List<Floor>.unmodifiable(floors);
     _cachedLot = lot;
-    _cachedExplodedFactor = _explodedFactor;
     _cachedSelectedFloorId = _selectedFloorId;
     _cachedWallHeight = _wallHeight;
+    _cachedSunPreset = _sunPreset;
     return built;
   }
 
@@ -239,18 +242,23 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       const Icon(Icons.view_in_ar, color: Color(0xFF00E5FF), size: 20),
                       const SizedBox(width: 8),
-                      Text(
-                        lang == 'es' ? 'Maqueta Axonométrica 3D' : '3D Axonometric Model',
-                        style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                      Flexible(
+                        child: Text(
+                          lang == 'es' ? 'Maqueta Axonométrica 3D' : '3D Axonometric Model',
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ],
                   ),
                   Text(
                     '$projectName  •  ${floors.length} niveles apilados',
                     style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -455,17 +463,45 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               tooltip: lang == 'es' ? 'Restablecer Cámara' : 'Reset Camera',
               onPressed: _resetCamera,
             ),
-            IconButton(
-              icon: Icon(
-                _showLabels ? Icons.label : Icons.label_off_outlined,
-                size: 20,
-                color: _showLabels ? const Color(0xFF00E5FF) : Colors.white60,
+              IconButton(
+                icon: Icon(
+                  _isPerspective ? Icons.vrpano : Icons.grid_4x4,
+                  size: 20,
+                  color: _isPerspective ? const Color(0xFF00E5FF) : Colors.white70,
+                ),
+                tooltip: lang == 'es'
+                    ? (_isPerspective ? 'Cámara Perspectiva (Activa)' : 'Alternar Perspectiva / Axonométrica')
+                    : (_isPerspective ? 'Perspective Camera (Active)' : 'Toggle Perspective / Axonometric'),
+                onPressed: () => setState(() => _isPerspective = !_isPerspective),
               ),
-              tooltip: lang == 'es'
-                  ? (_showLabels ? 'Ocultar rótulos' : 'Mostrar rótulos cortos')
-                  : (_showLabels ? 'Hide labels' : 'Show short labels'),
-              onPressed: () => setState(() => _showLabels = !_showLabels),
-            ),
+              IconButton(
+                icon: Icon(
+                  Icons.wb_sunny_outlined,
+                  size: 20,
+                  color: _sunPreset == SunPreset3D.goldenHourWest
+                      ? Colors.amber
+                      : const Color(0xFF38BDF8),
+                ),
+                tooltip: lang == 'es'
+                    ? 'Luz Solar (${_sunPreset.name})'
+                    : 'Sun Lighting (${_sunPreset.name})',
+                onPressed: () => setState(() {
+                  final nextIdx =
+                      (_sunPreset.index + 1) % SunPreset3D.values.length;
+                  _sunPreset = SunPreset3D.values[nextIdx];
+                }),
+              ),
+              IconButton(
+                icon: Icon(
+                  _showLabels ? Icons.label : Icons.label_off_outlined,
+                  size: 20,
+                  color: _showLabels ? const Color(0xFF00E5FF) : Colors.white60,
+                ),
+                tooltip: lang == 'es'
+                    ? (_showLabels ? 'Ocultar rótulos' : 'Mostrar rótulos cortos')
+                    : (_showLabels ? 'Hide labels' : 'Show short labels'),
+                onPressed: () => setState(() => _showLabels = !_showLabels),
+              ),
             if (!widget.isStandaloneClientSession)
               IconButton(
                 icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
@@ -508,6 +544,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   pitch: _pitch,
                   zoom: _zoom,
                   panOffset: _panOffset,
+                  explodedFactor: _explodedFactor,
+                  isPerspective: _isPerspective,
+                  sunPreset: _sunPreset,
                   cameraRevision: _cameraRevision,
                   orientationDegrees: lot.orientationDegrees,
                   showLabels: _showLabels,

@@ -13,6 +13,7 @@ import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
+import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
@@ -383,6 +384,70 @@ void main() {
         SharedProjectOpener.extractToken('  tz_demo_token_998877  '),
         equals('tz_demo_token_998877'),
       );
+    });
+
+    test('Building3DBuilder genera normales exteriores hacia +Z en tapas de muros y ordena mobiliario sobre el piso', () {
+      final floorWithBed = floor1.copyWith(
+        modules: [
+          floor1.modules.first.copyWith(
+            subModules: [
+              SubModule(
+                id: 'bed-1',
+                moduleId: 'm1',
+                name: 'Cama Queen',
+                type: 'BED',
+                geometry: Polygon2D.fromRect(2.0, 1.2, 1.6, 2.0),
+                status: ElementStatus.isNew,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final faces = Building3DBuilder.buildScene(
+        floors: [floorWithBed],
+        lot: lot,
+        wallHeight: 2.60,
+      );
+
+      final wallTopCap = faces.firstWhere(
+        (f) => f.isWallFace && f.vertices.every((v) => (v.z - 2.60).abs() < 1e-3),
+      );
+      expect(wallTopCap.normal.z, closeTo(1.0, 1e-4));
+
+      final roomFloorFace = faces.firstWhere((f) => f.moduleId == 'm1' && !f.isWallFace);
+      final bedFaces = faces.where(
+        (f) => !f.isWallFace && f.layer == FaceLayer3D.structureAndFurniture,
+      );
+      expect(roomFloorFace.layer, equals(FaceLayer3D.floorFinish));
+      expect(bedFaces, isNotEmpty);
+      for (final bf in bedFaces) {
+        expect(bf.layer.index, greaterThan(roomFloorFace.layer.index));
+      }
+    });
+
+    test('Face3D.isAxisAlignedQuad distingue rectángulos ortogonales de trapecios rotados', () {
+      final orthoFace = Face3D(
+        vertices: const [
+          Point3D(0, 0, 0),
+          Point3D(4, 0, 0),
+          Point3D(4, 3, 0),
+          Point3D(0, 3, 0),
+        ],
+        baseColor: Colors.white,
+      );
+      final rotatedFace = Face3D(
+        vertices: const [
+          Point3D(0, 0, 0),
+          Point3D(4, 0.8, 0),
+          Point3D(3.2, 3.8, 0),
+          Point3D(-0.8, 3.0, 0),
+        ],
+        baseColor: Colors.white,
+      );
+
+      expect(orthoFace.isAxisAlignedQuad, isTrue);
+      expect(rotatedFace.isAxisAlignedQuad, isFalse);
     });
   });
 }
