@@ -8,6 +8,9 @@ import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
+import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
+import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
 import 'package:trazzik/features/walls/domain/wall_generation_engine.dart';
 
@@ -79,6 +82,12 @@ class TechnicalPlanPainter extends CustomPainter {
       return;
     }
 
+    // Si es Maqueta Axonométrica 3D (PL-3D), renderizar doble vista 3D de alta resolución
+    if (options.discipline == PlanDiscipline.axonometric3d) {
+      _paintAxonometric3dSplit(canvas, size, rangeX, rangeY);
+      return;
+    }
+
     // Margen perimetral en la lámina (px)
     final paddingPx = 36.0;
     final availWidth = size.width - 2 * paddingPx;
@@ -139,6 +148,161 @@ class TechnicalPlanPainter extends CustomPainter {
 
     // 8. Dibujar Rosa de los Vientos (North Arrow) y Barra de Escala Gráfica
     _drawNorthArrowAndScaleBar(canvas, size, scale);
+  }
+
+  /// Renderiza la lámina 3D dual: Maqueta de Corte Interior (1.20m) vs Volumetría Completa en Perspectiva Solar (2.60m).
+  void _paintAxonometric3dSplit(
+    Canvas canvas,
+    Size size,
+    double rangeX,
+    double rangeY,
+  ) {
+    final effectiveLot = lot ??
+        Lot(
+          id: 'fallback-lot',
+          projectId: 'p',
+          boundary: floor.boundary,
+        );
+    final halfW = size.width / 2;
+    const topBannerH = 38.0;
+    const pad = 16.0;
+    final viewW = halfW - 2 * pad;
+    final viewH = size.height - topBannerH - 2 * pad;
+    if (viewW <= 50 || viewH <= 50) return;
+
+    final fitZoom = math
+        .min(viewW / math.max(10.0, rangeX * 1.15),
+            viewH / math.max(10.0, rangeY * 1.05))
+        .clamp(18.0, 95.0);
+
+    // Línea divisoria central
+    final dividerPaint = Paint()
+      ..color = const Color(0xFFB0BEC5)
+      ..strokeWidth = 1.2;
+    canvas.drawLine(
+      Offset(halfW, 12),
+      Offset(halfW, size.height - 12),
+      dividerPaint,
+    );
+
+    Point3D computeCenter(List<Face3D> faces) {
+      double sx = 0, sy = 0, sz = 0;
+      int n = 0;
+      for (final f in faces) {
+        for (final v in f.vertices) {
+          sx += v.x;
+          sy += v.y;
+          sz += v.z;
+          n++;
+        }
+      }
+      return n > 0
+          ? Point3D(sx / n, sy / n, sz / n)
+          : const Point3D(5.0, 7.5, 1.5);
+    }
+
+    void renderViewport({
+      required double panelLeft,
+      required String title,
+      required Color badgeColor,
+      required double wallHeight,
+      required double yaw,
+      required double pitch,
+      required bool isPerspective,
+      required SunPreset3D sunPreset,
+      required bool showLabels,
+    }) {
+      final headerRect = Rect.fromLTWH(panelLeft + pad, 10, viewW, 24);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(headerRect, const Radius.circular(4)),
+        Paint()..color = badgeColor.withValues(alpha: 0.12),
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: title,
+          style: TextStyle(
+            color: badgeColor,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(
+          headerRect.center.dx - tp.width / 2,
+          headerRect.center.dy - tp.height / 2,
+        ),
+      );
+
+      final viewportRect =
+          Rect.fromLTWH(panelLeft + pad, topBannerH, viewW, viewH);
+      final faces = Building3DBuilder.buildScene(
+        floors: [floor],
+        lot: effectiveLot,
+        wallHeight: wallHeight,
+        includeShadows: true,
+        sunPreset: sunPreset,
+      );
+      final center3D = computeCenter(faces);
+
+      canvas.save();
+      canvas.clipRRect(
+        RRect.fromRectAndRadius(viewportRect, const Radius.circular(6)),
+      );
+      canvas.translate(viewportRect.left, viewportRect.top);
+      AxonometricSceneRenderer.paintScene(
+        canvas: canvas,
+        size: Size(viewW, viewH),
+        faces: faces,
+        sceneCenter: center3D,
+        yaw: yaw,
+        pitch: pitch,
+        zoom: fitZoom,
+        isPerspective: isPerspective,
+        sunPreset: sunPreset,
+        showLabels: showLabels,
+        orientationDegrees: effectiveLot.orientationDegrees,
+        isDarkTheme: false,
+        drawBackground: true,
+        drawCompass: true,
+      );
+      canvas.restore();
+
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(viewportRect, const Radius.circular(6)),
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0
+          ..color = const Color(0xFFCFD8DC),
+      );
+    }
+
+    renderViewport(
+      panelLeft: 0,
+      title: '1. MAQUETA AXONOMÉTRICA DE CORTE INTERIOR (H = 1.20 m)',
+      badgeColor: const Color(0xFF0284C7),
+      wallHeight: 1.20,
+      yaw: -0.35,
+      pitch: 0.70,
+      isPerspective: false,
+      sunPreset: SunPreset3D.studioNoon,
+      showLabels: true,
+    );
+
+    renderViewport(
+      panelLeft: halfW,
+      title: '2. VOLUMETRÍA COMPLETA Y ASOLEAMIENTO EN PERSPECTIVA (H = 2.60 m)',
+      badgeColor: const Color(0xFF0F766E),
+      wallHeight: 2.60,
+      yaw: 0.42,
+      pitch: 0.72,
+      isPerspective: true,
+      sunPreset: SunPreset3D.goldenHourWest,
+      showLabels: false,
+    );
   }
 
   /// Renderiza la lámina comparativa lado a lado: Levantamiento (Izquierda) vs Propuesta (Derecha).

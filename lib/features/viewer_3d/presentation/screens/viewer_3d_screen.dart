@@ -15,6 +15,7 @@ import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/client_share_link_dialog.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/render_3d_studio_dialog.dart';
 
 /// Pantalla completa de Maqueta Axonométrica 3D del Proyecto
 class Viewer3dScreen extends ConsumerStatefulWidget {
@@ -318,6 +319,15 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               onSelected: (val) {
                 if (val == 'reset') {
                   _resetCamera();
+                } else if (val == 'render_studio') {
+                  Render3dStudioDialog.show(
+                    context,
+                    activeFloor: floor,
+                    allFloors: floors,
+                    lot: lot,
+                    project: ref.read(floorEditorProvider).project,
+                    currentFaces: faces,
+                  );
                 } else {
                   _setPresetView(val);
                 }
@@ -374,6 +384,16 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                     ],
                   ),
                 ),
+                PopupMenuItem(
+                  value: 'render_studio',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.camera_enhance_outlined, size: 18, color: Color(0xFF00E5FF)),
+                      const SizedBox(width: 8),
+                      Text(lang == 'es' ? 'Render Studio / Exportar glTF' : 'Render Studio / Export glTF'),
+                    ],
+                  ),
+                ),
               ],
             ),
             IconButton(
@@ -424,26 +444,31 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           ] else ...[
             // Vistas rápidas (Presets de cámara)
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.layers, size: 20, color: Colors.white70),
               tooltip: lang == 'es' ? 'Vista Superior (Plano 2D)' : 'Top-Down (2D Plan)',
               onPressed: () => _setPresetView('top'),
             ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.door_front_door, size: 20, color: Colors.white70),
               tooltip: lang == 'es' ? 'Fachada Principal (Acceso)' : 'Front Facade',
               onPressed: () => _setPresetView('front'),
             ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.deck, size: 20, color: Colors.white70),
               tooltip: lang == 'es' ? 'Fachada Posterior (Fondo)' : 'Rear Facade',
               onPressed: () => _setPresetView('rear'),
             ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.view_in_ar, size: 20, color: Color(0xFF00E5FF)),
               tooltip: lang == 'es' ? 'Maqueta 3D (Isométrica)' : '3D Axonometric',
               onPressed: () => _setPresetView('iso'),
             ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: Icon(
                 _wallHeight <= 1.50 ? Icons.view_compact_alt : Icons.apartment,
                 size: 20,
@@ -459,49 +484,68 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               onPressed: () => setState(() => _wallHeight = _wallHeight <= 1.50 ? 2.60 : 1.20),
             ),
             IconButton(
+              visualDensity: VisualDensity.compact,
               icon: const Icon(Icons.restart_alt, size: 20, color: Colors.amber),
               tooltip: lang == 'es' ? 'Restablecer Cámara' : 'Reset Camera',
               onPressed: _resetCamera,
             ),
-              IconButton(
-                icon: Icon(
-                  _isPerspective ? Icons.vrpano : Icons.grid_4x4,
-                  size: 20,
-                  color: _isPerspective ? const Color(0xFF00E5FF) : Colors.white70,
-                ),
-                tooltip: lang == 'es'
-                    ? (_isPerspective ? 'Cámara Perspectiva (Activa)' : 'Alternar Perspectiva / Axonométrica')
-                    : (_isPerspective ? 'Perspective Camera (Active)' : 'Toggle Perspective / Axonometric'),
-                onPressed: () => setState(() => _isPerspective = !_isPerspective),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                _isPerspective ? Icons.vrpano : Icons.grid_4x4,
+                size: 20,
+                color: _isPerspective ? const Color(0xFF00E5FF) : Colors.white70,
               ),
-              IconButton(
-                icon: Icon(
-                  Icons.wb_sunny_outlined,
-                  size: 20,
-                  color: _sunPreset == SunPreset3D.goldenHourWest
-                      ? Colors.amber
-                      : const Color(0xFF38BDF8),
-                ),
-                tooltip: lang == 'es'
-                    ? 'Luz Solar (${_sunPreset.name})'
-                    : 'Sun Lighting (${_sunPreset.name})',
-                onPressed: () => setState(() {
-                  final nextIdx =
-                      (_sunPreset.index + 1) % SunPreset3D.values.length;
-                  _sunPreset = SunPreset3D.values[nextIdx];
-                }),
+              tooltip: lang == 'es'
+                  ? (_isPerspective ? 'Cámara Perspectiva (Activa)' : 'Alternar Perspectiva / Axonométrica')
+                  : (_isPerspective ? 'Perspective Camera (Active)' : 'Toggle Perspective / Axonometric'),
+              onPressed: () => setState(() => _isPerspective = !_isPerspective),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                Icons.wb_sunny_outlined,
+                size: 20,
+                color: _sunPreset == SunPreset3D.goldenHourWest
+                    ? Colors.amber
+                    : const Color(0xFF38BDF8),
               ),
-              IconButton(
-                icon: Icon(
-                  _showLabels ? Icons.label : Icons.label_off_outlined,
-                  size: 20,
-                  color: _showLabels ? const Color(0xFF00E5FF) : Colors.white60,
-                ),
-                tooltip: lang == 'es'
-                    ? (_showLabels ? 'Ocultar rótulos' : 'Mostrar rótulos cortos')
-                    : (_showLabels ? 'Hide labels' : 'Show short labels'),
-                onPressed: () => setState(() => _showLabels = !_showLabels),
+              tooltip: lang == 'es'
+                  ? 'Luz Solar (${_sunPreset.name})'
+                  : 'Sun Lighting (${_sunPreset.name})',
+              onPressed: () => setState(() {
+                final nextIdx =
+                    (_sunPreset.index + 1) % SunPreset3D.values.length;
+                _sunPreset = SunPreset3D.values[nextIdx];
+              }),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: Icon(
+                _showLabels ? Icons.label : Icons.label_off_outlined,
+                size: 20,
+                color: _showLabels ? const Color(0xFF00E5FF) : Colors.white60,
               ),
+              tooltip: lang == 'es'
+                  ? (_showLabels ? 'Ocultar rótulos' : 'Mostrar rótulos cortos')
+                  : (_showLabels ? 'Hide labels' : 'Show short labels'),
+              onPressed: () => setState(() => _showLabels = !_showLabels),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              icon: const Icon(Icons.camera_enhance_outlined, size: 20, color: Color(0xFF38BDF8)),
+              tooltip: lang == 'es'
+                  ? 'Render Studio 3D / Exportar glTF y Lámina PL-3D'
+                  : '3D Render Studio / Export glTF & PL-3D Sheet',
+              onPressed: () => Render3dStudioDialog.show(
+                context,
+                activeFloor: floor,
+                allFloors: floors,
+                lot: lot,
+                project: ref.read(floorEditorProvider).project,
+                currentFaces: faces,
+              ),
+            ),
             if (!widget.isStandaloneClientSession)
               IconButton(
                 icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),

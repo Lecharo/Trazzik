@@ -20,6 +20,7 @@ class TechnicalPlanPdfService {
   static const List<PlanDiscipline> _executivePackageOrder = [
     PlanDiscipline.comparativeBeforeAfter,
     PlanDiscipline.architectural,
+    PlanDiscipline.axonometric3d,
     PlanDiscipline.demolitionMasonry,
     PlanDiscipline.electricalLighting,
     PlanDiscipline.plumbingHydro,

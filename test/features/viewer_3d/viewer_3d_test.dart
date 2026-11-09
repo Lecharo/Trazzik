@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,6 +15,7 @@ import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
+import 'package:trazzik/features/viewer_3d/domain/gltf_exporter_service.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
@@ -448,6 +450,27 @@ void main() {
 
       expect(orthoFace.isAxisAlignedQuad, isTrue);
       expect(rotatedFace.isAxisAlignedQuad, isFalse);
+    });
+
+    test('GltfExporterService exporta malla glTF 2.0 válida con buffer embebido y atributos PBR', () {
+      final faces = Building3DBuilder.buildScene(
+        floors: allFloors,
+        lot: lot,
+        wallHeight: 2.60,
+      );
+      final gltfString = GltfExporterService.exportToGltfJson(
+        faces: faces,
+        projectName: 'Casa Valentina 3D',
+      );
+      final decoded = jsonDecode(gltfString) as Map<String, dynamic>;
+      expect((decoded['asset'] as Map<String, dynamic>)['version'], equals('2.0'));
+      final buffers = decoded['buffers'] as List<dynamic>;
+      expect(buffers, hasLength(1));
+      final uri = (buffers.first as Map<String, dynamic>)['uri'] as String;
+      expect(uri, startsWith('data:application/octet-stream;base64,'));
+      final accessors = decoded['accessors'] as List<dynamic>;
+      expect(accessors, hasLength(4)); // POSITION, NORMAL, COLOR_0, INDICES
+      expect((accessors[0] as Map<String, dynamic>)['count'], greaterThan(20));
     });
   });
 }
