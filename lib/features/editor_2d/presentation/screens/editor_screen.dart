@@ -5,6 +5,7 @@ import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/editor_2d/presentation/widgets/cinematic_tour_overlay.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/editor_canvas_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/furniture_catalog_dialog.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/project_area_schedule_dialog.dart';
@@ -29,6 +30,7 @@ class EditorScreen extends ConsumerStatefulWidget {
 
 class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _isSaving = false;
+  bool _isTourActive = false;
   String? _lastFittedLotId;
 
   void _showFloorSettingsDialog(
@@ -679,6 +681,32 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ),
       ),
       PopupMenuItem(
+        value: 'cinematic_tour',
+        child: Row(
+          children: [
+            const Icon(Icons.movie_filter_rounded, size: 18, color: Color(0xFF00E5FF)),
+            const SizedBox(width: 8),
+            Text(lang == 'es' ? 'Recorrido Virtual (Tour Video)' : 'Cinematic Virtual Tour'),
+          ],
+        ),
+      ),
+      PopupMenuItem(
+        value: 'toggle_render_mode',
+        child: Row(
+          children: [
+            Icon(
+              state.isRenderedMode ? Icons.palette : Icons.palette_outlined,
+              size: 18,
+              color: state.isRenderedMode ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+            ),
+            const SizedBox(width: 8),
+            Text(state.isRenderedMode
+                ? (lang == 'es' ? 'Plano Técnico (Sin Render)' : 'Technical Mode')
+                : (lang == 'es' ? 'Plano Renderizado (Texturas/Sombras)' : 'Rendered Mode')),
+          ],
+        ),
+      ),
+      PopupMenuItem(
         value: 'area_schedule',
         child: Row(
           children: [
@@ -908,6 +936,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       case 'renovation_planner':
         RenovationPlannerDialog.show(context);
         break;
+      case 'cinematic_tour':
+        setState(() => _isTourActive = true);
+        break;
+      case 'toggle_render_mode':
+        notifier.toggleRenderedMode();
+        break;
       case 'area_schedule':
         ProjectAreaScheduleDialog.show(context);
         break;
@@ -1110,6 +1144,11 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     AppLocaleNotifier localeNotifier,
   ) {
     return [
+      IconButton(
+        icon: const Icon(Icons.movie_filter_rounded, size: 21, color: Color(0xFF00E5FF)),
+        tooltip: lang == 'es' ? 'Recorrido Virtual / Tour Video' : 'Cinematic Virtual Tour',
+        onPressed: () => setState(() => _isTourActive = true),
+      ),
       IconButton(
         icon: const Icon(Icons.add_circle, size: 22, color: Color(0xFF00E5FF)),
         tooltip: AppStrings.tr('add_space', lang),
@@ -1382,6 +1421,34 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
                 localeNotifier,
               )
             : [
+          // Modo Renderizado Arquitectónico (Texturas y Sombras)
+          IconButton(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(
+              state.isRenderedMode ? Icons.palette : Icons.palette_outlined,
+              size: 20,
+              color: state.isRenderedMode ? const Color(0xFFFFB300) : const Color(0xFF00E5FF),
+            ),
+            tooltip: lang == 'es'
+                ? (state.isRenderedMode
+                    ? 'Modo Renderizado Activo (Texturas y Sombras)'
+                    : 'Activar Modo Plano Renderizado')
+                : 'Architectural Rendered Mode',
+            onPressed: () => notifier.toggleRenderedMode(),
+          ),
+
+          // Recorrido Virtual / Tour Cinematográfico ("Modo Video")
+          IconButton(
+            padding: const EdgeInsets.symmetric(horizontal: 3),
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: const Icon(Icons.movie_filter_rounded, size: 20, color: Color(0xFF00E5FF)),
+            tooltip: lang == 'es'
+                ? 'Recorrido Virtual Cinematográfico (Tour Video)'
+                : 'Cinematic Virtual Tour',
+            onPressed: () => setState(() => _isTourActive = true),
+          ),
+
           // Auditoría y Asesoría Arquitectónica IA
           IconButton(
             padding: const EdgeInsets.symmetric(horizontal: 3),
@@ -1743,11 +1810,29 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         ],
       ),
       body: isMobile
-          ? const EditorCanvas2D()
-          : const Row(
+          ? Stack(
               children: [
-                Expanded(child: EditorCanvas2D()),
-                PropertiesPanel(),
+                const EditorCanvas2D(),
+                if (_isTourActive)
+                  CinematicTourOverlay(
+                    onClose: () => setState(() => _isTourActive = false),
+                  ),
+              ],
+            )
+          : Row(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      const EditorCanvas2D(),
+                      if (_isTourActive)
+                        CinematicTourOverlay(
+                          onClose: () => setState(() => _isTourActive = false),
+                        ),
+                    ],
+                  ),
+                ),
+                const PropertiesPanel(),
               ],
             ),
       bottomNavigationBar: isMobile

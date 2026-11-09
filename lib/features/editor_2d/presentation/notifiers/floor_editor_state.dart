@@ -21,6 +21,7 @@ class FloorEditorState {
   final List<Floor> redoStack;
   final bool showZoningGuide;
   final bool hasUnsavedChanges;
+  final bool isRenderedMode;
 
   const FloorEditorState({
     required this.floor,
@@ -37,6 +38,7 @@ class FloorEditorState {
     this.redoStack = const [],
     this.showZoningGuide = false,
     this.hasUnsavedChanges = false,
+    this.isRenderedMode = true,
   });
 
   Module? get selectedModule {
@@ -74,6 +76,7 @@ class FloorEditorState {
     List<Floor>? redoStack,
     bool? showZoningGuide,
     bool? hasUnsavedChanges,
+    bool? isRenderedMode,
   }) {
     return FloorEditorState(
       floor: floor ?? this.floor,
@@ -90,6 +93,7 @@ class FloorEditorState {
       redoStack: redoStack ?? this.redoStack,
       showZoningGuide: showZoningGuide ?? this.showZoningGuide,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
+      isRenderedMode: isRenderedMode ?? this.isRenderedMode,
     );
   }
 }

@@ -692,6 +692,40 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(showZoningGuide: value ?? !state.showZoningGuide);
   }
 
+  /// Alterna entre el modo técnico plano y el modo renderizado arquitectónico (texturas y sombras)
+  void toggleRenderedMode([bool? value]) {
+    state = state.copyWith(isRenderedMode: value ?? !state.isRenderedMode);
+  }
+
+  /// Encuadra y hace zoom dinámico centrado en un módulo o recinto específico
+  void focusOnModule(String moduleId, Size viewportSize) {
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null) return;
+
+    final bb = mod.geometry.boundingBox;
+    final modW = math.max(3.0, bb.width);
+    final modH = math.max(3.0, bb.height);
+    const padding = 70.0;
+    final availW = math.max(100.0, viewportSize.width - padding * 2);
+    final availH = math.max(100.0, viewportSize.height - padding * 2);
+    final targetZoom = math.min(availW / modW, availH / modH).clamp(32.0, 90.0);
+    final offsetX = (viewportSize.width - modW * targetZoom) / 2 - bb.minX * targetZoom;
+    final offsetY = (viewportSize.height - modH * targetZoom) / 2 - bb.minY * targetZoom;
+
+    state = state.copyWith(
+      zoom: targetZoom,
+      panOffset: Offset(offsetX, offsetY),
+      selectedModuleId: moduleId,
+      clearWallSelection: true,
+      clearSubModuleSelection: true,
+    );
+  }
+
+  /// Establece explícitamente el encuadre (pan y zoom) para transiciones animadas
+  void setCamera({required double zoom, required Offset panOffset}) {
+    state = state.copyWith(zoom: zoom, panOffset: panOffset);
+  }
+
   /// Aplica una plantilla arquitectónica inicial distribuida en el lote vacío
   void applyStarterLayout(StarterLayoutTemplate template) {
     final newModules = StarterLayoutTemplate.generateModulesForLot(
