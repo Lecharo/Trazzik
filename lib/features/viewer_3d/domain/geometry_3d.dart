@@ -32,6 +32,19 @@ enum SunPreset3D {
   final Offset shadowOffsetPerMeter;
 
   const SunPreset3D(this.lightDirection, this.shadowOffsetPerMeter);
+
+  /// Localized human-readable label for UI menus and tooltips.
+  String label(String lang) {
+    final isEs = lang == 'es';
+    switch (this) {
+      case SunPreset3D.studioNoon:
+        return isEs ? 'Mediodía Estudio' : 'Studio Noon';
+      case SunPreset3D.morningEast:
+        return isEs ? 'Sol de Mañana (Este)' : 'Morning Sun (East)';
+      case SunPreset3D.goldenHourWest:
+        return isEs ? 'Hora Dorada (Oeste)' : 'Golden Hour (West)';
+    }
+  }
 }
 
 /// Punto en el espacio euclidiano 3D (X: Ancho, Y: Fondo, Z: Cota/Elevación en metros)

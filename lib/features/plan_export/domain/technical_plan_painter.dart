@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/cad/cad_symbol_drawer.dart';
 import 'package:trazzik/core/geometry/bounding_box_2d.dart';
@@ -1373,6 +1374,7 @@ class TechnicalPlanPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant TechnicalPlanPainter oldDelegate) {
     return oldDelegate.floor != floor ||
+        !listEquals(oldDelegate.allFloors, allFloors) ||
         oldDelegate.lot != lot ||
         oldDelegate.options != options;
   }

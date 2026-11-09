@@ -418,8 +418,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                       const SizedBox(width: 8),
                       Text(
                         lang == 'es'
-                            ? 'Luz Solar (${_sunPreset.name})'
-                            : 'Sun Lighting (${_sunPreset.name})',
+                            ? 'Luz Solar (${_sunPreset.label(lang)})'
+                            : 'Sun Lighting (${_sunPreset.label(lang)})',
                       ),
                     ],
                   ),
@@ -561,8 +561,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                     : const Color(0xFF38BDF8),
               ),
               tooltip: lang == 'es'
-                  ? 'Luz Solar (${_sunPreset.name})'
-                  : 'Sun Lighting (${_sunPreset.name})',
+                  ? 'Luz Solar (${_sunPreset.label(lang)})'
+                  : 'Sun Lighting (${_sunPreset.label(lang)})',
               onPressed: () => setState(() {
                 final nextIdx =
                     (_sunPreset.index + 1) % SunPreset3D.values.length;

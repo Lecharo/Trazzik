@@ -96,19 +96,22 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
     }
   }
 
-  Future<void> _exportGltfModel(String lang) async {
-    final projectName = widget.project?.name ?? 'Trazzik_3D_Model';
+  List<Face3D> _resolveGltfFaces() {
+    if (!_exportFullVolumeGltf) return widget.currentFaces;
     final targetFloors = widget.allFloors.isNotEmpty
         ? widget.allFloors
         : <Floor>[widget.activeFloor];
-    final facesToExport = _exportFullVolumeGltf
-        ? Building3DBuilder.buildScene(
-            floors: targetFloors,
-            lot: widget.lot,
-            wallHeight: 2.60,
-            includeShadows: false,
-          )
-        : widget.currentFaces;
+    return Building3DBuilder.buildScene(
+      floors: targetFloors,
+      lot: widget.lot,
+      wallHeight: 2.60,
+      includeShadows: false,
+    );
+  }
+
+  Future<void> _exportGltfModel(String lang) async {
+    final projectName = widget.project?.name ?? 'Trazzik_3D_Model';
+    final facesToExport = _resolveGltfFaces();
     final gltfJson = GltfExporterService.exportToGltfJson(
       faces: facesToExport,
       projectName: projectName,
@@ -135,6 +138,18 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
     final nonShadowFaces = widget.currentFaces
         .where((f) => f.layer != FaceLayer3D.shadow)
         .length;
+    final gltfFaces = _resolveGltfFaces()
+        .where((f) => f.layer != FaceLayer3D.shadow && f.vertices.length >= 3)
+        .toList();
+    int vertexCount = 0;
+    int triangleCount = 0;
+    for (final f in gltfFaces) {
+      vertexCount += f.vertices.length;
+      triangleCount += f.vertices.length - 2;
+    }
+    final approxKb =
+        (((vertexCount * 40 + triangleCount * 12) * 1.37) / 1024.0)
+            .clamp(1.2, 9999.0);
 
     return Dialog(
       backgroundColor: colors.panelBg,
@@ -282,8 +297,8 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
                   ),
                   subtitle: Text(
                     lang == 'es'
-                        ? 'Geometría PBR con normales exteriores verificadas y colores por acabado para Blender, SketchUp, Rhino o Three.js.'
-                        : 'PBR geometry with verified outward normals and finish colors for Blender, SketchUp, Rhino, or Three.js.',
+                        ? 'Geometría PBR ($vertexCount vértices • $triangleCount triángulos • ~${approxKb.toStringAsFixed(1)} KB) para Blender, SketchUp, Rhino o Three.js.'
+                        : 'PBR geometry ($vertexCount vertices • $triangleCount triangles • ~${approxKb.toStringAsFixed(1)} KB) for Blender, SketchUp, Rhino, or Three.js.',
                     style: TextStyle(
                       color: colors.textSecondary,
                       fontSize: 11.5,

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'dart:ui' as ui;
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart' show Size;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -265,6 +266,7 @@ class TechnicalPlanPdfService {
     final cached = _cachedPlanPngByDiscipline[options.discipline];
     if (cached != null &&
         identical(cached.floor, floor) &&
+        listEquals(cached.allFloors, allFloors) &&
         identical(cached.lot, lot) &&
         cached.options.hasSameVisualPlanLayers(options)) {
       return cached.pngBytes;
@@ -294,6 +296,7 @@ class TechnicalPlanPdfService {
         final pngBytes = byteData.buffer.asUint8List();
         _cachedPlanPngByDiscipline[options.discipline] = _CachedPlanPng(
           floor: floor,
+          allFloors: List<Floor>.unmodifiable(allFloors),
           lot: lot,
           options: options,
           pngBytes: pngBytes,
@@ -1646,12 +1649,14 @@ class TechnicalPlanPdfService {
 
 class _CachedPlanPng {
   final Floor floor;
+  final List<Floor> allFloors;
   final Lot? lot;
   final PlanExportOptions options;
   final Uint8List pngBytes;
 
   const _CachedPlanPng({
     required this.floor,
+    required this.allFloors,
     required this.lot,
     required this.options,
     required this.pngBytes,
