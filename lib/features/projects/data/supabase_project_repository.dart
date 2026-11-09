@@ -218,4 +218,61 @@ class SupabaseProjectRepository {
       floorsCount: floorsCount,
     );
   }
+
+  /// Guarda la configuración de propuesta de honorarios en `projects.fee_proposal_config`.
+  Future<void> saveFeeProposalConfig({
+    required String projectId,
+    required Map<String, dynamic> config,
+  }) async {
+    await _client.from('projects').update({
+      'fee_proposal_config': config,
+      'updated_at': DateTime.now().toIso8601String(),
+    }).eq('id', projectId);
+  }
+
+  /// Obtiene la configuración de propuesta de honorarios desde `projects.fee_proposal_config`.
+  Future<Map<String, dynamic>?> getFeeProposalConfig(String projectId) async {
+    final row = await _client
+        .from('projects')
+        .select('fee_proposal_config')
+        .eq('id', projectId)
+        .maybeSingle();
+    final raw = row?['fee_proposal_config'];
+    if (raw is Map<String, dynamic>) return raw;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    return null;
+  }
+
+  /// Crea o reutiliza un token de enlace interactivo para cliente (vigencia 60 días).
+  Future<String> createOrGetProjectShareLink({
+    required String projectId,
+    bool allowFinishSelection = true,
+  }) async {
+    final existing = await _client
+        .from('project_share_links')
+        .select('token, expires_at')
+        .eq('project_id', projectId)
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(1);
+
+    if (existing.isNotEmpty) {
+      final token = existing.first['token'] as String?;
+      if (token != null && token.isNotEmpty) return token;
+    }
+
+    final currentUserId = _client.auth.currentUser?.id;
+    if (currentUserId == null) {
+      throw StateError('Authenticated user required to create share link.');
+    }
+
+    final token = const Uuid().v4().replaceAll('-', '');
+    await _client.from('project_share_links').insert({
+      'project_id': projectId,
+      'token': token,
+      'created_by': currentUserId,
+      'allow_finish_selection': allowFinishSelection,
+    });
+    return token;
+  }
 }

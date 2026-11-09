@@ -5,6 +5,7 @@ import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/fee_proposal/domain/architect_fee_proposal.dart';
 import 'package:trazzik/features/fee_proposal/presentation/services/architect_fee_proposal_pdf_service.dart';
+import 'package:trazzik/features/projects/data/supabase_project_repository.dart';
 
 /// Interactive dialog for configuring and exporting a 2-page Professional
 /// Architectural Design Fee Proposal & Schedule (`Cotización de Honorarios`).
@@ -31,6 +32,10 @@ class _ArchitectFeeProposalDialogState
   static String? _lastStudioName;
   static String? _lastArchitectName;
   static double? _lastRatePerM2Cop;
+
+  static final _uuidRegex = RegExp(
+    r'^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$',
+  );
 
   late String _projectKey;
   late ArchitectFeeProposal _proposal;
@@ -84,6 +89,45 @@ class _ArchitectFeeProposalDialogState
     _fixedFeeCtrl = TextEditingController(
       text: _proposal.customFixedFeeCop.round().toString(),
     );
+
+    if (cached == null && _uuidRegex.hasMatch(_projectKey)) {
+      _hydrateFromSupabase(_projectKey);
+    }
+  }
+
+  Future<void> _hydrateFromSupabase(String projectId) async {
+    try {
+      final config = await ref
+          .read(projectRepositoryProvider)
+          .getFeeProposalConfig(projectId);
+      if (config != null && mounted) {
+        final merged = _proposal.applyConfigJson(config);
+        setState(() {
+          _proposal = merged;
+          _sessionDrafts[_projectKey] = merged;
+          _studioCtrl.text = merged.studioName;
+          _architectCtrl.text = merged.architectName;
+          _clientCtrl.text = merged.clientName;
+          _rateM2Ctrl.text = merged.ratePerM2Cop.round().toString();
+          _fixedFeeCtrl.text = merged.customFixedFeeCop.round().toString();
+        });
+      }
+    } catch (_) {
+      // Offline or test environment: keep local session draft.
+    }
+  }
+
+  void _syncToSupabase(ArchitectFeeProposal proposal) {
+    if (!_uuidRegex.hasMatch(_projectKey)) return;
+    Future<void>(() async {
+      try {
+        if (!mounted) return;
+        await ref.read(projectRepositoryProvider).saveFeeProposalConfig(
+              projectId: _projectKey,
+              config: proposal.toConfigJson(),
+            );
+      } catch (_) {}
+    });
   }
 
   void _updateProposal(ArchitectFeeProposal next) {
@@ -94,6 +138,7 @@ class _ArchitectFeeProposalDialogState
       _lastArchitectName = next.architectName;
       _lastRatePerM2Cop = next.ratePerM2Cop;
     });
+    _syncToSupabase(next);
   }
 
   @override

@@ -61,6 +61,8 @@ class SupabaseFloorRepository {
           'floor_id': resolvedFloorId,
           'name': module.name,
           'module_type': module.moduleType,
+          'floor_material_id': module.floorMaterialId,
+          'wall_finish_id': module.wallFinishId,
           'geometry': {
             ...module.geometry.toJson(),
             'flip_x': module.flipX,

@@ -82,6 +82,23 @@ class _FakeProjectRepository implements SupabaseProjectRepository {
       floorsCount: floorsCount,
     );
   }
+
+  @override
+  Future<void> saveFeeProposalConfig({
+    required String projectId,
+    required Map<String, dynamic> config,
+  }) async {}
+
+  @override
+  Future<Map<String, dynamic>?> getFeeProposalConfig(String projectId) async =>
+      null;
+
+  @override
+  Future<String> createOrGetProjectShareLink({
+    required String projectId,
+    bool allowFinishSelection = true,
+  }) async =>
+      'test-share-token';
 }
 
 class _FakeAuthRepository implements SupabaseAuthRepository {

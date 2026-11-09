@@ -317,4 +317,85 @@ class ArchitectFeeProposal {
       exclusions: exclusions ?? this.exclusions,
     );
   }
+
+  /// Serializes user-editable fee proposal configuration for Supabase persistence.
+  Map<String, dynamic> toConfigJson() => {
+        'studio_name': studioName,
+        'studio_initials': studioInitials,
+        'architect_name': architectName,
+        'architect_contact': architectContact,
+        'client_name': clientName,
+        'pricing_mode': pricingMode.name,
+        'rate_per_m2_cop': ratePerM2Cop,
+        'construction_cost_per_m2_cop': constructionCostPerM2Cop,
+        'fee_percentage_of_construction': feePercentageOfConstruction,
+        'custom_fixed_fee_cop': customFixedFeeCop,
+        'validity_days': validityDays,
+        'included_revision_rounds': includedRevisionRounds,
+        'phases': phases
+            .map(
+              (p) => {
+                'code': p.code,
+                'business_days': p.businessDays,
+                'included': p.included,
+              },
+            )
+            .toList(),
+      };
+
+  /// Merges a persisted Supabase JSON configuration into this proposal while keeping live geometry metrics.
+  ArchitectFeeProposal applyConfigJson(Map<String, dynamic> json) {
+    final modeStr = json['pricing_mode']?.toString();
+    final parsedMode = FeePricingMode.values
+            .where((e) => e.name == modeStr)
+            .firstOrNull ??
+        pricingMode;
+
+    final rawPhases = json['phases'];
+    List<DesignScopePhase> mergedPhases = phases;
+    if (rawPhases is List) {
+      final byCode = <String, Map<String, dynamic>>{};
+      for (final item in rawPhases) {
+        if (item is Map) {
+          final map = Map<String, dynamic>.from(item);
+          final code = map['code']?.toString();
+          if (code != null) byCode[code] = map;
+        }
+      }
+      mergedPhases = phases.map((phase) {
+        final override = byCode[phase.code];
+        if (override == null) return phase;
+        return phase.copyWith(
+          businessDays:
+              (override['business_days'] as num?)?.toInt() ?? phase.businessDays,
+          included: override['included'] as bool? ?? phase.included,
+        );
+      }).toList();
+    }
+
+    return copyWith(
+      studioName: json['studio_name'] as String? ?? studioName,
+      studioInitials: json['studio_initials'] as String? ?? studioInitials,
+      architectName: json['architect_name'] as String? ?? architectName,
+      architectContact: json['architect_contact'] as String? ?? architectContact,
+      clientName: json['client_name'] as String? ?? clientName,
+      pricingMode: parsedMode,
+      ratePerM2Cop:
+          (json['rate_per_m2_cop'] as num?)?.toDouble() ?? ratePerM2Cop,
+      constructionCostPerM2Cop:
+          (json['construction_cost_per_m2_cop'] as num?)?.toDouble() ??
+              constructionCostPerM2Cop,
+      feePercentageOfConstruction:
+          (json['fee_percentage_of_construction'] as num?)?.toDouble() ??
+              feePercentageOfConstruction,
+      customFixedFeeCop:
+          (json['custom_fixed_fee_cop'] as num?)?.toDouble() ??
+              customFixedFeeCop,
+      validityDays: (json['validity_days'] as num?)?.toInt() ?? validityDays,
+      includedRevisionRounds:
+          (json['included_revision_rounds'] as num?)?.toInt() ??
+              includedRevisionRounds,
+      phases: mergedPhases,
+    );
+  }
 }
