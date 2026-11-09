@@ -9,6 +9,7 @@ import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
+import 'package:trazzik/features/walls/domain/wall_generation_engine.dart';
 
 /// Painter de alta resolución para renderizado de planos arquitectónicos técnicos ejecutivos.
 class TechnicalPlanPainter extends CustomPainter {
@@ -108,9 +109,12 @@ class TechnicalPlanPainter extends CustomPainter {
       _drawModule(canvas, module, toCanvas, scale);
     }
 
-    // 5. Dibujar Muros Arquitectónicos
-    if (options.includeWalls && floor.walls.isNotEmpty) {
-      for (final wall in floor.walls) {
+    // 5. Dibujar Muros Arquitectónicos (explícitos o generados con el motor unificado)
+    if (options.includeWalls) {
+      final effectiveWalls = floor.walls.isNotEmpty
+          ? floor.walls
+          : WallGenerationEngine.generateWallsForFloor(floor);
+      for (final wall in effectiveWalls) {
         _drawWall(canvas, wall, toCanvas, scale);
       }
     }
@@ -222,7 +226,10 @@ class TechnicalPlanPainter extends CustomPainter {
       }
 
       if (options.includeWalls) {
-        for (final wall in floor.walls) {
+        final effectiveWalls = floor.walls.isNotEmpty
+            ? floor.walls
+            : WallGenerationEngine.generateWallsForFloor(floor);
+        for (final wall in effectiveWalls) {
           if (isBeforeState && wall.status == ElementStatus.isNew) continue;
           if (!isBeforeState && wall.status == ElementStatus.toDemolish) continue;
           _drawWall(canvas, wall, toCanvas, scale);
@@ -236,6 +243,18 @@ class TechnicalPlanPainter extends CustomPainter {
             _drawFurniture(canvas, module, sub, toCanvas, scale);
           }
         }
+      }
+
+      if (options.includeDimensions) {
+        _drawDimensions(
+          canvas,
+          toCanvas,
+          scale,
+          minX + marginMeters,
+          maxX - marginMeters,
+          minY + marginMeters,
+          maxY - marginMeters,
+        );
       }
     }
 

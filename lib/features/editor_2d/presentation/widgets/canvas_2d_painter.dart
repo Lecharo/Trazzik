@@ -39,8 +39,12 @@ class Canvas2DPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final zoom = state.zoom;
-    final pan = state.panOffset;
+    if (size.width <= 0 || size.height <= 0) return;
+    final rawZoom = state.zoom;
+    final zoom = (rawZoom.isFinite && rawZoom > 0.01) ? rawZoom : 30.0;
+    final pan = (state.panOffset.dx.isFinite && state.panOffset.dy.isFinite)
+        ? state.panOffset
+        : Offset.zero;
 
     // 1. Fondo técnico oscuro
     canvas.drawRect(

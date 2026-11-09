@@ -111,6 +111,41 @@ void main() {
       expect(faces.any((f) => f.label == 'Muro Exterior' || f.label == 'Tabique'), isTrue);
     });
 
+    test('Building3DBuilder recorta puertas/ventanas a 1.20m en modo maqueta y no asigna moduleId interior a fachadas exteriores', () {
+      final floorWithDoor = floor1.copyWith(
+        modules: [
+          ...floor1.modules,
+          Module(
+            id: 'door-1',
+            floorId: 'f1',
+            name: 'Puerta Principal',
+            moduleType: 'DOOR',
+            geometry: Polygon2D.fromRect(2.0, 0.92, 0.90, 0.16),
+            status: ElementStatus.isNew,
+          ),
+        ],
+      );
+
+      final facesCutaway = Building3DBuilder.buildScene(
+        floors: [floorWithDoor],
+        lot: lot,
+        wallHeight: 1.20,
+      );
+
+      final doorFaces = facesCutaway.where((f) => f.label == 'Puerta Principal').toList();
+      expect(doorFaces, isNotEmpty);
+      for (final df in doorFaces) {
+        for (final v in df.vertices) {
+          expect(v.z, lessThanOrEqualTo(1.201));
+        }
+      }
+
+      // Exterior wall faces (facing outside room m1 at y < 1) must have null moduleId
+      final wallSideFaces = facesCutaway.where((f) => f.isWallFace && f.vertices.any((v) => v.z > 0.5 && v.z <= 1.201)).toList();
+      expect(wallSideFaces.any((f) => f.moduleId == 'm1'), isTrue);
+      expect(wallSideFaces.any((f) => f.moduleId == null), isTrue);
+    });
+
     testWidgets('Viewer3dScreen se renderiza con slider de maqueta explotada y selector de pisos', (tester) async {
       tester.view.physicalSize = const Size(1200, 900);
       tester.view.devicePixelRatio = 1.0;

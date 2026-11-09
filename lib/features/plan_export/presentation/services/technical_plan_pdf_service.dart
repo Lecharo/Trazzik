@@ -280,7 +280,10 @@ class TechnicalPlanPdfService {
       final img = await picture.toImage(width, height);
       try {
         final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-        final pngBytes = byteData!.buffer.asUint8List();
+        if (byteData == null) {
+          throw StateError('Failed to encode technical plan PNG');
+        }
+        final pngBytes = byteData.buffer.asUint8List();
         _cachedPlanPngByDiscipline[options.discipline] = _CachedPlanPng(
           floor: floor,
           lot: lot,
@@ -1226,6 +1229,25 @@ class TechnicalPlanPdfService {
       String hardwareSpec,
     })>[];
 
+    // Prioritize kitchen cabinetry first so multi-bedroom layouts never drop the kitchen
+    for (final m in floor.modules) {
+      if (m.status == ElementStatus.toDemolish) continue;
+      if (m.isKitchen) {
+        items.add((
+          code: 'CARP-0${items.length + 1}',
+          title: 'Mueble Integral de Cocina (Bajo + Alacena Superior)',
+          roomName: m.name,
+          widthM: 2.40,
+          heightM: 2.35,
+          depthM: 0.60,
+          bodyFinish: 'MDP Hidrófugo RH 18mm Blanco Nieve + Canto rígido PVC 2mm',
+          frontFinish: 'Frentes Supermate Antihuella Gris Piedra + Gola Aluminio',
+          hardwareSpec:
+              'Herrajes Blum/Hafele cierre suave, zócalo impermeable en aluminio H=10cm',
+        ));
+      }
+    }
+
     for (final m in floor.modules) {
       if (m.status == ElementStatus.toDemolish) continue;
       for (final sub in m.subModules) {
@@ -1250,7 +1272,7 @@ class TechnicalPlanPdfService {
                 'Bisagras cierre lento 110°, rieles telescópicos Full-Extension y tubo oval cromado',
           ));
         } else if (t.contains('VANITY') ||
-            (t.contains('SINK') && m.moduleType.toUpperCase().contains('BATH'))) {
+            (t.contains('SINK') && m.isBathroom)) {
           items.add((
             code: 'CARP-0${items.length + 1}',
             title: 'Mueble Flotante de Lavamanos (Vanity)',
@@ -1264,20 +1286,6 @@ class TechnicalPlanPdfService {
                 'Cajón superior con sifonero en U + correderas ocultas Push-to-Open',
           ));
         }
-      }
-      if (m.moduleType.toUpperCase().contains('KITCHEN') && items.length < 3) {
-        items.add((
-          code: 'CARP-0${items.length + 1}',
-          title: 'Mueble Integral de Cocina (Bajo + Alacena Superior)',
-          roomName: m.name,
-          widthM: 2.40,
-          heightM: 2.35,
-          depthM: 0.60,
-          bodyFinish: 'MDP Hidrófugo RH 18mm Blanco Nieve + Canto rígido PVC 2mm',
-          frontFinish: 'Frentes Supermate Antihuella Gris Piedra + Gola Aluminio',
-          hardwareSpec:
-              'Herrajes Blum/Hafele cierre suave, zócalo impermeable en aluminio H=10cm',
-        ));
       }
     }
 

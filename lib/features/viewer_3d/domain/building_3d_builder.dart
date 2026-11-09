@@ -51,9 +51,10 @@ class Building3DBuilder {
       _buildSlab(faces, floor, elevationZ);
 
       // 3. Pavimentos y acabados por recinto
+      final effectiveOpeningTopHeight = math.min(floorHeight, wallHeight);
       for (final mod in floor.modules) {
         if (mod.isOpening) {
-          _buildOpening3D(faces, mod, elevationZ, floorHeight);
+          _buildOpening3D(faces, mod, elevationZ, effectiveOpeningTopHeight);
         } else if (mod.isStairs) {
           _buildStairs3D(faces, mod, elevationZ, floorHeight);
         } else {
@@ -225,8 +226,8 @@ class Building3DBuilder {
         vertices: [b0, b1, t1, t0],
         baseColor: colorA,
         label: label,
-        moduleId: roomSideA?.id ?? roomSideB?.id,
-        floorId: roomSideA?.floorId ?? roomSideB?.floorId,
+        moduleId: roomSideA?.id,
+        floorId: roomSideA?.floorId,
         pattern: finishA?.pattern,
         patternColor: finishA?.accentColor,
         isWallFace: true,
@@ -236,8 +237,8 @@ class Building3DBuilder {
       Face3D(
         vertices: [b2, b3, t3, t2],
         baseColor: colorB,
-        moduleId: roomSideB?.id ?? roomSideA?.id,
-        floorId: roomSideB?.floorId ?? roomSideA?.floorId,
+        moduleId: roomSideB?.id,
+        floorId: roomSideB?.floorId,
         pattern: finishB?.pattern,
         patternColor: finishB?.accentColor,
         isWallFace: true,
@@ -248,7 +249,7 @@ class Building3DBuilder {
     faces.add(Face3D(vertices: [t0, t1, t2, t3], baseColor: topCapColor, isWallFace: true));
   }
 
-  /// Extruye un muro 3D completo con sus 6 caras
+  /// Extruye un muro 3D completo con sus 6 caras, subdividiendo tramos que cruzan múltiples ambientes
   static void _buildWall3D(
     List<Face3D> faces,
     Wall wall,
@@ -257,12 +258,41 @@ class Building3DBuilder {
     String label = 'Muro',
     List<Module> roomModules = const [],
   }) {
+    final len = wall.startPoint.distanceTo(wall.endPoint);
+    final h = overrideHeight ?? wall.height;
+    if (roomModules.length > 1 && len > 2.20) {
+      final subCount = (len / 1.50).ceil().clamp(2, 8);
+      for (int i = 0; i < subCount; i++) {
+        final t0 = i / subCount;
+        final t1 = (i + 1) / subCount;
+        final sp = Point2D(
+          wall.startPoint.x + (wall.endPoint.x - wall.startPoint.x) * t0,
+          wall.startPoint.y + (wall.endPoint.y - wall.startPoint.y) * t0,
+        );
+        final ep = Point2D(
+          wall.startPoint.x + (wall.endPoint.x - wall.startPoint.x) * t1,
+          wall.startPoint.y + (wall.endPoint.y - wall.startPoint.y) * t1,
+        );
+        _buildWallSegment3D(
+          faces,
+          p1: sp,
+          p2: ep,
+          elevationZ: elevationZ,
+          height: h,
+          thickness: wall.thickness,
+          label: i == 0 ? label : null,
+          roomModules: roomModules,
+        );
+      }
+      return;
+    }
+
     _buildWallSegment3D(
       faces,
       p1: wall.startPoint,
       p2: wall.endPoint,
       elevationZ: elevationZ,
-      height: overrideHeight ?? wall.height,
+      height: h,
       thickness: wall.thickness,
       label: label,
       roomModules: roomModules,
@@ -386,9 +416,9 @@ class Building3DBuilder {
     final cx = bb.minX + bb.width / 2;
     final cy = bb.minY + bb.height / 2;
 
-    final sillZ = elevationZ + (isDoor ? 0.0 : 0.90); // Antepecho
-    final lintelZ = elevationZ + 2.10; // Dintel inferior a 2.10m
-    final topZ = elevationZ + floorHeight; // Coronación superior de losa
+    final topZ = elevationZ + floorHeight; // Coronación superior (recortada en modo maqueta 1.20m)
+    final sillZ = math.min(topZ, elevationZ + (isDoor ? 0.0 : 0.90)); // Antepecho
+    final lintelZ = math.min(topZ, elevationZ + 2.10); // Dintel inferior a 2.10m (o topZ si es menor)
 
     const wallColor = Color(0xFFECEFF1);
     const topCapColor = Color(0xFFCFD8DC);
@@ -729,12 +759,16 @@ class Building3DBuilder {
     }
 
     final actualH = sub.height ?? h;
+    final effectiveSubElevation =
+        (type == 'WALL_CABINET' && sub.elevation <= 0.01)
+            ? 1.50
+            : sub.elevation;
 
     final minX = bb.minX;
     final maxX = bb.maxX;
     final minY = bb.minY;
     final maxY = bb.maxY;
-    final z0 = elevationZ + sub.elevation + 0.02;
+    final z0 = elevationZ + effectiveSubElevation + 0.02;
     final z1 = z0 + actualH;
 
     // Cara superior horizontal

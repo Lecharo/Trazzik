@@ -113,7 +113,7 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
             final firstFloor = floors.first;
             _heightController.text = firstFloor.heightMeters.toStringAsFixed(2);
             _clearHeightController.text = (firstFloor.heightMeters - 0.20)
-                .clamp(2.0, firstFloor.heightMeters)
+                .clamp(2.0, math.max(2.0, firstFloor.heightMeters))
                 .toStringAsFixed(2);
             _maxAreaController.text = firstFloor.maxAllowedArea.toStringAsFixed(2);
           }
@@ -160,11 +160,14 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
     return lang == 'en' ? 'Northwest (315°)' : 'Noroccidente / Noroeste (315°)';
   }
 
-  double get _buildableWidth => (_width - _leftSetback - _rightSetback).clamp(0.0, _width);
-  double get _buildableDepth => (_depth - _frontSetback - _rearSetback).clamp(0.0, _depth);
-  double get _totalLotArea => _width * _depth;
+  double get _buildableWidth =>
+      (_width - _leftSetback - _rightSetback).clamp(0.0, math.max(0.0, _width));
+  double get _buildableDepth =>
+      (_depth - _frontSetback - _rearSetback).clamp(0.0, math.max(0.0, _depth));
+  double get _totalLotArea => math.max(0.0, _width) * math.max(0.0, _depth);
   double get _buildableArea => _buildableWidth * _buildableDepth;
-  double get _setbacksArea => (_totalLotArea - _buildableArea).clamp(0.0, _totalLotArea);
+  double get _setbacksArea =>
+      (_totalLotArea - _buildableArea).clamp(0.0, math.max(0.0, _totalLotArea));
 
   Future<void> _saveAndOpenEditor() async {
     setState(() {
@@ -180,6 +183,14 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       return;
     }
 
+    if (_buildableWidth <= 0 || _buildableDepth <= 0) {
+      setState(() {
+        _errorMessage = 'Los retiros superan las dimensiones del lote; el área construible debe ser mayor a 0 metros.';
+        _isSaving = false;
+      });
+      return;
+    }
+
     try {
       const uuid = Uuid();
       final lotId = _existingLotId ?? uuid.v4();
@@ -187,9 +198,9 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       final orientation = double.tryParse(_orientationController.text.trim()) ?? 0.0;
       final maxArea = double.tryParse(_maxAreaController.text.trim()) ??
           (_buildableArea > 0 ? _buildableArea : _totalLotArea);
-      final clearHeight = double.tryParse(_clearHeightController.text.trim()) ?? 2.40;
-      final height = double.tryParse(_heightController.text.trim()) ?? (clearHeight + 0.20);
-      final floorsCount = int.tryParse(_floorsCountController.text.trim()) ?? 1;
+      final clearHeight = (double.tryParse(_clearHeightController.text.trim()) ?? 2.40).clamp(1.80, 10.0);
+      final height = (double.tryParse(_heightController.text.trim()) ?? (clearHeight + 0.20)).clamp(2.00, 12.0);
+      final floorsCount = (int.tryParse(_floorsCountController.text.trim()) ?? 1).clamp(1, 20);
 
       // 1. Polígono del Lote
       final lotBoundary = Polygon2D.fromRect(0, 0, _width, _depth);
@@ -803,8 +814,9 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                         onChanged: (val) {
                           final h = double.tryParse(val.trim());
                           if (h != null && h > 0.25) {
-                            _clearHeightController.text =
-                                (h - 0.20).clamp(1.80, h).toStringAsFixed(2);
+                            _clearHeightController.text = (h - 0.20)
+                                .clamp(1.80, math.max(1.80, h))
+                                .toStringAsFixed(2);
                           }
                         },
                       ),

@@ -12,11 +12,15 @@ class Polygon2D {
   }
 
   factory Polygon2D.fromRect(double x, double y, double width, double height) {
+    final nx = width < 0 ? x + width : x;
+    final ny = height < 0 ? y + height : y;
+    final nw = width.abs();
+    final nh = height.abs();
     return Polygon2D([
-      Point2D(x, y),
-      Point2D(x + width, y),
-      Point2D(x + width, y + height),
-      Point2D(x, y + height),
+      Point2D(nx, ny),
+      Point2D(nx + nw, ny),
+      Point2D(nx + nw, ny + nh),
+      Point2D(nx, ny + nh),
     ]);
   }
 
