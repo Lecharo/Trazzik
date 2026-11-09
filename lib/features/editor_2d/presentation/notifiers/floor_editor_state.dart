@@ -1,10 +1,56 @@
 import 'dart:ui';
+import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/validation/validation_issue.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
+
+/// Calibrated reference blueprint & structural axes underlay configuration for 2D tracing.
+class BlueprintUnderlayConfig {
+  final bool isEnabled;
+  final double widthMeters;
+  final double heightMeters;
+  final double offsetX;
+  final double offsetY;
+  final double opacity;
+  final double structuralBayMeters;
+  final String label;
+
+  const BlueprintUnderlayConfig({
+    this.isEnabled = false,
+    this.widthMeters = 10.0,
+    this.heightMeters = 15.0,
+    this.offsetX = 0.0,
+    this.offsetY = 0.0,
+    this.opacity = 0.45,
+    this.structuralBayMeters = 3.0,
+    this.label = 'PLANO BASE / RETÍCULA ESTRUCTURAL',
+  });
+
+  BlueprintUnderlayConfig copyWith({
+    bool? isEnabled,
+    double? widthMeters,
+    double? heightMeters,
+    double? offsetX,
+    double? offsetY,
+    double? opacity,
+    double? structuralBayMeters,
+    String? label,
+  }) {
+    return BlueprintUnderlayConfig(
+      isEnabled: isEnabled ?? this.isEnabled,
+      widthMeters: widthMeters ?? this.widthMeters,
+      heightMeters: heightMeters ?? this.heightMeters,
+      offsetX: offsetX ?? this.offsetX,
+      offsetY: offsetY ?? this.offsetY,
+      opacity: opacity ?? this.opacity,
+      structuralBayMeters: structuralBayMeters ?? this.structuralBayMeters,
+      label: label ?? this.label,
+    );
+  }
+}
 
 class FloorEditorState {
   final Floor floor;
@@ -26,6 +72,10 @@ class FloorEditorState {
   final bool showZoningGuide;
   final bool hasUnsavedChanges;
   final bool isRenderedMode;
+  final bool isLaserMeasureActive;
+  final Point2D? laserStart;
+  final Point2D? laserEnd;
+  final BlueprintUnderlayConfig blueprintUnderlay;
 
   const FloorEditorState({
     required this.floor,
@@ -47,6 +97,10 @@ class FloorEditorState {
     this.showZoningGuide = false,
     this.hasUnsavedChanges = false,
     this.isRenderedMode = true,
+    this.isLaserMeasureActive = false,
+    this.laserStart,
+    this.laserEnd,
+    this.blueprintUnderlay = const BlueprintUnderlayConfig(),
   });
 
   /// Returns all modified floors pending persistence across the project.
@@ -106,6 +160,11 @@ class FloorEditorState {
     bool? showZoningGuide,
     bool? hasUnsavedChanges,
     bool? isRenderedMode,
+    bool? isLaserMeasureActive,
+    Point2D? laserStart,
+    Point2D? laserEnd,
+    bool clearLaserMeasure = false,
+    BlueprintUnderlayConfig? blueprintUnderlay,
   }) {
     return FloorEditorState(
       floor: floor ?? this.floor,
@@ -127,6 +186,10 @@ class FloorEditorState {
       showZoningGuide: showZoningGuide ?? this.showZoningGuide,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
       isRenderedMode: isRenderedMode ?? this.isRenderedMode,
+      isLaserMeasureActive: isLaserMeasureActive ?? this.isLaserMeasureActive,
+      laserStart: clearLaserMeasure ? null : (laserStart ?? this.laserStart),
+      laserEnd: clearLaserMeasure ? null : (laserEnd ?? this.laserEnd),
+      blueprintUnderlay: blueprintUnderlay ?? this.blueprintUnderlay,
     );
   }
 }

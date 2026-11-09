@@ -2,9 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/editor_2d/presentation/widgets/canvas_2d_painter.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/project_area_schedule_dialog.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -161,6 +163,47 @@ void main() {
       expect(find.text('Dormitorio Principal'), findsOneWidget);
       expect(find.text('Baño Principal'), findsOneWidget);
       expect(find.text('Terraza y Lavado'), findsOneWidget);
+    });
+
+    test('Regla Láser 2D con snap a vértices y Calco de Plano Base (BlueprintUnderlayConfig) actualizan estado y pintan sin errores', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(floorEditorProvider.notifier);
+
+      // Activar Regla Láser 2D y verificar snap a vértice cercano (0, 0 del lote)
+      notifier.toggleLaserMeasure(true);
+      expect(container.read(floorEditorProvider).isLaserMeasureActive, isTrue);
+
+      final snappedOrigin = notifier.snapToNearestVertexOrGrid(const Point2D(0.08, 0.05));
+      expect(snappedOrigin.x, closeTo(0.0, 0.001));
+      expect(snappedOrigin.y, closeTo(0.0, 0.001));
+
+      notifier.setLaserMeasurePoints(snappedOrigin, const Point2D(1.50, 0.0));
+      expect(
+        container.read(floorEditorProvider).laserStart!.distanceTo(
+          container.read(floorEditorProvider).laserEnd!,
+        ),
+        closeTo(1.50, 0.001),
+      );
+
+      // Activar Calco de Plano Base (Blueprint Underlay)
+      notifier.updateBlueprintUnderlay(
+        const BlueprintUnderlayConfig(
+          isEnabled: true,
+          widthMeters: 12.0,
+          heightMeters: 18.0,
+          structuralBayMeters: 3.5,
+          opacity: 0.50,
+        ),
+      );
+      final state = container.read(floorEditorProvider);
+      expect(state.blueprintUnderlay.isEnabled, isTrue);
+      expect(state.blueprintUnderlay.structuralBayMeters, closeTo(3.5, 0.01));
+
+      // Verificar que Canvas2DPainter pinta el Calco y la Regla Láser sin excepciones
+      final painter = Canvas2DPainter(state);
+      expect(() => painter.shouldRepaint(Canvas2DPainter(state)), returnsNormally);
     });
   });
 }

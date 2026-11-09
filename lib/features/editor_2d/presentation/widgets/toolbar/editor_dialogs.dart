@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 
 class EditorDialogs {
@@ -447,5 +448,240 @@ class EditorDialogs {
         );
       },
     );
+  }
+
+  static void showBlueprintUnderlayDialog({
+    required BuildContext context,
+    required BlueprintUnderlayConfig currentConfig,
+    required FloorEditorNotifier notifier,
+    required String lang,
+  }) {
+    bool isEnabled = currentConfig.isEnabled;
+    double opacity = currentConfig.opacity;
+    final widthCtrl = TextEditingController(
+      text: currentConfig.widthMeters.toStringAsFixed(2),
+    );
+    final heightCtrl = TextEditingController(
+      text: currentConfig.heightMeters.toStringAsFixed(2),
+    );
+    final bayCtrl = TextEditingController(
+      text: currentConfig.structuralBayMeters.toStringAsFixed(2),
+    );
+    final offsetXCtrl = TextEditingController(
+      text: currentConfig.offsetX.toStringAsFixed(2),
+    );
+    final offsetYCtrl = TextEditingController(
+      text: currentConfig.offsetY.toStringAsFixed(2),
+    );
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            return AlertDialog(
+              backgroundColor: Theme.of(context).cardColor,
+              title: Row(
+                children: [
+                  const Icon(Icons.grid_4x4, color: Color(0xFF00E5FF)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      lang == 'es'
+                          ? 'Calco de Plano Base y Ejes Estructurales'
+                          : 'Calibrated Blueprint & Structural Grid Underlay',
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 15,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              content: SizedBox(
+                width: 420,
+                child: SingleChildScrollView(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Material(
+                        color: Colors.transparent,
+                        child: SwitchListTile(
+                          contentPadding: EdgeInsets.zero,
+                          value: isEnabled,
+                          activeThumbColor: const Color(0xFF00E5FF),
+                          title: Text(
+                            lang == 'es'
+                                ? 'Activar Calco y Ejes A-B-C / 1-2-3'
+                                : 'Enable Blueprint & Structural Axes Underlay',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 13,
+                            ),
+                          ),
+                          subtitle: Text(
+                            lang == 'es'
+                                ? 'Proyecta una plantilla calibrada en metros bajo los recintos para trazar levantamientos y modulación estructural.'
+                                : 'Renders a metric-calibrated underlay with structural grid axes underneath rooms and walls.',
+                            style: const TextStyle(fontSize: 11),
+                          ),
+                          onChanged: (v) => setDialogState(() => isEnabled = v),
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: widthCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: lang == 'es'
+                                    ? 'Ancho Calibrado (m)'
+                                    : 'Calibrated Width (m)',
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: heightCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: lang == 'es'
+                                    ? 'Largo Calibrado (m)'
+                                    : 'Calibrated Length (m)',
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: bayCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: lang == 'es'
+                                    ? 'Luz entre Ejes (m)'
+                                    : 'Structural Bay (m)',
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: offsetXCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Offset X (m)',
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: TextField(
+                              controller: offsetYCtrl,
+                              keyboardType: const TextInputType.numberWithOptions(
+                                decimal: true,
+                                signed: true,
+                              ),
+                              decoration: InputDecoration(
+                                labelText: 'Offset Y (m)',
+                                border: const OutlineInputBorder(),
+                                isDense: true,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        '${lang == 'es' ? 'Opacidad del Calco' : 'Underlay Opacity'}: ${(opacity * 100).round()}%',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Slider(
+                        value: opacity.clamp(0.10, 0.90),
+                        min: 0.10,
+                        max: 0.90,
+                        activeColor: const Color(0xFF00E5FF),
+                        onChanged: (v) => setDialogState(() => opacity = v),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(),
+                  child: Text(AppStrings.tr('cancel', lang)),
+                ),
+                ElevatedButton(
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E5FF),
+                    foregroundColor: const Color(0xFF0A192F),
+                  ),
+                  onPressed: () {
+                    final w = (double.tryParse(widthCtrl.text.trim()) ?? 10.0)
+                        .clamp(2.0, 200.0);
+                    final h = (double.tryParse(heightCtrl.text.trim()) ?? 15.0)
+                        .clamp(2.0, 200.0);
+                    final bay = (double.tryParse(bayCtrl.text.trim()) ?? 3.0)
+                        .clamp(1.0, 20.0);
+                    final ox = double.tryParse(offsetXCtrl.text.trim()) ?? 0.0;
+                    final oy = double.tryParse(offsetYCtrl.text.trim()) ?? 0.0;
+                    notifier.updateBlueprintUnderlay(
+                      currentConfig.copyWith(
+                        isEnabled: isEnabled,
+                        widthMeters: w,
+                        heightMeters: h,
+                        structuralBayMeters: bay,
+                        offsetX: ox,
+                        offsetY: oy,
+                        opacity: opacity,
+                      ),
+                    );
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Text(
+                    lang == 'es' ? 'Aplicar Calco' : 'Apply Underlay',
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    ).whenComplete(() {
+      widthCtrl.dispose();
+      heightCtrl.dispose();
+      bayCtrl.dispose();
+      offsetXCtrl.dispose();
+      offsetYCtrl.dispose();
+    });
   }
 }

@@ -828,6 +828,71 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(isRenderedMode: value ?? !state.isRenderedMode);
   }
 
+  /// Toggles the interactive 2D Laser Tape Measure & Clearance Checker mode.
+  void toggleLaserMeasure([bool? value]) {
+    final nextActive = value ?? !state.isLaserMeasureActive;
+    state = state.copyWith(
+      isLaserMeasureActive: nextActive,
+      clearLaserMeasure: !nextActive,
+    );
+  }
+
+  /// Sets the active 2D Laser Tape Measure start and end points in meters.
+  void setLaserMeasurePoints(Point2D? start, Point2D? end) {
+    state = state.copyWith(
+      laserStart: start,
+      laserEnd: end,
+      clearLaserMeasure: start == null && end == null,
+    );
+  }
+
+  /// Updates the calibrated Blueprint Reference Underlay configuration.
+  void updateBlueprintUnderlay(BlueprintUnderlayConfig config) {
+    state = state.copyWith(blueprintUnderlay: config);
+  }
+
+  /// Snaps [rawPoint] to the nearest room corner, wall endpoint, or furniture corner
+  /// within [snapRadiusMeters], falling back to 0.05m metric grid snapping.
+  Point2D snapToNearestVertexOrGrid(
+    Point2D rawPoint, {
+    double snapRadiusMeters = 0.22,
+  }) {
+    Point2D? bestVertex;
+    double bestDist = snapRadiusMeters;
+
+    void checkCandidate(Point2D pt) {
+      final d = rawPoint.distanceTo(pt);
+      if (d <= bestDist) {
+        bestDist = d;
+        bestVertex = pt;
+      }
+    }
+
+    for (final v in state.lot.boundary.vertices) {
+      checkCandidate(v);
+    }
+    for (final m in state.floor.modules) {
+      for (final v in m.geometry.vertices) {
+        checkCandidate(v);
+      }
+      for (final sub in m.subModules) {
+        for (final v in sub.geometry.vertices) {
+          checkCandidate(v);
+        }
+      }
+    }
+    for (final w in state.floor.walls) {
+      checkCandidate(w.startPoint);
+      checkCandidate(w.endPoint);
+    }
+
+    return bestVertex ??
+        Point2D(
+          snapToGrid(rawPoint.x, 0.05),
+          snapToGrid(rawPoint.y, 0.05),
+        );
+  }
+
   /// Encuadra y hace zoom dinámico centrado en un módulo o recinto específico
   void focusOnModule(String moduleId, Size viewportSize) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;

@@ -74,6 +74,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final showZoningGuide = ref.watch(
       floorEditorProvider.select((s) => s.showZoningGuide),
     );
+    final isLaserMeasureActive = ref.watch(
+      floorEditorProvider.select((s) => s.isLaserMeasureActive),
+    );
     final canUndo = ref.watch(
       floorEditorProvider.select((s) => s.undoStack.isNotEmpty),
     );
@@ -157,6 +160,7 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
               selectedModuleHeader: selectedModuleHeader,
               isRenderedMode: isRenderedMode,
               showZoningGuide: showZoningGuide,
+              isLaserMeasureActive: isLaserMeasureActive,
               canUndo: canUndo,
               canRedo: canRedo,
               hasUnsavedChanges: hasUnsavedChanges,
@@ -173,6 +177,7 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required ({String id, String name})? selectedModuleHeader,
     required bool isRenderedMode,
     required bool showZoningGuide,
+    required bool isLaserMeasureActive,
     required bool canUndo,
     required bool canRedo,
     required bool hasUnsavedChanges,
@@ -238,6 +243,19 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         size: 19,
         tooltip: AppStrings.tr('demarcate_walls_tooltip', lang),
         onPressed: () => onDispatch('demarcate_walls'),
+      ),
+      _toolbarIconButton(
+        icon: Icons.straighten,
+        size: 19,
+        color: isLaserMeasureActive
+            ? const Color(0xFFFF1744)
+            : const Color(0xFF00E5FF),
+        tooltip: lang == 'es'
+            ? (isLaserMeasureActive
+                ? 'Desactivar Regla Láser 2D'
+                : 'Regla Láser 2D y Verificador de Paso (≥ 0.90m)')
+            : '2D Laser Tape Measure & Clearance Checker',
+        onPressed: () => onDispatch('laser_measure'),
       ),
       if (selectedModuleHeader != null)
         _toolbarIconButton(
@@ -341,6 +359,8 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ),
       ),
       PopupMenuButton<String>(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
         icon: const Icon(Icons.more_vert, size: 20),
         tooltip: 'Más Opciones',
         onSelected: onDispatch,
@@ -350,8 +370,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ),
       ),
       TextButton.icon(
+        style: TextButton.styleFrom(
+          padding: const EdgeInsets.symmetric(horizontal: 6),
+          minimumSize: const Size(0, 32),
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         onPressed: () => onDispatch('toggle_lang'),
-        icon: const Icon(Icons.language, size: 18),
+        icon: const Icon(Icons.language, size: 17),
         label: Text(
           AppStrings.tr('lang_switch', lang),
           style: const TextStyle(
@@ -361,11 +386,18 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         ),
       ),
       IconButton(
+        visualDensity: VisualDensity.compact,
+        padding: const EdgeInsets.symmetric(horizontal: 3),
+        constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+        style: IconButton.styleFrom(
+          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+        ),
         tooltip: themeMode == ThemeMode.dark
             ? AppStrings.tr('theme_light', lang)
             : AppStrings.tr('theme_dark', lang),
         icon: Icon(
           themeMode == ThemeMode.dark ? Icons.light_mode : Icons.dark_mode,
+          size: 19,
         ),
         onPressed: () => onDispatch('toggle_theme'),
       ),
@@ -381,8 +413,12 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     double size = 20,
   }) {
     return IconButton(
-      padding: const EdgeInsets.symmetric(horizontal: 3),
-      constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+      visualDensity: VisualDensity.compact,
+      padding: const EdgeInsets.symmetric(horizontal: 2),
+      constraints: const BoxConstraints(minWidth: 30, minHeight: 30),
+      style: IconButton.styleFrom(
+        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      ),
       icon: Icon(icon, size: size, color: color),
       tooltip: tooltip,
       onPressed: onPressed,
@@ -889,6 +925,20 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
             : 'Auto-Furnish Full Floor (1-Click)',
       ),
       _menuItem(
+        'blueprint_underlay',
+        Icons.grid_4x4,
+        lang == 'es'
+            ? 'Calco de Plano Base y Ejes Estructurales'
+            : 'Calibrated Blueprint & Structural Grid',
+      ),
+      _menuItem(
+        'laser_measure',
+        Icons.straighten,
+        lang == 'es'
+            ? 'Regla Láser 2D y Paso Normativo'
+            : '2D Laser Measure & Clearance',
+      ),
+      _menuItem(
         'multi_story',
         Icons.cottage_outlined,
         lang == 'es' ? 'Programa Vivienda 2 Pisos' : '2-Story Brief Wizard',
@@ -1002,6 +1052,20 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         lang == 'es'
             ? 'Auto-Amoblar Planta Completa (1-Clic)'
             : 'Auto-Furnish Full Floor (1-Click)',
+      ),
+      _menuItem(
+        'blueprint_underlay',
+        Icons.grid_4x4,
+        lang == 'es'
+            ? 'Calco de Plano Base y Ejes Estructurales'
+            : 'Calibrated Blueprint & Structural Grid',
+      ),
+      _menuItem(
+        'laser_measure',
+        Icons.straighten,
+        lang == 'es'
+            ? 'Regla Láser 2D y Paso Normativo'
+            : '2D Laser Measure & Clearance',
       ),
       _menuItem(
         'multi_story',
@@ -1122,6 +1186,28 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
           lang == 'es'
               ? 'Planta auto-amoblada: $count piezas distribuidas en 2D y 3D.'
               : 'Floor auto-furnished: $count items placed in 2D and 3D.',
+        );
+        break;
+      case 'blueprint_underlay':
+        EditorDialogs.showBlueprintUnderlayDialog(
+          context: context,
+          currentConfig: ref.read(floorEditorProvider).blueprintUnderlay,
+          notifier: notifier,
+          lang: lang,
+        );
+        break;
+      case 'laser_measure':
+        notifier.toggleLaserMeasure();
+        final active = ref.read(floorEditorProvider).isLaserMeasureActive;
+        _showOrientationSnackBar(
+          context,
+          active
+              ? (lang == 'es'
+                  ? 'Regla Láser 2D activa: arrastrá o tocá 2 puntos en el lienzo.'
+                  : '2D Laser Measure active: drag or tap 2 points on canvas.')
+              : (lang == 'es'
+                  ? 'Regla Láser 2D desactivada.'
+                  : '2D Laser Measure disabled.'),
         );
         break;
       case 'multi_story':

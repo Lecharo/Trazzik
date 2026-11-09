@@ -145,6 +145,13 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         final metersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
         final clickPoint = Point2D(metersX, metersY);
+
+        if (editorState.isLaserMeasureActive) {
+          final snapped = notifier.snapToNearestVertexOrGrid(clickPoint);
+          notifier.setLaserMeasurePoints(snapped, snapped);
+          return;
+        }
+
         final hit = _hitTestAt(clickPoint, editorState.floor, editorState.zoom);
 
         switch (hit.kind) {
@@ -204,6 +211,18 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         }
       },
       onPanUpdate: (details) {
+        if (editorState.isLaserMeasureActive) {
+          final localPos = details.localPosition;
+          final curMetersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
+          final curMetersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
+          final snappedEnd = notifier.snapToNearestVertexOrGrid(
+            Point2D(curMetersX, curMetersY),
+          );
+          final startPt = editorState.laserStart ?? snappedEnd;
+          notifier.setLaserMeasurePoints(startPt, snappedEnd);
+          return;
+        }
+
         if (_draggingSubModuleId != null &&
             _draggingParentModuleId != null &&
             _dragStartMeters != null &&
@@ -242,6 +261,19 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         final metersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
         final clickPoint = Point2D(metersX, metersY);
+
+        if (editorState.isLaserMeasureActive) {
+          final snapped = notifier.snapToNearestVertexOrGrid(clickPoint);
+          if (editorState.laserStart == null ||
+              (editorState.laserEnd != null &&
+                  editorState.laserStart != editorState.laserEnd)) {
+            notifier.setLaserMeasurePoints(snapped, snapped);
+          } else {
+            notifier.setLaserMeasurePoints(editorState.laserStart, snapped);
+          }
+          return;
+        }
+
         final hit = _hitTestAt(clickPoint, editorState.floor, editorState.zoom);
 
         switch (hit.kind) {

@@ -58,6 +58,11 @@ class Canvas2DPainter extends CustomPainter {
     // 2. Cuadrícula métrica
     _drawGrid(canvas, size, zoom, pan);
 
+    // 2.5. Calco de Plano Base Calibrado y Ejes Estructurales (Blueprint Underlay)
+    if (state.blueprintUnderlay.isEnabled) {
+      _drawBlueprintUnderlay(canvas, zoom);
+    }
+
     // 3. Dibujar Zonas Normativas del Lote
     _drawZoningZones(canvas, zoom);
 
@@ -99,6 +104,13 @@ class Canvas2DPainter extends CustomPainter {
     for (final module in state.floor.modules) {
       final isSelected = module.id == state.selectedModuleId;
       _drawModule(canvas, module, zoom, isSelected);
+    }
+
+    // 7.5. Regla Láser 2D Interactiva y Verificador de Paso Normativo
+    if (state.isLaserMeasureActive &&
+        state.laserStart != null &&
+        state.laserEnd != null) {
+      _drawLaserMeasureOverlay(canvas, zoom);
     }
 
     canvas.restore();
@@ -1279,6 +1291,241 @@ class Canvas2DPainter extends CustomPainter {
     );
   }
 
+  void _drawBlueprintUnderlay(Canvas canvas, double zoom) {
+    final cfg = state.blueprintUnderlay;
+    final alpha = cfg.opacity.clamp(0.08, 0.92);
+    final left = cfg.offsetX * zoom;
+    final top = cfg.offsetY * zoom;
+    final widthPx = math.max(1.0, cfg.widthMeters) * zoom;
+    final heightPx = math.max(1.0, cfg.heightMeters) * zoom;
+    final rect = Rect.fromLTWH(left, top, widthPx, heightPx);
+
+    // 1. Blueprint cyan sheet background
+    canvas.drawRect(
+      rect,
+      Paint()..color = const Color(0xFF0D47A1).withValues(alpha: alpha * 0.42),
+    );
+    canvas.drawRect(
+      rect,
+      Paint()
+        ..color = const Color(0xFF00E5FF).withValues(alpha: alpha)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6,
+    );
+
+    // 2. Structural reference grid bays (Ejes A, B, C... & 1, 2, 3...)
+    final bayMeters = math.max(1.0, cfg.structuralBayMeters);
+    final bayPx = bayMeters * zoom;
+    final axisLinePaint = Paint()
+      ..color = const Color(0xFF80D8FF).withValues(alpha: alpha * 0.85)
+      ..strokeWidth = 1.0;
+
+    int colIdx = 0;
+    for (double x = left; x <= left + widthPx + 0.5; x += bayPx) {
+      canvas.drawLine(Offset(x, top - 16), Offset(x, top + heightPx), axisLinePaint);
+      final letter = String.fromCharCode(65 + (colIdx % 26));
+      final bubbleCenter = Offset(x, top - 24);
+      canvas.drawCircle(
+        bubbleCenter,
+        8.5,
+        Paint()..color = const Color(0xFF0A192F).withValues(alpha: 0.9),
+      );
+      canvas.drawCircle(
+        bubbleCenter,
+        8.5,
+        Paint()
+          ..color = const Color(0xFF00E5FF).withValues(alpha: alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      final tp = _getCachedTextPainter(
+        'bp_col_$letter',
+        TextSpan(
+          text: letter,
+          style: const TextStyle(
+            color: Color(0xFF00E5FF),
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      tp.paint(
+        canvas,
+        Offset(bubbleCenter.dx - tp.width / 2, bubbleCenter.dy - tp.height / 2),
+      );
+      colIdx++;
+    }
+
+    int rowIdx = 1;
+    for (double y = top; y <= top + heightPx + 0.5; y += bayPx) {
+      canvas.drawLine(Offset(left - 16, y), Offset(left + widthPx, y), axisLinePaint);
+      final bubbleCenter = Offset(left - 24, y);
+      canvas.drawCircle(
+        bubbleCenter,
+        8.5,
+        Paint()..color = const Color(0xFF0A192F).withValues(alpha: 0.9),
+      );
+      canvas.drawCircle(
+        bubbleCenter,
+        8.5,
+        Paint()
+          ..color = const Color(0xFF00E5FF).withValues(alpha: alpha)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.2,
+      );
+      final tp = _getCachedTextPainter(
+        'bp_row_$rowIdx',
+        TextSpan(
+          text: '$rowIdx',
+          style: const TextStyle(
+            color: Color(0xFF00E5FF),
+            fontSize: 9,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+      );
+      tp.paint(
+        canvas,
+        Offset(bubbleCenter.dx - tp.width / 2, bubbleCenter.dy - tp.height / 2),
+      );
+      rowIdx++;
+    }
+
+    // 3. Calibrated scale stamp
+    final stampTp = TextPainter(
+      text: TextSpan(
+        text:
+            '${cfg.label} • ${cfg.widthMeters.toStringAsFixed(2)}m × ${cfg.heightMeters.toStringAsFixed(2)}m (Modulación Ejes: ${bayMeters.toStringAsFixed(2)}m)',
+        style: TextStyle(
+          color: const Color(0xFF80D8FF).withValues(alpha: math.min(1.0, alpha + 0.25)),
+          fontSize: 9.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    stampTp.paint(canvas, Offset(left + 8, top + heightPx - stampTp.height - 6));
+  }
+
+  void _drawLaserMeasureOverlay(Canvas canvas, double zoom) {
+    final p1 = state.laserStart!;
+    final p2 = state.laserEnd!;
+    final startPx = Offset(p1.x * zoom, p1.y * zoom);
+    final endPx = Offset(p2.x * zoom, p2.y * zoom);
+
+    final dx = (p2.x - p1.x).abs();
+    final dy = (p2.y - p1.y).abs();
+    final dist = p1.distanceTo(p2);
+    final angleDeg = (math.atan2(p2.y - p1.y, p2.x - p1.x) * 180.0 / math.pi).abs();
+
+    // Orthogonal projection legs (ΔX / ΔY)
+    final legPaint = Paint()
+      ..color = const Color(0xFF00E5FF).withValues(alpha: 0.55)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+    final cornerPx = Offset(endPx.dx, startPx.dy);
+    canvas.drawLine(startPx, cornerPx, legPaint);
+    canvas.drawLine(cornerPx, endPx, legPaint);
+
+    // Main laser beam
+    final beamGlow = Paint()
+      ..color = const Color(0xFFFF1744).withValues(alpha: 0.28)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 6.0;
+    final beamCore = Paint()
+      ..color = const Color(0xFFFF1744)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.2;
+    canvas.drawLine(startPx, endPx, beamGlow);
+    canvas.drawLine(startPx, endPx, beamCore);
+
+    // Endpoint snap rings
+    for (final pt in [startPx, endPx]) {
+      canvas.drawCircle(pt, 5.5, Paint()..color = const Color(0xFF0A192F));
+      canvas.drawCircle(
+        pt,
+        5.5,
+        Paint()
+          ..color = const Color(0xFF00E5FF)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 2.0,
+      );
+    }
+
+    // Ergonomic passage clearance evaluation
+    final String verdict;
+    final Color verdictColor;
+    if (dist >= 0.90) {
+      verdict = '✓ PASO NORMATIVO / ACCESIBLE (≥ 0.90 m)';
+      verdictColor = const Color(0xFF00E676);
+    } else if (dist >= 0.60) {
+      verdict = '⚠ PASO SECUNDARIO AJUSTADO (0.60–0.89 m)';
+      verdictColor = const Color(0xFFFFB300);
+    } else {
+      verdict = '✗ OBSTRUCCIÓN / PASO INSUFICIENTE (< 0.60 m)';
+      verdictColor = const Color(0xFFFF5252);
+    }
+
+    final midPx = Offset(
+      (startPx.dx + endPx.dx) / 2,
+      (startPx.dy + endPx.dy) / 2 - 26,
+    );
+
+    final tp = TextPainter(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: 'LÁSER: ${dist.toStringAsFixed(2)} m  ',
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 11,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          TextSpan(
+            text: '(ΔX: ${dx.toStringAsFixed(2)}m • ΔY: ${dy.toStringAsFixed(2)}m • ${angleDeg.toStringAsFixed(0)}°)\n',
+            style: const TextStyle(
+              color: Color(0xFFB0BEC5),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          TextSpan(
+            text: verdict,
+            style: TextStyle(
+              color: verdictColor,
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+        ],
+      ),
+      textAlign: TextAlign.center,
+      textDirection: TextDirection.ltr,
+    )..layout();
+
+    final badgeRect = Rect.fromCenter(
+      center: midPx,
+      width: tp.width + 18,
+      height: tp.height + 10,
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(8)),
+      Paint()..color = const Color(0xFF0A192F).withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(badgeRect, const Radius.circular(8)),
+      Paint()
+        ..color = verdictColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+    tp.paint(
+      canvas,
+      Offset(badgeRect.left + 9, badgeRect.top + 5),
+    );
+  }
+
   @override
   bool shouldRepaint(covariant Canvas2DPainter oldDelegate) {
     final prev = oldDelegate.state;
@@ -1291,6 +1538,10 @@ class Canvas2DPainter extends CustomPainter {
         prev.selectedSubModuleId != state.selectedSubModuleId ||
         prev.selectedWallId != state.selectedWallId ||
         prev.isRenderedMode != state.isRenderedMode ||
-        prev.showZoningGuide != state.showZoningGuide;
+        prev.showZoningGuide != state.showZoningGuide ||
+        prev.isLaserMeasureActive != state.isLaserMeasureActive ||
+        prev.laserStart != state.laserStart ||
+        prev.laserEnd != state.laserEnd ||
+        prev.blueprintUnderlay != state.blueprintUnderlay;
   }
 }
