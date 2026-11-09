@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
-import 'package:trazzik/core/supabase/supabase_config.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/authentication/data/supabase_auth_repository.dart';
 import 'package:trazzik/features/projects/presentation/screens/projects_list_screen.dart';
@@ -17,7 +16,8 @@ class AuthScreen extends ConsumerStatefulWidget {
 }
 
 class _AuthScreenState extends ConsumerState<AuthScreen> {
-  late final SupabaseAuthRepository _authRepo;
+  SupabaseAuthRepository get _authRepo =>
+      widget.authRepo ?? ref.read(authRepositoryProvider);
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _nameController = TextEditingController();
@@ -27,15 +27,6 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
   bool _isLoading = false;
   String _selectedUserType = 'architect';
   String? _errorMessage;
-
-  @override
-  void initState() {
-    super.initState();
-    _authRepo = widget.authRepo ??
-        (SupabaseConfig.isInitialized
-            ? SupabaseAuthRepository(SupabaseConfig.client)
-            : SupabaseAuthRepository());
-  }
 
   Future<void> _submit() async {
     if (!_formKey.currentState!.validate()) return;
@@ -146,7 +137,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
               border: Border.all(color: Theme.of(context).dividerColor),
               boxShadow: [
                 BoxShadow(
-                  color: Colors.black.withOpacity(0.2),
+                  color: Colors.black.withValues(alpha: 0.2),
                   blurRadius: 20,
                   offset: const Offset(0, 8),
                 ),
@@ -164,10 +155,10 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                       height: 90,
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5)),
                         boxShadow: [
                           BoxShadow(
-                            color: const Color(0xFF00E5FF).withOpacity(0.25),
+                            color: const Color(0xFF00E5FF).withValues(alpha: 0.25),
                             blurRadius: 16,
                             offset: const Offset(0, 4),
                           ),
@@ -187,9 +178,9 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF00E5FF).withOpacity(0.12),
+                        color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.7)),
+                        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.7)),
                       ),
                       child: Text(
                         AppStrings.tr('brand', lang),
@@ -258,7 +249,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFFEF5350).withOpacity(0.15),
+                        color: const Color(0xFFEF5350).withValues(alpha: 0.15),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(color: const Color(0xFFEF5350)),
                       ),
@@ -282,7 +273,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                     ),
                     const SizedBox(height: 16),
                     DropdownButtonFormField<String>(
-                      value: _selectedUserType,
+                      initialValue: _selectedUserType,
                       decoration: InputDecoration(
                         labelText: AppStrings.tr('profession', lang),
                         prefixIcon: const Icon(Icons.badge_outlined),

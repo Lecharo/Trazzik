@@ -9,7 +9,10 @@ void main() {
   setUpAll(() async {
     TestWidgetsFlutterBinding.ensureInitialized();
     SharedPreferences.setMockInitialValues({});
-    await SupabaseConfig.initialize();
+    await SupabaseConfig.initialize(
+      urlOverride: 'https://test-project.supabase.co',
+      publishableKeyOverride: 'test-publishable-key',
+    );
   });
 
   testWidgets('AuthScreen monta los campos de login y registro',

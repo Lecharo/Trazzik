@@ -3,28 +3,43 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/supabase/supabase_config.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
+import 'package:trazzik/features/authentication/data/supabase_auth_repository.dart';
 import 'package:trazzik/features/authentication/presentation/screens/auth_screen.dart';
 import 'package:trazzik/features/projects/presentation/screens/projects_list_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await SupabaseConfig.initialize();
+  String? startupError;
+  try {
+    await SupabaseConfig.initialize();
+  } catch (e) {
+    startupError = e.toString();
+  }
 
   runApp(
-    const ProviderScope(
-      child: TrazzikApp(),
+    ProviderScope(
+      child: TrazzikApp(startupError: startupError),
     ),
   );
 }
 
 class TrazzikApp extends ConsumerWidget {
-  const TrazzikApp({super.key});
+  final String? startupError;
+
+  const TrazzikApp({super.key, this.startupError});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final themeMode = ref.watch(appThemeProvider);
     final lang = ref.watch(appLocaleProvider);
-    final user = SupabaseConfig.client.auth.currentUser;
+
+    Widget home;
+    if (startupError != null) {
+      home = _StartupConfigErrorScreen(message: startupError!);
+    } else {
+      final user = ref.watch(authRepositoryProvider).currentUser;
+      home = user != null ? const ProjectsListScreen() : const AuthScreen();
+    }
 
     return MaterialApp(
       title: AppStrings.tr('app_title', lang),
@@ -32,7 +47,55 @@ class TrazzikApp extends ConsumerWidget {
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
-      home: user != null ? const ProjectsListScreen() : const AuthScreen(),
+      home: home,
+    );
+  }
+}
+
+class _StartupConfigErrorScreen extends StatelessWidget {
+  final String message;
+
+  const _StartupConfigErrorScreen({required this.message});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 520),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Card(
+              child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Row(
+                      children: [
+                        Icon(Icons.settings_suggest, color: Color(0xFFFFB74D)),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Configuration Required',
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Text(message, style: const TextStyle(fontSize: 13.5)),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

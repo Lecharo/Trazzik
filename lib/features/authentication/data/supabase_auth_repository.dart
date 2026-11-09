@@ -1,4 +1,10 @@
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:trazzik/core/supabase/supabase_providers.dart';
+
+final authRepositoryProvider = Provider<SupabaseAuthRepository>((ref) {
+  return SupabaseAuthRepository(ref.watch(supabaseClientProvider));
+});
 
 /// Repositorio de autenticación con Supabase Auth.
 class SupabaseAuthRepository {
