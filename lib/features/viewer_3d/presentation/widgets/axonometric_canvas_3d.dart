@@ -387,6 +387,7 @@ class AxonometricSceneRenderer {
 
   static Size? _cachedBgSize;
   static bool? _cachedBgDark;
+  static bool? _cachedBgNight;
   static Shader? _cachedBgShader;
 
   static final Map<String, TextPainter> _labelPainterCache = {};
@@ -453,19 +454,24 @@ class AxonometricSceneRenderer {
       size.height / 2 + panOffset.dy,
     );
 
-    // 1. Studio radial gradient background (cached by size and theme brightness)
+    // 1. Studio radial gradient background (cached by size, theme brightness, and night mode)
+    final isNight = sunPreset == SunPreset3D.nightInterior;
     if (drawBackground) {
       if (_cachedBgShader == null ||
           _cachedBgSize != size ||
-          _cachedBgDark != isDarkTheme) {
+          _cachedBgDark != isDarkTheme ||
+          _cachedBgNight != isNight) {
         _cachedBgSize = size;
         _cachedBgDark = isDarkTheme;
+        _cachedBgNight = isNight;
         _cachedBgShader = RadialGradient(
           center: Alignment.center,
           radius: 1.2,
-          colors: isDarkTheme
-              ? const [Color(0xFF1E2836), Color(0xFF0F172A)]
-              : const [Color(0xFFF1F5F9), Color(0xFFDCE5F0)],
+          colors: isNight
+              ? const [Color(0xFF10192D), Color(0xFF060A13)]
+              : (isDarkTheme
+                  ? const [Color(0xFF1E2836), Color(0xFF0F172A)]
+                  : const [Color(0xFFF1F5F9), Color(0xFFDCE5F0)]),
         ).createShader(Offset.zero & size);
       }
       final bgPaint = Paint()..shader = _cachedBgShader;
@@ -509,9 +515,11 @@ class AxonometricSceneRenderer {
       }
 
       final avgDepth = depthSum / face.vertices.length;
-      final shadedColor = useDefaultSun
-          ? face.defaultShadedColor
-          : face.computeShadedColor(lightDir);
+      final shadedColor = isNight
+          ? face.computeNightShadedColor(lightDir)
+          : (useDefaultSun
+              ? face.defaultShadedColor
+              : face.computeShadedColor(lightDir));
 
       projectedFaces.add(
         _ProjectedFace(
@@ -522,6 +530,7 @@ class AxonometricSceneRenderer {
           color: shadedColor,
           isEdgeVisible: face.isEdgeVisible,
           label: face.label,
+          roomDimensionsLabel: face.roomDimensionsLabel,
           moduleId: face.moduleId,
           pattern: face.pattern,
           patternColor: face.patternColor,
@@ -606,7 +615,8 @@ class AxonometricSceneRenderer {
         canvas,
         projectedFaces,
         selectedModuleId: selectedModuleId,
-        isDarkTheme: isDarkTheme,
+        isDarkTheme: isDarkTheme || isNight,
+        showDimensions: zoom >= 26.0,
       );
     }
 
@@ -782,9 +792,10 @@ class AxonometricSceneRenderer {
   static TextPainter _resolveLabelPainter(
     String shortCode,
     bool isSelected,
-    bool isDarkTheme,
-  ) {
-    final key = '$shortCode|$isSelected|$isDarkTheme';
+    bool isDarkTheme, {
+    String? subLine,
+  }) {
+    final key = '$shortCode|${subLine ?? ''}|$isSelected|$isDarkTheme';
     final cached = _labelPainterCache[key];
     if (cached != null) return cached;
 
@@ -795,16 +806,34 @@ class AxonometricSceneRenderer {
     final textColor = isSelected
         ? const Color(0xFF0F172A)
         : (isDarkTheme ? Colors.white : const Color(0xFF0F172A));
+    final subColor = isSelected
+        ? const Color(0xFF1E293B)
+        : (isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569));
     final tp = TextPainter(
       text: TextSpan(
-        text: shortCode,
-        style: TextStyle(
-          color: textColor,
-          fontSize: 8.5,
-          fontWeight: FontWeight.bold,
-          letterSpacing: 0.3,
-        ),
+        children: [
+          TextSpan(
+            text: shortCode,
+            style: TextStyle(
+              color: textColor,
+              fontSize: 8.5,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 0.3,
+            ),
+          ),
+          if (subLine != null && subLine.isNotEmpty)
+            TextSpan(
+              text: '\n$subLine',
+              style: TextStyle(
+                color: subColor,
+                fontSize: 6.8,
+                fontWeight: FontWeight.w600,
+                height: 1.15,
+              ),
+            ),
+        ],
       ),
+      textAlign: TextAlign.center,
       textDirection: TextDirection.ltr,
     )..layout();
     _labelPainterCache[key] = tp;
@@ -816,6 +845,7 @@ class AxonometricSceneRenderer {
     List<_ProjectedFace> projectedFaces, {
     required String? selectedModuleId,
     required bool isDarkTheme,
+    bool showDimensions = true,
   }) {
     for (final pFace in projectedFaces) {
       final label = pFace.label;
@@ -834,10 +864,14 @@ class AxonometricSceneRenderer {
       final isSelected =
           selectedModuleId != null && pFace.moduleId == selectedModuleId;
       final shortCode = Module.compactRoomCode(label);
-      final textPainter =
-          _resolveLabelPainter(shortCode, isSelected, isDarkTheme);
+      final textPainter = _resolveLabelPainter(
+        shortCode,
+        isSelected,
+        isDarkTheme,
+        subLine: showDimensions ? pFace.roomDimensionsLabel : null,
+      );
 
-      const paddingH = 4.0;
+      const paddingH = 4.5;
       const paddingV = 2.0;
       final badgeW = textPainter.width + paddingH * 2;
       final badgeH = textPainter.height + paddingV * 2;
@@ -977,6 +1011,7 @@ class _ProjectedFace {
   final Color color;
   final bool isEdgeVisible;
   final String? label;
+  final String? roomDimensionsLabel;
   final String? moduleId;
   final FinishPatternType? pattern;
   final Color? patternColor;
@@ -994,6 +1029,7 @@ class _ProjectedFace {
     required this.color,
     required this.isEdgeVisible,
     this.label,
+    this.roomDimensionsLabel,
     this.moduleId,
     this.pattern,
     this.patternColor,

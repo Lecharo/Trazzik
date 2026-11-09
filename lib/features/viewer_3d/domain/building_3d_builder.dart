@@ -228,12 +228,18 @@ class Building3DBuilder {
         ? finish.baseColor.withValues(alpha: 0.92)
         : _getColorForModuleType(mod.moduleType);
 
+    final bb = mod.geometry.boundingBox;
+    final dimSubLabel = (bb.width >= 1.1 && bb.height >= 1.1)
+        ? '${bb.width.toStringAsFixed(1)}×${bb.height.toStringAsFixed(1)}m • ${mod.area.toStringAsFixed(1)}m²'
+        : '${mod.area.toStringAsFixed(1)}m²';
+
     faces.add(
       Face3D(
         vertices:
             verts.map((p) => Point3D(p.x, p.y, elevationZ + 0.01)).toList(),
         baseColor: floorColor,
         label: mod.name,
+        roomDimensionsLabel: dimSubLabel,
         moduleId: mod.id,
         floorId: mod.floorId,
         pattern: finish.pattern,
@@ -993,7 +999,7 @@ class Building3DBuilder {
     }
   }
 
-  /// Extruye paramétricamente una pieza de mobiliario o artefacto en la maqueta 3D
+  /// Extruye paramétricamente una pieza de mobiliario o artefacto multi-componente en la maqueta 3D
   static void _buildFurniture3D(
     List<Face3D> faces,
     SubModule sub,
@@ -1002,17 +1008,723 @@ class Building3DBuilder {
     required int floorIndex,
   }) {
     final bb = sub.geometry.boundingBox;
+    if (bb.width <= 0.05 || bb.height <= 0.05) return;
+
     final effectiveSubElevation = sub.resolvedElevation;
     if (effectiveSubElevation >= maxCutawayHeight) return;
 
     final rawH = sub.resolvedHeight;
-    final actualH = math.min(rawH, maxCutawayHeight - effectiveSubElevation);
+    final maxAllowedH = maxCutawayHeight - effectiveSubElevation;
+    final actualH = math.min(rawH, maxAllowedH);
     if (actualH <= 0.02) return;
 
     final z0 = elevationZ + effectiveSubElevation + 0.02;
     final z1 = z0 + actualH;
     final color = sub.default3dColor;
+    final type = sub.type.toUpperCase();
 
+    switch (type) {
+      case 'BED':
+        _buildBed3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          maxAllowedZ: elevationZ + maxCutawayHeight,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'SOFA':
+      case 'ARMCHAIR':
+        _buildSofa3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'DINING_TABLE':
+      case 'ROUND_TABLE':
+      case 'TABLE':
+      case 'DESK':
+      case 'COFFEE_TABLE':
+      case 'SIDE_TABLE':
+        _buildTableWithLegs3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'CHAIR':
+        _buildChair3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'TOILET':
+        _buildToilet3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          maxAllowedZ: elevationZ + maxCutawayHeight,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'SHOWER':
+        _buildShower3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          maxAllowedZ: elevationZ + maxCutawayHeight,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'BATHTUB':
+        _buildBathtub3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'SINK_COUNTER':
+      case 'VANITY':
+      case 'KITCHEN_ISLAND':
+      case 'LAUNDRY_SINK':
+        _buildCounterWithSink3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          hasBasin: type != 'KITCHEN_ISLAND',
+          floorIndex: floorIndex,
+        );
+        break;
+      case 'STOVE':
+        _buildStove3D(
+          faces,
+          bb: bb,
+          z0: z0,
+          z1: z1,
+          color: color,
+          floorIndex: floorIndex,
+        );
+        break;
+      default:
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.minX,
+          minY: bb.minY,
+          maxX: bb.maxX,
+          maxY: bb.maxY,
+          z0: z0,
+          z1: z1,
+          sideColor: color,
+          topColor: Color.lerp(color, Colors.white, 0.10)!,
+          floorIndex: floorIndex,
+        );
+        break;
+    }
+  }
+
+  static void _buildBed3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required double maxAllowedZ,
+    required Color color,
+    required int floorIndex,
+  }) {
+    final totalH = z1 - z0;
+    final frameZ1 = z0 + math.min(0.20, totalH * 0.42);
+    // 1. Wooden bed frame base
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: z0,
+      z1: frameZ1,
+      sideColor: const Color(0xFF6D4C41),
+      topColor: const Color(0xFF8D6E63),
+      floorIndex: floorIndex,
+    );
+
+    if (z1 > frameZ1 + 0.03) {
+      final inset = math.min(0.03, math.min(bb.width, bb.height) * 0.05);
+      // 2. White mattress core
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX + inset,
+        minY: bb.minY + inset,
+        maxX: bb.maxX - inset,
+        maxY: bb.maxY - inset,
+        z0: frameZ1,
+        z1: z1,
+        sideColor: const Color(0xFFECEFF1),
+        topColor: const Color(0xFFF8FAFC),
+        floorIndex: floorIndex,
+      );
+
+      // Determine orientation: headboard along the top/rear edge
+      final headAlongY = bb.height >= bb.width;
+      final headThick = math.min(0.08, (headAlongY ? bb.height : bb.width) * 0.10);
+      final headTopZ = math.min(maxAllowedZ, z0 + 0.92);
+
+      // 3. Raised headboard
+      if (headTopZ > z1 + 0.04) {
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.minX,
+          minY: bb.minY,
+          maxX: headAlongY ? bb.maxX : bb.minX + headThick,
+          maxY: headAlongY ? bb.minY + headThick : bb.maxY,
+          z0: z0,
+          z1: headTopZ,
+          sideColor: const Color(0xFF5D4037),
+          topColor: const Color(0xFF6D4C41),
+          floorIndex: floorIndex,
+        );
+      }
+
+      // 4. Duvet blanket cover on lower 62% of the bed
+      final blanketTopZ = math.min(maxAllowedZ, z1 + 0.025);
+      if (blanketTopZ > z1 + 0.005) {
+        if (headAlongY) {
+          _addAxisAlignedBox3D(
+            faces,
+            minX: bb.minX + inset * 0.5,
+            minY: bb.minY + bb.height * 0.36,
+            maxX: bb.maxX - inset * 0.5,
+            maxY: bb.maxY - inset * 0.5,
+            z0: z1,
+            z1: blanketTopZ,
+            sideColor: color,
+            topColor: Color.lerp(color, Colors.white, 0.12)!,
+            floorIndex: floorIndex,
+          );
+        } else {
+          _addAxisAlignedBox3D(
+            faces,
+            minX: bb.minX + bb.width * 0.36,
+            minY: bb.minY + inset * 0.5,
+            maxX: bb.maxX - inset * 0.5,
+            maxY: bb.maxY - inset * 0.5,
+            z0: z1,
+            z1: blanketTopZ,
+            sideColor: color,
+            topColor: Color.lerp(color, Colors.white, 0.12)!,
+            floorIndex: floorIndex,
+          );
+        }
+      }
+
+      // 5. Pillows near the headboard
+      final pillowTopZ = math.min(maxAllowedZ, z1 + 0.06);
+      if (pillowTopZ > z1 + 0.01 && bb.width >= 0.70 && bb.height >= 0.70) {
+        if (headAlongY) {
+          final pY0 = bb.minY + headThick + 0.04;
+          final pY1 = math.min(bb.minY + bb.height * 0.30, pY0 + 0.32);
+          if (pY1 > pY0 + 0.08) {
+            final isDouble = bb.width >= 1.35;
+            if (isDouble) {
+              final midX = (bb.minX + bb.maxX) / 2.0;
+              _addAxisAlignedBox3D(
+                faces,
+                minX: bb.minX + 0.12,
+                minY: pY0,
+                maxX: midX - 0.05,
+                maxY: pY1,
+                z0: z1,
+                z1: pillowTopZ,
+                sideColor: const Color(0xFFCFD8DC),
+                topColor: Colors.white,
+                floorIndex: floorIndex,
+              );
+              _addAxisAlignedBox3D(
+                faces,
+                minX: midX + 0.05,
+                minY: pY0,
+                maxX: bb.maxX - 0.12,
+                maxY: pY1,
+                z0: z1,
+                z1: pillowTopZ,
+                sideColor: const Color(0xFFCFD8DC),
+                topColor: Colors.white,
+                floorIndex: floorIndex,
+              );
+            } else {
+              _addAxisAlignedBox3D(
+                faces,
+                minX: bb.minX + 0.14,
+                minY: pY0,
+                maxX: bb.maxX - 0.14,
+                maxY: pY1,
+                z0: z1,
+                z1: pillowTopZ,
+                sideColor: const Color(0xFFCFD8DC),
+                topColor: Colors.white,
+                floorIndex: floorIndex,
+              );
+            }
+          }
+        }
+      }
+    }
+  }
+
+  static void _buildSofa3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required int floorIndex,
+  }) {
+    final totalH = z1 - z0;
+    final seatZ1 = z0 + math.min(0.42, totalH * 0.55);
+    final cushionColor = Color.lerp(color, Colors.white, 0.14)!;
+
+    // 1. Lower seat deck across full footprint
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: z0,
+      z1: seatZ1,
+      sideColor: color,
+      topColor: cushionColor,
+      floorIndex: floorIndex,
+    );
+
+    if (z1 <= seatZ1 + 0.04) return;
+
+    final wideAlongX = bb.width >= bb.height;
+    final backThick = math.min(0.18, (wideAlongX ? bb.height : bb.width) * 0.24);
+    final armThick = math.min(0.15, (wideAlongX ? bb.width : bb.height) * 0.16);
+    final armZ1 = z0 + math.min(0.62, totalH * 0.80);
+
+    if (wideAlongX) {
+      // Backrest along north/minY edge
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX,
+        minY: bb.minY,
+        maxX: bb.maxX,
+        maxY: bb.minY + backThick,
+        z0: seatZ1,
+        z1: z1,
+        sideColor: color,
+        topColor: cushionColor,
+        floorIndex: floorIndex,
+      );
+      if (armZ1 > seatZ1 + 0.02 && bb.width > armThick * 2.5) {
+        // Left & right armrests
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.minX,
+          minY: bb.minY + backThick,
+          maxX: bb.minX + armThick,
+          maxY: bb.maxY,
+          z0: seatZ1,
+          z1: armZ1,
+          sideColor: color,
+          topColor: cushionColor,
+          floorIndex: floorIndex,
+        );
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.maxX - armThick,
+          minY: bb.minY + backThick,
+          maxX: bb.maxX,
+          maxY: bb.maxY,
+          z0: seatZ1,
+          z1: armZ1,
+          sideColor: color,
+          topColor: cushionColor,
+          floorIndex: floorIndex,
+        );
+      }
+    } else {
+      // Backrest along west/minX edge
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX,
+        minY: bb.minY,
+        maxX: bb.minX + backThick,
+        maxY: bb.maxY,
+        z0: seatZ1,
+        z1: z1,
+        sideColor: color,
+        topColor: cushionColor,
+        floorIndex: floorIndex,
+      );
+      if (armZ1 > seatZ1 + 0.02 && bb.height > armThick * 2.5) {
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.minX + backThick,
+          minY: bb.minY,
+          maxX: bb.maxX,
+          maxY: bb.minY + armThick,
+          z0: seatZ1,
+          z1: armZ1,
+          sideColor: color,
+          topColor: cushionColor,
+          floorIndex: floorIndex,
+        );
+        _addAxisAlignedBox3D(
+          faces,
+          minX: bb.minX + backThick,
+          minY: bb.maxY - armThick,
+          maxX: bb.maxX,
+          maxY: bb.maxY,
+          z0: seatZ1,
+          z1: armZ1,
+          sideColor: color,
+          topColor: cushionColor,
+          floorIndex: floorIndex,
+        );
+      }
+    }
+  }
+
+  static void _buildTableWithLegs3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required int floorIndex,
+  }) {
+    final totalH = z1 - z0;
+    final topThick = math.min(0.06, totalH * 0.22);
+    final topZ0 = z1 - topThick;
+    final topSurfaceColor = Color.lerp(color, Colors.white, 0.14)!;
+
+    // 1. 4 Corner legs (drawn before the tabletop slab)
+    final legSpanZ = topZ0 - z0;
+    final minDim = math.min(bb.width, bb.height);
+    if (legSpanZ > 0.06 && minDim >= 0.30) {
+      final legW = math.min(0.06, minDim * 0.14);
+      final inset = math.min(0.04, minDim * 0.08);
+      final legColor = Color.lerp(color, Colors.black, 0.18)!;
+
+      final legCoords = [
+        (bb.minX + inset, bb.minY + inset),
+        (bb.maxX - inset - legW, bb.minY + inset),
+        (bb.minX + inset, bb.maxY - inset - legW),
+        (bb.maxX - inset - legW, bb.maxY - inset - legW),
+      ];
+      for (final (lx, ly) in legCoords) {
+        _addAxisAlignedBox3D(
+          faces,
+          minX: lx,
+          minY: ly,
+          maxX: lx + legW,
+          maxY: ly + legW,
+          z0: z0,
+          z1: topZ0,
+          sideColor: legColor,
+          topColor: legColor,
+          floorIndex: floorIndex,
+        );
+      }
+    }
+
+    // 2. Tabletop slab
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: topZ0,
+      z1: z1,
+      sideColor: color,
+      topColor: topSurfaceColor,
+      floorIndex: floorIndex,
+    );
+  }
+
+  static void _buildChair3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required int floorIndex,
+  }) {
+    final totalH = z1 - z0;
+    final seatZ0 = z0 + math.min(0.42, totalH * 0.50);
+    final seatZ1 = math.min(z1, seatZ0 + 0.05);
+
+    // Seat + 4 legs via table helper
+    _buildTableWithLegs3D(
+      faces,
+      bb: bb,
+      z0: z0,
+      z1: seatZ1,
+      color: color,
+      floorIndex: floorIndex,
+    );
+
+    // Chair backrest
+    if (z1 > seatZ1 + 0.05) {
+      final backThick = math.min(0.06, bb.height * 0.18);
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX,
+        minY: bb.minY,
+        maxX: bb.maxX,
+        maxY: bb.minY + backThick,
+        z0: seatZ1,
+        z1: z1,
+        sideColor: color,
+        topColor: Color.lerp(color, Colors.white, 0.12)!,
+        floorIndex: floorIndex,
+      );
+    }
+  }
+
+  static void _buildToilet3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required double maxAllowedZ,
+    required Color color,
+    required int floorIndex,
+  }) {
+    final bowlZ1 = z0 + math.min(0.42, z1 - z0);
+    final tankZ1 = math.min(maxAllowedZ, z0 + 0.78);
+    final alongY = bb.height >= bb.width;
+
+    // 1. Ceramic bowl base
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX + (alongY ? bb.width * 0.08 : 0.0),
+      minY: bb.minY + (alongY ? 0.0 : bb.height * 0.08),
+      maxX: bb.maxX - (alongY ? bb.width * 0.08 : 0.0),
+      maxY: bb.maxY - (alongY ? 0.0 : bb.height * 0.08),
+      z0: z0,
+      z1: bowlZ1,
+      sideColor: const Color(0xFFCFD8DC),
+      topColor: const Color(0xFFF8FAFC),
+      floorIndex: floorIndex,
+    );
+
+    // 2. Raised rear water cistern tank
+    if (tankZ1 > bowlZ1 + 0.04) {
+      final tankDepth = (alongY ? bb.height : bb.width) * 0.34;
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX,
+        minY: bb.minY,
+        maxX: alongY ? bb.maxX : bb.minX + tankDepth,
+        maxY: alongY ? bb.minY + tankDepth : bb.maxY,
+        z0: bowlZ1,
+        z1: tankZ1,
+        sideColor: const Color(0xFFCFD8DC),
+        topColor: Colors.white,
+        floorIndex: floorIndex,
+      );
+    }
+  }
+
+  static void _buildShower3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required double maxAllowedZ,
+    required int floorIndex,
+  }) {
+    final trayZ1 = math.min(maxAllowedZ, z0 + 0.08);
+    // 1. Acrylic shower curb tray
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: z0,
+      z1: trayZ1,
+      sideColor: const Color(0xFFCFD8DC),
+      topColor: const Color(0xFFECEFF1),
+      floorIndex: floorIndex,
+    );
+
+    // 2. Translucent tempered glass shower screen (clamped to cutaway height)
+    final glassTopZ = math.min(maxAllowedZ, z0 + 1.85);
+    if (glassTopZ > trayZ1 + 0.15) {
+      final glassColor = const Color(0xFF80DEEA).withValues(alpha: 0.34);
+      final screenSpanX = bb.width * 0.68;
+      // Front glass screen along maxY edge
+      faces.add(
+        Face3D(
+          vertices: [
+            Point3D(bb.minX, bb.maxY - 0.02, trayZ1),
+            Point3D(bb.minX + screenSpanX, bb.maxY - 0.02, trayZ1),
+            Point3D(bb.minX + screenSpanX, bb.maxY - 0.02, glassTopZ),
+            Point3D(bb.minX, bb.maxY - 0.02, glassTopZ),
+          ],
+          baseColor: glassColor,
+          layer: FaceLayer3D.openingPanel,
+          floorIndex: floorIndex,
+          isTwoSided: true,
+        ),
+      );
+      // Side glass return panel along minX edge
+      faces.add(
+        Face3D(
+          vertices: [
+            Point3D(bb.minX + 0.02, bb.minY, trayZ1),
+            Point3D(bb.minX + 0.02, bb.maxY, trayZ1),
+            Point3D(bb.minX + 0.02, bb.maxY, glassTopZ),
+            Point3D(bb.minX + 0.02, bb.minY, glassTopZ),
+          ],
+          baseColor: glassColor,
+          layer: FaceLayer3D.openingPanel,
+          floorIndex: floorIndex,
+          isTwoSided: true,
+        ),
+      );
+    }
+  }
+
+  static void _buildBathtub3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required int floorIndex,
+  }) {
+    // 1. Outer acrylic tub shell
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: z0,
+      z1: z1,
+      sideColor: const Color(0xFFCFD8DC),
+      topColor: Colors.white,
+      floorIndex: floorIndex,
+    );
+
+    // 2. Inner recessed water/enamel basin
+    final rim = math.min(0.08, math.min(bb.width, bb.height) * 0.14);
+    if (bb.width > rim * 2.5 && bb.height > rim * 2.5) {
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX + rim,
+        minY: bb.minY + rim,
+        maxX: bb.maxX - rim,
+        maxY: bb.maxY - rim,
+        z0: z1,
+        z1: z1 + 0.012,
+        sideColor: const Color(0xFFB2EBF2),
+        topColor: const Color(0xFFE0F7FA),
+        floorIndex: floorIndex,
+      );
+    }
+  }
+
+  static void _buildCounterWithSink3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required bool hasBasin,
+    required int floorIndex,
+  }) {
+    final totalH = z1 - z0;
+    final topThick = math.min(0.04, totalH * 0.15);
+    final baseZ1 = z1 - topThick;
+
+    // 1. Base cabinet body
+    if (baseZ1 > z0 + 0.02) {
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX + 0.01,
+        minY: bb.minY + 0.01,
+        maxX: bb.maxX - 0.01,
+        maxY: bb.maxY - 0.01,
+        z0: z0,
+        z1: baseZ1,
+        sideColor: color,
+        topColor: color,
+        floorIndex: floorIndex,
+      );
+    }
+
+    // 2. Quartz countertop slab
+    _addAxisAlignedBox3D(
+      faces,
+      minX: bb.minX,
+      minY: bb.minY,
+      maxX: bb.maxX,
+      maxY: bb.maxY,
+      z0: baseZ1,
+      z1: z1,
+      sideColor: const Color(0xFFCFD8DC),
+      topColor: const Color(0xFFF1F5F9),
+      floorIndex: floorIndex,
+    );
+
+    // 3. Recessed sink basin on top of counter
+    if (hasBasin && bb.width >= 0.42 && bb.height >= 0.38) {
+      final cx = (bb.minX + bb.maxX) / 2.0;
+      final cy = (bb.minY + bb.maxY) / 2.0;
+      final sinkW = math.min(0.46, bb.width * 0.48);
+      final sinkD = math.min(0.34, bb.height * 0.56);
+      _addAxisAlignedBox3D(
+        faces,
+        minX: cx - sinkW / 2.0,
+        minY: cy - sinkD / 2.0,
+        maxX: cx + sinkW / 2.0,
+        maxY: cy + sinkD / 2.0,
+        z0: z1,
+        z1: z1 + 0.015,
+        sideColor: const Color(0xFF455A64),
+        topColor: const Color(0xFF263238),
+        floorIndex: floorIndex,
+      );
+    }
+  }
+
+  static void _buildStove3D(
+    List<Face3D> faces, {
+    required BoundingBox2D bb,
+    required double z0,
+    required double z1,
+    required Color color,
+    required int floorIndex,
+  }) {
+    // 1. Oven body + dark glass cooktop
     _addAxisAlignedBox3D(
       faces,
       minX: bb.minX,
@@ -1022,8 +1734,26 @@ class Building3DBuilder {
       z0: z0,
       z1: z1,
       sideColor: color,
-      topColor: color,
+      topColor: const Color(0xFF1E293B),
       floorIndex: floorIndex,
     );
+
+    // 2. Burners plate accent
+    if (bb.width >= 0.40 && bb.height >= 0.40) {
+      final insetX = bb.width * 0.16;
+      final insetY = bb.height * 0.16;
+      _addAxisAlignedBox3D(
+        faces,
+        minX: bb.minX + insetX,
+        minY: bb.minY + insetY,
+        maxX: bb.maxX - insetX,
+        maxY: bb.maxY - insetY,
+        z0: z1,
+        z1: z1 + 0.015,
+        sideColor: const Color(0xFF475569),
+        topColor: const Color(0xFF64748B),
+        floorIndex: floorIndex,
+      );
+    }
   }
 }

@@ -472,6 +472,70 @@ void main() {
       expect(accessors, hasLength(4)); // POSITION, NORMAL, COLOR_0, INDICES
       expect((accessors[0] as Map<String, dynamic>)['count'], greaterThan(20));
     });
+
+    test('Building3DBuilder genera mobiliario multi-pieza (patas de mesa, mampara de ducha, respaldo de cama), cotas 3D y modo nocturno 2700K', () {
+      final floorWithMultiFurniture = floor1.copyWith(
+        modules: [
+          floor1.modules.first.copyWith(
+            subModules: [
+              SubModule(
+                id: 'table-1',
+                moduleId: 'm1',
+                name: 'Comedor 6p',
+                type: 'DINING_TABLE',
+                geometry: Polygon2D.fromRect(1.2, 1.2, 1.6, 0.9),
+                status: ElementStatus.isNew,
+              ),
+              SubModule(
+                id: 'shower-1',
+                moduleId: 'm1',
+                name: 'Ducha',
+                type: 'SHOWER',
+                geometry: Polygon2D.fromRect(3.2, 1.2, 0.9, 0.9),
+                status: ElementStatus.isNew,
+              ),
+              SubModule(
+                id: 'toilet-1',
+                moduleId: 'm1',
+                name: 'Inodoro',
+                type: 'TOILET',
+                geometry: Polygon2D.fromRect(3.2, 2.4, 0.45, 0.70),
+                status: ElementStatus.isNew,
+              ),
+            ],
+          ),
+        ],
+      );
+
+      final faces = Building3DBuilder.buildScene(
+        floors: [floorWithMultiFurniture],
+        lot: lot,
+        wallHeight: 2.60,
+      );
+
+      // 1. Verificar sub-etiqueta de dimensiones y área en piso 3D (4.0x5.0m • 20.0m²)
+      final roomFloorFace = faces.firstWhere(
+        (f) => f.moduleId == 'm1' && f.layer == FaceLayer3D.floorFinish,
+      );
+      expect(roomFloorFace.roomDimensionsLabel, equals('4.0×5.0m • 20.0m²'));
+
+      // 2. Verificar que la ducha incluye mampara de vidrio translúcido en FaceLayer3D.openingPanel
+      final glassScreens = faces.where(
+        (f) => f.layer == FaceLayer3D.openingPanel && f.baseColor.a < 0.6,
+      );
+      expect(glassScreens.length, greaterThanOrEqualTo(2));
+
+      // 3. Verificar modo nocturno 2700K (SunPreset3D.nightInterior) ilumina el piso interior más cálido que la losa exterior
+      final slabFace = faces.firstWhere((f) => f.layer == FaceLayer3D.slab);
+      final nightFloorColor = roomFloorFace.computeNightShadedColor(
+        SunPreset3D.nightInterior.lightDirection,
+      );
+      final nightSlabColor = slabFace.computeNightShadedColor(
+        SunPreset3D.nightInterior.lightDirection,
+      );
+      expect(nightFloorColor.r, greaterThan(nightSlabColor.r));
+      expect(SunPreset3D.nightInterior.label('es'), contains('2700K'));
+    });
   });
 }
 

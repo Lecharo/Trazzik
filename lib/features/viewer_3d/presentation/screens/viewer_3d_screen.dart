@@ -409,9 +409,12 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   child: Row(
                     children: [
                       Icon(
-                        Icons.wb_sunny_outlined,
+                        _sunPreset == SunPreset3D.nightInterior
+                            ? Icons.nightlight_round
+                            : Icons.wb_sunny_outlined,
                         size: 18,
-                        color: _sunPreset == SunPreset3D.goldenHourWest
+                        color: _sunPreset == SunPreset3D.goldenHourWest ||
+                                _sunPreset == SunPreset3D.nightInterior
                             ? Colors.amber
                             : const Color(0xFF38BDF8),
                       ),
@@ -554,9 +557,12 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             IconButton(
               visualDensity: VisualDensity.compact,
               icon: Icon(
-                Icons.wb_sunny_outlined,
+                _sunPreset == SunPreset3D.nightInterior
+                    ? Icons.nightlight_round
+                    : Icons.wb_sunny_outlined,
                 size: 20,
-                color: _sunPreset == SunPreset3D.goldenHourWest
+                color: _sunPreset == SunPreset3D.goldenHourWest ||
+                        _sunPreset == SunPreset3D.nightInterior
                     ? Colors.amber
                     : const Color(0xFF38BDF8),
               ),

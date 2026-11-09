@@ -13,7 +13,7 @@ enum FaceLayer3D {
   openingPanel,
 }
 
-/// Architectural daylight presets for 3D shading and cast shadows.
+/// Architectural daylight and interior lighting presets for 3D shading and cast shadows.
 enum SunPreset3D {
   studioNoon(
     Point3D(0.577, -0.577, 0.577),
@@ -26,6 +26,10 @@ enum SunPreset3D {
   goldenHourWest(
     Point3D(-0.68, -0.58, 0.45),
     Offset(0.42, 0.34),
+  ),
+  nightInterior(
+    Point3D(0.25, -0.25, 0.93),
+    Offset(-0.12, 0.12),
   );
 
   final Point3D lightDirection;
@@ -43,6 +47,8 @@ enum SunPreset3D {
         return isEs ? 'Sol de Mañana (Este)' : 'Morning Sun (East)';
       case SunPreset3D.goldenHourWest:
         return isEs ? 'Hora Dorada (Oeste)' : 'Golden Hour (West)';
+      case SunPreset3D.nightInterior:
+        return isEs ? 'Noche Interior (2700K)' : 'Night Interior (2700K)';
     }
   }
 }
@@ -72,6 +78,7 @@ class Face3D {
   final List<Point3D> vertices;
   final Color baseColor;
   final String? label;
+  final String? roomDimensionsLabel;
   final bool isEdgeVisible;
   final String? moduleId;
   final String? floorId;
@@ -87,6 +94,7 @@ class Face3D {
     required this.vertices,
     required this.baseColor,
     this.label,
+    this.roomDimensionsLabel,
     this.isEdgeVisible = true,
     this.moduleId,
     this.floorId,
@@ -180,6 +188,49 @@ class Face3D {
       (baseColor.r * 255.0 * brightness).round().clamp(0, 255),
       (baseColor.g * 255.0 * brightness).round().clamp(0, 255),
       (baseColor.b * 255.0 * brightness).round().clamp(0, 255),
+    );
+  }
+
+  /// Computes night architectural shading: cool twilight moonlight on exterior/terrain
+  /// surfaces (`moduleId == null`) and warm `2700K` indoor LED illumination on room
+  /// floors, interior room-facing wall spans, and furniture.
+  Color computeNightShadedColor(Point3D lightDir) {
+    if (layer == FaceLayer3D.shadow) {
+      return baseColor.withValues(alpha: (baseColor.a * 0.55).clamp(0.0, 1.0));
+    }
+    final norm = normal;
+    final rawDot =
+        norm.x * lightDir.x + norm.y * lightDir.y + norm.z * lightDir.z;
+    final dot = isTwoSided ? rawDot.abs() : rawDot;
+    final intensity = (dot.clamp(-0.2, 1.0) + 0.2) / 1.2;
+
+    final isInteriorLit = layer == FaceLayer3D.floorFinish ||
+        moduleId != null ||
+        (layer == FaceLayer3D.structureAndFurniture && !isWallFace);
+
+    if (isInteriorLit) {
+      final warmBase = Color.lerp(
+        baseColor,
+        const Color(0xFFFFE0B2),
+        layer == FaceLayer3D.floorFinish ? 0.16 : 0.12,
+      )!;
+      final brightness = 0.76 + 0.22 * intensity;
+      return Color.fromARGB(
+        (baseColor.a * 255.0).round().clamp(0, 255),
+        (warmBase.r * 255.0 * brightness).round().clamp(0, 255),
+        (warmBase.g * 255.0 * brightness).round().clamp(0, 255),
+        (warmBase.b * 255.0 * brightness).round().clamp(0, 255),
+      );
+    }
+
+    // Cool exterior twilight / moonlight for terrain, slab edges, and exterior facades
+    final coolBase = Color.lerp(baseColor, const Color(0xFF1E293B), 0.28)!;
+    final brightness = 0.38 + 0.34 * intensity;
+    return Color.fromARGB(
+      (baseColor.a * 255.0).round().clamp(0, 255),
+      (coolBase.r * 255.0 * brightness).round().clamp(0, 255),
+      (coolBase.g * 255.0 * brightness).round().clamp(0, 255),
+      (coolBase.b * 255.0 * brightness).round().clamp(0, 255),
     );
   }
 }
