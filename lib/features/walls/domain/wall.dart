@@ -79,15 +79,26 @@ class Wall {
         'status': status.name,
       };
 
-  factory Wall.fromJson(Map<String, dynamic> json) => Wall(
-        id: json['id'] as String,
-        floorId: json['floor_id'] as String,
-        startPoint: Point2D.fromJson(json['start_point'] as Map<String, dynamic>),
-        endPoint: Point2D.fromJson(json['end_point'] as Map<String, dynamic>),
-        thickness: (json['thickness'] as num).toDouble(),
-        height: (json['height'] as num).toDouble(),
-        status: ElementStatus.values.byName(json['status'] as String),
-      );
+  factory Wall.fromJson(Map<String, dynamic> json) {
+    final statusName = json['status']?.toString();
+    final parsedStatus = ElementStatus.values
+            .where((e) => e.name == statusName)
+            .firstOrNull ??
+        ElementStatus.existing;
+    return Wall(
+      id: json['id']?.toString() ?? '',
+      floorId: json['floor_id']?.toString() ?? '',
+      startPoint: Point2D.fromJson(
+        (json['start_point'] as Map<String, dynamic>?) ?? const {},
+      ),
+      endPoint: Point2D.fromJson(
+        (json['end_point'] as Map<String, dynamic>?) ?? const {},
+      ),
+      thickness: (json['thickness'] as num?)?.toDouble() ?? 0.15,
+      height: (json['height'] as num?)?.toDouble() ?? 2.60,
+      status: parsedStatus,
+    );
+  }
 
   /// Elimina muros duplicados o idénticos (mismo trazo espacial sin importar la dirección)
   static List<Wall> deduplicate(Iterable<Wall> walls) {

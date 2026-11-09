@@ -30,11 +30,7 @@ class SupabaseFloorRepository {
     required List<Floor> dirtyFloors,
     Set<String> deletedFloorIds = const {},
   }) async {
-    if (deletedFloorIds.isNotEmpty) {
-      await deleteFloors(deletedFloorIds);
-    }
-
-    if (dirtyFloors.isEmpty) return;
+    if (dirtyFloors.isEmpty && deletedFloorIds.isEmpty) return;
 
     final resolvedIds = <String, String>{};
     final floorPayloads = <Map<String, dynamic>>[];
@@ -70,9 +66,21 @@ class SupabaseFloorRepository {
             'flip_x': module.flipX,
             'flip_y': module.flipY,
             'is_locked': module.isLocked,
+            if (module.floorMaterialId != null)
+              'floor_material_id': module.floorMaterialId,
+            if (module.wallFinishId != null)
+              'wall_finish_id': module.wallFinishId,
           },
           'status': module.status.name,
-          'sub_modules': module.subModules.map((s) => s.toJson()).toList(),
+          'sub_modules': module.subModules
+              .map(
+                (s) => {
+                  ...s.toJson(),
+                  'id': _resolveStableUuid(s.id, resolvedIds),
+                  'module_id': resolvedId,
+                },
+              )
+              .toList(),
         });
       }
 
@@ -106,72 +114,80 @@ class SupabaseFloorRepository {
       }
     }
 
-    // 1. Upsert masivo de todos los niveles modificados en un solo round-trip
-    await _client.from('floors').upsert(floorPayloads);
+    if (dirtyFloors.isNotEmpty) {
+      // 1. Consultar IDs existentes de todos los niveles modificados antes del upsert
+      final existingResults = await Future.wait([
+        _client
+            .from('modules')
+            .select('id')
+            .inFilter('floor_id', resolvedFloorIds),
+        _client
+            .from('walls')
+            .select('id')
+            .inFilter('floor_id', resolvedFloorIds),
+        _client
+            .from('replacement_relationships')
+            .select('id')
+            .inFilter('floor_id', resolvedFloorIds),
+      ]);
 
-    // 2. Consultar IDs existentes de todos los niveles modificados en paralelo
-    final existingResults = await Future.wait([
-      _client
-          .from('modules')
-          .select('id')
-          .inFilter('floor_id', resolvedFloorIds),
-      _client
-          .from('walls')
-          .select('id')
-          .inFilter('floor_id', resolvedFloorIds),
-      _client
-          .from('replacement_relationships')
-          .select('id')
-          .inFilter('floor_id', resolvedFloorIds),
-    ]);
+      final existingModules = existingResults[0];
+      final existingWalls = existingResults[1];
+      final existingRels = existingResults[2];
 
-    final existingModules = existingResults[0];
-    final existingWalls = existingResults[1];
-    final existingRels = existingResults[2];
+      // 2. Si hay pisos eliminados que puedan colisionar en (building_id, floor_number), eliminarlos
+      if (deletedFloorIds.isNotEmpty) {
+        await deleteFloors(deletedFloorIds);
+      }
 
-    // 3. Eliminar elementos obsoletos en lote (primero relaciones para respetar FKs)
-    final currentRelIds = relPayloads.map((r) => r['id'] as String).toSet();
-    final removedRelIds = existingRels
-        .map((row) => row['id'] as String)
-        .where((id) => !currentRelIds.contains(id))
-        .toList();
-    if (removedRelIds.isNotEmpty) {
-      await _client
-          .from('replacement_relationships')
-          .delete()
-          .inFilter('id', removedRelIds);
-    }
+      // 3. Upsert primero (floors -> modules & walls -> relationships) para evitar pérdida ante corte de red
+      await _client.from('floors').upsert(floorPayloads);
 
-    final currentModuleIds =
-        modulePayloads.map((m) => m['id'] as String).toSet();
-    final removedModuleIds = existingModules
-        .map((row) => row['id'] as String)
-        .where((id) => !currentModuleIds.contains(id))
-        .toList();
+      await Future.wait([
+        if (modulePayloads.isNotEmpty)
+          _client.from('modules').upsert(modulePayloads),
+        if (wallPayloads.isNotEmpty)
+          _client.from('walls').upsert(wallPayloads),
+      ]);
 
-    final currentWallIds = wallPayloads.map((w) => w['id'] as String).toSet();
-    final removedWallIds = existingWalls
-        .map((row) => row['id'] as String)
-        .where((id) => !currentWallIds.contains(id))
-        .toList();
+      if (relPayloads.isNotEmpty) {
+        await _client.from('replacement_relationships').upsert(relPayloads);
+      }
 
-    await Future.wait([
-      if (removedModuleIds.isNotEmpty)
-        _client.from('modules').delete().inFilter('id', removedModuleIds),
-      if (removedWallIds.isNotEmpty)
-        _client.from('walls').delete().inFilter('id', removedWallIds),
-    ]);
+      // 4. Eliminar elementos obsoletos sólo después de que los upserts hayan tenido éxito
+      final currentRelIds = relPayloads.map((r) => r['id'] as String).toSet();
+      final removedRelIds = existingRels
+          .map((row) => row['id'] as String)
+          .where((id) => !currentRelIds.contains(id))
+          .toList();
+      if (removedRelIds.isNotEmpty) {
+        await _client
+            .from('replacement_relationships')
+            .delete()
+            .inFilter('id', removedRelIds);
+      }
 
-    // 4. Upsert masivo en lote transversal (módulos y muros en paralelo, luego relaciones)
-    await Future.wait([
-      if (modulePayloads.isNotEmpty)
-        _client.from('modules').upsert(modulePayloads),
-      if (wallPayloads.isNotEmpty)
-        _client.from('walls').upsert(wallPayloads),
-    ]);
+      final currentModuleIds =
+          modulePayloads.map((m) => m['id'] as String).toSet();
+      final removedModuleIds = existingModules
+          .map((row) => row['id'] as String)
+          .where((id) => !currentModuleIds.contains(id))
+          .toList();
 
-    if (relPayloads.isNotEmpty) {
-      await _client.from('replacement_relationships').upsert(relPayloads);
+      final currentWallIds = wallPayloads.map((w) => w['id'] as String).toSet();
+      final removedWallIds = existingWalls
+          .map((row) => row['id'] as String)
+          .where((id) => !currentWallIds.contains(id))
+          .toList();
+
+      await Future.wait([
+        if (removedModuleIds.isNotEmpty)
+          _client.from('modules').delete().inFilter('id', removedModuleIds),
+        if (removedWallIds.isNotEmpty)
+          _client.from('walls').delete().inFilter('id', removedWallIds),
+      ]);
+    } else if (deletedFloorIds.isNotEmpty) {
+      await deleteFloors(deletedFloorIds);
     }
   }
 
@@ -179,16 +195,7 @@ class SupabaseFloorRepository {
     final validIds = floorIds.where(_uuidRegex.hasMatch).toList();
     if (validIds.isEmpty) return;
 
-    await _client
-        .from('replacement_relationships')
-        .delete()
-        .inFilter('floor_id', validIds);
-
-    await Future.wait([
-      _client.from('modules').delete().inFilter('floor_id', validIds),
-      _client.from('walls').delete().inFilter('floor_id', validIds),
-    ]);
-
+    // public.modules, public.walls y public.replacement_relationships tienen ON DELETE CASCADE
     await _client.from('floors').delete().inFilter('id', validIds);
   }
 

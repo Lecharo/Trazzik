@@ -110,14 +110,16 @@ class Floor {
       };
 
   factory Floor.fromJson(Map<String, dynamic> json) => Floor(
-        id: json['id'] as String,
-        buildingId: json['building_id'] as String,
-        floorNumber: json['floor_number'] as int,
-        name: json['name'] as String,
+        id: json['id']?.toString() ?? '',
+        buildingId: json['building_id']?.toString() ?? '',
+        floorNumber: (json['floor_number'] as num?)?.toInt() ?? 1,
+        name: json['name']?.toString() ?? 'Piso 1',
         levelMeters: (json['level_meters'] as num?)?.toDouble() ?? 0.0,
         heightMeters: (json['height_meters'] as num?)?.toDouble() ?? 2.60,
-        boundary: Polygon2D.fromJson(json['boundary'] as Map<String, dynamic>),
-        maxAllowedArea: (json['max_allowed_area'] as num).toDouble(),
+        boundary: Polygon2D.fromJson(
+          (json['boundary'] as Map<String, dynamic>?) ?? const {},
+        ),
+        maxAllowedArea: (json['max_allowed_area'] as num?)?.toDouble() ?? 140.0,
         modules: (json['modules'] as List<dynamic>?)
                 ?.map((m) => Module.fromJson(m as Map<String, dynamic>))
                 .toList() ??
@@ -127,10 +129,11 @@ class Floor {
                   ?.map((w) => Wall.fromJson(w as Map<String, dynamic>)) ??
               const [],
         ),
-        replacementRelationships: (json['replacement_relationships'] as List<dynamic>?)
-                ?.map((r) =>
-                    ReplacementRelationship.fromJson(r as Map<String, dynamic>))
-                .toList() ??
-            const [],
+        replacementRelationships:
+            (json['replacement_relationships'] as List<dynamic>?)
+                    ?.map((r) => ReplacementRelationship.fromJson(
+                        r as Map<String, dynamic>))
+                    .toList() ??
+                const [],
       );
 }

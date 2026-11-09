@@ -44,11 +44,14 @@ class SupabaseProjectRepository {
       }
     }
 
-    await _client.from('project_members').upsert({
-      'project_id': project.id,
-      'user_id': project.ownerId,
-      'role': 'owner',
-    });
+    final currentUserId = _client.auth.currentUser?.id;
+    if (currentUserId == null || currentUserId == project.ownerId) {
+      await _client.from('project_members').upsert({
+        'project_id': project.id,
+        'user_id': project.ownerId,
+        'role': 'owner',
+      });
+    }
 
     if (project.lot != null) {
       await saveLot(project.lot!);
@@ -103,10 +106,7 @@ class SupabaseProjectRepository {
       });
     }
 
-    // 2. Eliminar zonas anteriores para reescribir limpiamente
-    await _client.from('zoning_zones').delete().eq('lot_id', actualLotId);
-
-    // 3. Guardar zonas asociadas en un único batch insert
+    // 2. Guardar zonas asociadas mediante upsert primero y luego limpiar obsoletas
     if (lot.zones.isNotEmpty) {
       const uuid = Uuid();
       final zonePayloads = lot.zones
@@ -120,7 +120,24 @@ class SupabaseProjectRepository {
             },
           )
           .toList();
-      await _client.from('zoning_zones').insert(zonePayloads);
+      final keptIds = zonePayloads.map((z) => z['id'] as String).toSet();
+      final existingZones = await _client
+          .from('zoning_zones')
+          .select('id')
+          .eq('lot_id', actualLotId);
+      await _client.from('zoning_zones').upsert(zonePayloads);
+      final removedZoneIds = existingZones
+          .map((row) => row['id'] as String)
+          .where((id) => !keptIds.contains(id))
+          .toList();
+      if (removedZoneIds.isNotEmpty) {
+        await _client
+            .from('zoning_zones')
+            .delete()
+            .inFilter('id', removedZoneIds);
+      }
+    } else {
+      await _client.from('zoning_zones').delete().eq('lot_id', actualLotId);
     }
 
     return lot.copyWith(id: actualLotId);

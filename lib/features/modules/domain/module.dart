@@ -130,6 +130,62 @@ class Module {
   late final bool isGate = moduleType.toUpperCase().contains('GATE');
   late final bool isStairs = moduleType.toUpperCase().contains('STAIR');
 
+  /// Canonical room-type helpers used across 2D, 3D, PDF export, and AI BOQ.
+  late final bool isBathroom = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t.contains('BATH') ||
+        t.contains('TOILET') ||
+        n.contains('BAÑO') ||
+        n.contains('BANO') ||
+        n.contains('TOILETTE');
+  }();
+
+  late final bool isFullBathroom = () {
+    final n = name.toUpperCase();
+    return isBathroom &&
+        !n.contains('SOCIAL') &&
+        !n.contains('VISITA') &&
+        !n.contains('MEDIO') &&
+        !n.contains('TOILETTE');
+  }();
+
+  late final bool isKitchen = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t.contains('KITCHEN') || n.contains('COCINA');
+  }();
+
+  late final bool isLaundry = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t.contains('LAUNDRY') ||
+        n.contains('LAVAD') ||
+        n.contains('LAVANDER') ||
+        n.contains('ROPAS');
+  }();
+
+  late final bool isWetCore = isBathroom || isKitchen || isLaundry;
+
+  late final bool isBedroom = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t.contains('BEDROOM') ||
+        n.contains('DORMITORIO') ||
+        n.contains('ALCOBA') ||
+        n.contains('HABITACI');
+  }();
+
+  late final bool isOutdoorUnpaved = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t == 'POOL' ||
+        t == 'GARDEN' ||
+        n.contains('PISCINA') ||
+        n.contains('JARDÍN') ||
+        n.contains('JARDIN');
+  }();
+
   /// Whether this module is a primary habitable space subject to natural light/ventilation rules.
   late final bool isHabitableRoom = () {
     final t = moduleType.toUpperCase();
@@ -243,14 +299,21 @@ class Module {
       };
 
   factory Module.fromJson(Map<String, dynamic> json) {
-    final geomRaw = json['geometry'] as Map<String, dynamic>;
+    final geomRaw =
+        (json['geometry'] as Map<String, dynamic>?) ?? const <String, dynamic>{};
+    final statusName = json['status']?.toString();
+    final parsedStatus = ElementStatus.values
+            .where((e) => e.name == statusName)
+            .firstOrNull ??
+        ElementStatus.existing;
+    final rawCreatedAt = json['created_at']?.toString();
     return Module(
-      id: json['id'] as String,
-      floorId: json['floor_id'] as String,
-      name: json['name'] as String,
-      moduleType: json['module_type'] as String,
+      id: json['id']?.toString() ?? '',
+      floorId: json['floor_id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Espacio',
+      moduleType: json['module_type']?.toString() ?? 'ROOM',
       geometry: Polygon2D.fromJson(geomRaw),
-      status: ElementStatus.values.byName(json['status'] as String),
+      status: parsedStatus,
       subModules: (json['sub_modules'] as List<dynamic>?)
               ?.map((s) => SubModule.fromJson(s as Map<String, dynamic>))
               .toList() ??
@@ -263,7 +326,9 @@ class Module {
           geomRaw['floor_material_id'] as String?,
       wallFinishId: json['wall_finish_id'] as String? ??
           geomRaw['wall_finish_id'] as String?,
-      createdAt: DateTime.parse(json['created_at'] as String),
+      createdAt:
+          (rawCreatedAt != null ? DateTime.tryParse(rawCreatedAt) : null) ??
+              DateTime.now(),
     );
   }
 }

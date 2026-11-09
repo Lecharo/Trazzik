@@ -89,10 +89,15 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
       if (mounted) {
         await ref.read(projectsListProvider.notifier).refresh();
       }
-    } catch (_) {
+    } catch (e) {
       if (!mounted) return;
       setState(() => _openingProjectId = null);
-      await _openLotSetupAndRefresh(proj);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('No se pudo cargar el proyecto desde la nube: $e'),
+          backgroundColor: const Color(0xFFEF5350),
+        ),
+      );
     }
   }
 
@@ -224,8 +229,13 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
             tooltip: 'Mi Cuenta',
             onSelected: (val) async {
               if (val == 'logout') {
-                await authRepo.signOut();
+                try {
+                  await authRepo.signOut();
+                } catch (_) {
+                  // Proceed with local cleanup even if network signOut fails.
+                }
                 ref.invalidate(projectsListProvider);
+                ref.invalidate(floorEditorProvider);
                 if (context.mounted) {
                   Navigator.of(context).pushReplacement(
                     MaterialPageRoute(builder: (_) => const AuthScreen()),

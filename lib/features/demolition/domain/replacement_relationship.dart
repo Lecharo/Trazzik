@@ -40,16 +40,21 @@ class ReplacementRelationship {
         'notes': notes,
       };
 
-  factory ReplacementRelationship.fromJson(Map<String, dynamic> json) =>
-      ReplacementRelationship(
-        id: json['id'] as String,
-        floorId: json['floor_id'] as String,
-        existingElementId: json['existing_element_id'] as String,
-        proposedElementId: json['proposed_element_id'] as String,
-        relationshipType:
-            RelationshipType.values.byName(json['relationship_type'] as String),
-        overlapArea: (json['overlap_area'] as num).toDouble(),
-        expandedArea: (json['expanded_area'] as num?)?.toDouble() ?? 0.0,
-        notes: json['notes'] as String?,
-      );
+  factory ReplacementRelationship.fromJson(Map<String, dynamic> json) {
+    final relTypeName = json['relationship_type']?.toString();
+    final parsedType = RelationshipType.values
+            .where((e) => e.name == relTypeName)
+            .firstOrNull ??
+        RelationshipType.replace;
+    return ReplacementRelationship(
+      id: json['id']?.toString() ?? '',
+      floorId: json['floor_id']?.toString() ?? '',
+      existingElementId: json['existing_element_id']?.toString() ?? '',
+      proposedElementId: json['proposed_element_id']?.toString() ?? '',
+      relationshipType: parsedType,
+      overlapArea: (json['overlap_area'] as num?)?.toDouble() ?? 0.0,
+      expandedArea: (json['expanded_area'] as num?)?.toDouble() ?? 0.0,
+      notes: json['notes'] as String?,
+    );
+  }
 }
