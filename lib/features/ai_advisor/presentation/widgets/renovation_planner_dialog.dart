@@ -523,11 +523,7 @@ class _RenovationPlannerDialogState
   Widget _buildGranularSettingsPanel() {
     final modules = _getSourceModules().where((m) => !m.isOpening).toList();
 
-    final bathrooms = modules.where((m) =>
-        m.moduleType.toUpperCase() == 'BATHROOM' ||
-        m.name.toUpperCase().contains('BAÑO') ||
-        m.name.toUpperCase().contains('BANO') ||
-        m.name.toUpperCase().contains('TOILETTE')).toList();
+    final bathrooms = modules.where((m) => m.isBathroom).toList();
 
     return Container(
       padding: const EdgeInsets.all(8),

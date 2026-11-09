@@ -2,8 +2,10 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
+import 'package:trazzik/features/authentication/presentation/screens/auth_screen.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -218,7 +220,15 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF00E5FF)),
           tooltip: 'Volver al Editor 2D',
-          onPressed: () => Navigator.of(context).pop(),
+          onPressed: () {
+            if (Navigator.of(context).canPop()) {
+              Navigator.of(context).pop();
+            } else {
+              Navigator.of(context).pushReplacement(
+                MaterialPageRoute(builder: (_) => const AuthScreen()),
+              );
+            }
+          },
         ),
         title: isMobile
             ? Text(
@@ -380,28 +390,29 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   : (_showLabels ? 'Hide labels' : 'Show labels'),
               onPressed: () => setState(() => _showLabels = !_showLabels),
             ),
-            IconButton(
-              icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
-              tooltip: lang == 'es'
-                  ? 'Compartir enlace interactivo 3D (60 días)'
-                  : 'Share interactive 3D link (60 days)',
-              onPressed: () => ClientShareLinkDialog.show(
-                context,
-                projectId: projectId,
-                projectName: projectName,
-                onEnterClientPreview: (allowFinishes, token) {
-                  setState(() {
-                    _isClientPreviewMode = true;
-                    _clientAllowFinishSelection = allowFinishes;
-                    _clientShareToken = token;
-                    if (!allowFinishes) {
-                      _selectedModuleId = null;
-                      _selectedModuleFloorId = null;
-                    }
-                  });
-                },
+            if (!widget.isStandaloneClientSession)
+              IconButton(
+                icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
+                tooltip: lang == 'es'
+                    ? 'Compartir enlace interactivo 3D (60 días)'
+                    : 'Share interactive 3D link (60 days)',
+                onPressed: () => ClientShareLinkDialog.show(
+                  context,
+                  projectId: projectId,
+                  projectName: projectName,
+                  onEnterClientPreview: (allowFinishes, token) {
+                    setState(() {
+                      _isClientPreviewMode = true;
+                      _clientAllowFinishSelection = allowFinishes;
+                      _clientShareToken = token;
+                      if (!allowFinishes) {
+                        _selectedModuleId = null;
+                        _selectedModuleFloorId = null;
+                      }
+                    });
+                  },
+                ),
               ),
-            ),
           ] else ...[
             // Vistas rápidas (Presets de cámara)
             IconButton(
@@ -455,28 +466,29 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   : (_showLabels ? 'Hide labels' : 'Show short labels'),
               onPressed: () => setState(() => _showLabels = !_showLabels),
             ),
-            IconButton(
-              icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
-              tooltip: lang == 'es'
-                  ? 'Compartir enlace interactivo 3D (60 días)'
-                  : 'Share interactive 3D link (60 days)',
-              onPressed: () => ClientShareLinkDialog.show(
-                context,
-                projectId: projectId,
-                projectName: projectName,
-                onEnterClientPreview: (allowFinishes, token) {
-                  setState(() {
-                    _isClientPreviewMode = true;
-                    _clientAllowFinishSelection = allowFinishes;
-                    _clientShareToken = token;
-                    if (!allowFinishes) {
-                      _selectedModuleId = null;
-                      _selectedModuleFloorId = null;
-                    }
-                  });
-                },
+            if (!widget.isStandaloneClientSession)
+              IconButton(
+                icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
+                tooltip: lang == 'es'
+                    ? 'Compartir enlace interactivo 3D (60 días)'
+                    : 'Share interactive 3D link (60 days)',
+                onPressed: () => ClientShareLinkDialog.show(
+                  context,
+                  projectId: projectId,
+                  projectName: projectName,
+                  onEnterClientPreview: (allowFinishes, token) {
+                    setState(() {
+                      _isClientPreviewMode = true;
+                      _clientAllowFinishSelection = allowFinishes;
+                      _clientShareToken = token;
+                      if (!allowFinishes) {
+                        _selectedModuleId = null;
+                        _selectedModuleFloorId = null;
+                      }
+                    });
+                  },
+                ),
               ),
-            ),
           ],
           const SizedBox(width: 8),
         ],
@@ -1001,41 +1013,58 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                         borderRadius: BorderRadius.circular(10),
                         onTap: () {
                           final notifier = ref.read(floorEditorProvider.notifier);
+                          final targetFloorId =
+                              _selectedModuleFloorId ?? selectedModule.floorId;
                           if (_activeSurfaceTab == FinishSurfaceTarget.floor) {
                             notifier.setModuleFloorMaterial(
                               selectedModule.id,
                               item.id,
-                              floorId: _selectedModuleFloorId ?? selectedModule.floorId,
+                              floorId: targetFloorId,
                               applyToAllRoomsOnFloor: _applyToEntireFloor,
                             );
-                            if (_isClientPreviewMode &&
-                                _clientShareToken.isNotEmpty &&
-                                !_clientShareToken.startsWith('tz_')) {
-                              ref
-                                  .read(projectRepositoryProvider)
-                                  .updateSharedModuleFinishes(
-                                    token: _clientShareToken,
-                                    moduleId: selectedModule.id,
-                                    floorMaterialId: item.id,
-                                  )
-                                  .ignore();
-                            }
                           } else {
                             notifier.setModuleWallFinish(
                               selectedModule.id,
                               item.id,
-                              floorId: _selectedModuleFloorId ?? selectedModule.floorId,
+                              floorId: targetFloorId,
                               applyToAllRoomsOnFloor: _applyToEntireFloor,
                             );
-                            if (_isClientPreviewMode &&
-                                _clientShareToken.isNotEmpty &&
-                                !_clientShareToken.startsWith('tz_')) {
-                              ref
-                                  .read(projectRepositoryProvider)
+                          }
+
+                          if (_isClientPreviewMode &&
+                              _clientShareToken.isNotEmpty &&
+                              !_clientShareToken.startsWith('tz_')) {
+                            final editorState = ref.read(floorEditorProvider);
+                            final targetFloor = editorState.allFloors
+                                    .where((f) => f.id == targetFloorId)
+                                    .firstOrNull ??
+                                editorState.floor;
+                            final targetModuleIds = _applyToEntireFloor
+                                ? targetFloor.modules
+                                    .where(
+                                      (m) =>
+                                          !m.isOpening &&
+                                          !m.isStairs &&
+                                          !m.isOutdoorUnpaved &&
+                                          m.status != ElementStatus.toDemolish,
+                                    )
+                                    .map((m) => m.id)
+                                    .toList()
+                                : <String>[selectedModule.id];
+                            final repo = ref.read(projectRepositoryProvider);
+                            for (final modId in targetModuleIds) {
+                              repo
                                   .updateSharedModuleFinishes(
                                     token: _clientShareToken,
-                                    moduleId: selectedModule.id,
-                                    wallFinishId: item.id,
+                                    moduleId: modId,
+                                    floorMaterialId: _activeSurfaceTab ==
+                                            FinishSurfaceTarget.floor
+                                        ? item.id
+                                        : null,
+                                    wallFinishId: _activeSurfaceTab ==
+                                            FinishSurfaceTarget.wall
+                                        ? item.id
+                                        : null,
                                   )
                                   .ignore();
                             }

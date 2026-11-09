@@ -725,9 +725,7 @@ class TechnicalPlanPainter extends CustomPainter {
       sPainter.paint(canvas, Offset(switchPt.dx - 4, switchPt.dy - 5));
 
       // 3. Tomacorrientes dobles 110V (GFCI en zonas húmedas)
-      final isWet = module.moduleType.toUpperCase().contains('BATH') ||
-          module.moduleType.toUpperCase().contains('KITCHEN') ||
-          module.moduleType.toUpperCase().contains('LAUNDRY');
+      final isWet = module.isWetCore;
       final outletPts = [
         Offset(right - 8, (top + bottom) / 2),
         Offset((left + right) / 2, top + 8),

@@ -202,6 +202,7 @@ END;
 $$;
 
 -- Revoke anonymous execution on internal RLS & trigger functions
+ALTER FUNCTION public.handle_new_user() SET search_path = public;
 REVOKE EXECUTE ON FUNCTION public.can_edit_floor(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.can_view_floor(UUID) FROM PUBLIC, anon;
 REVOKE EXECUTE ON FUNCTION public.get_project_id_for_building(UUID) FROM PUBLIC, anon;

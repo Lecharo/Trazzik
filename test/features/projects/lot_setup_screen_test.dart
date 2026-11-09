@@ -78,6 +78,17 @@ class _InMemoryProjectRepo implements SupabaseProjectRepository {
       'test-share-token';
 
   @override
+  Future<bool?> getProjectShareLinkAllowFinishes(String projectId) async =>
+      true;
+
+  @override
+  Future<void> updateProjectShareLinkPermission({
+    required String projectId,
+    required String token,
+    required bool allowFinishSelection,
+  }) async {}
+
+  @override
   Future<Map<String, dynamic>?> getSharedProjectByToken(String token) async =>
       null;
 

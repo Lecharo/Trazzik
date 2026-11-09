@@ -19,7 +19,11 @@ ALTER TABLE public.profiles
 
 -- 2. Actualización del trigger para persistir user_type desde los metadatos de registro
 CREATE OR REPLACE FUNCTION public.handle_new_user()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
 BEGIN
     INSERT INTO public.profiles (id, email, full_name, user_type)
     VALUES (
@@ -36,7 +40,7 @@ BEGIN
         user_type = COALESCE(EXCLUDED.user_type, profiles.user_type);
     RETURN NEW;
 END;
-$$ LANGUAGE plpgsql SECURITY DEFINER;
+$$;
 
 -- 3. Políticas de seguridad RLS faltantes para project_members
 ALTER TABLE public.project_members ENABLE ROW LEVEL SECURITY;

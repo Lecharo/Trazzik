@@ -168,10 +168,7 @@ class ArchitecturalAuditEngine {
     }
 
     // 3. Núcleos Húmedos (Instalaciones Sanitarias y Costos)
-    final wetModules = modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return t == 'BATHROOM' || t == 'KITCHEN' || t == 'LAUNDRY';
-    }).toList();
+    final wetModules = modules.where((m) => m.isWetCore).toList();
 
     double maxWetDist = 0.0;
     if (wetModules.length >= 2) {
@@ -209,11 +206,10 @@ class ArchitecturalAuditEngine {
     }
 
     // 4. Privacidad y Zonificación Social vs Íntima
-    final bathrooms = modules.where((m) => m.moduleType.toUpperCase() == 'BATHROOM').toList();
-    final diningOrKitchen = modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return t == 'DINING_ROOM' || t == 'KITCHEN';
-    }).toList();
+    final bathrooms = modules.where((m) => m.isBathroom).toList();
+    final diningOrKitchen = modules
+        .where((m) => m.isKitchen || m.moduleType.toUpperCase() == 'DINING_ROOM')
+        .toList();
 
     for (final bath in bathrooms) {
       final bathBB = bath.geometry.boundingBox;

@@ -250,7 +250,7 @@ class SupabaseProjectRepository {
   }) async {
     final existing = await _client
         .from('project_share_links')
-        .select('token, expires_at')
+        .select('token, allow_finish_selection, expires_at')
         .eq('project_id', projectId)
         .gt('expires_at', DateTime.now().toUtc().toIso8601String())
         .order('created_at', ascending: false)
@@ -274,6 +274,35 @@ class SupabaseProjectRepository {
       'allow_finish_selection': allowFinishSelection,
     });
     return token;
+  }
+
+  /// Obtiene el permiso actual `allow_finish_selection` del enlace compartido activo del proyecto.
+  Future<bool?> getProjectShareLinkAllowFinishes(String projectId) async {
+    final existing = await _client
+        .from('project_share_links')
+        .select('allow_finish_selection, expires_at')
+        .eq('project_id', projectId)
+        .gt('expires_at', DateTime.now().toUtc().toIso8601String())
+        .order('created_at', ascending: false)
+        .limit(1);
+
+    if (existing.isNotEmpty) {
+      return existing.first['allow_finish_selection'] as bool?;
+    }
+    return null;
+  }
+
+  /// Actualiza el permiso `allow_finish_selection` de un enlace compartido existente.
+  Future<void> updateProjectShareLinkPermission({
+    required String projectId,
+    required String token,
+    required bool allowFinishSelection,
+  }) async {
+    await _client
+        .from('project_share_links')
+        .update({'allow_finish_selection': allowFinishSelection})
+        .eq('project_id', projectId)
+        .eq('token', token);
   }
 
   /// Consulta un proyecto compartido mediante el RPC `get_shared_project_by_token`.

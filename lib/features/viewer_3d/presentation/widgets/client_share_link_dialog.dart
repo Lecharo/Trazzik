@@ -66,15 +66,18 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
 
     if (_uuidRegex.hasMatch(widget.projectId)) {
       try {
-        final token = await ref
-            .read(projectRepositoryProvider)
-            .createOrGetProjectShareLink(
-              projectId: widget.projectId,
-              allowFinishSelection: _allowFinishSelection,
-            );
+        final repo = ref.read(projectRepositoryProvider);
+        final storedAllow =
+            await repo.getProjectShareLinkAllowFinishes(widget.projectId);
+        final effectiveAllow = storedAllow ?? _allowFinishSelection;
+        final token = await repo.createOrGetProjectShareLink(
+          projectId: widget.projectId,
+          allowFinishSelection: effectiveAllow,
+        );
         if (mounted) {
           setState(() {
             _token = token;
+            _allowFinishSelection = effectiveAllow;
             _isCloudSynced = true;
             _isLoading = false;
           });
@@ -394,6 +397,16 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                   ),
                   onChanged: (val) {
                     setState(() => _allowFinishSelection = val);
+                    if (_isCloudSynced && _token.isNotEmpty) {
+                      ref
+                          .read(projectRepositoryProvider)
+                          .updateProjectShareLinkPermission(
+                            projectId: widget.projectId,
+                            token: _token,
+                            allowFinishSelection: val,
+                          )
+                          .ignore();
+                    }
                   },
                 ),
               ),
