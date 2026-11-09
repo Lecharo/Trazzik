@@ -798,9 +798,97 @@ class TechnicalPlanPainter extends CustomPainter {
           ],
         );
         break;
+      case PlanDiscipline.doorWindowSchedule:
+        _drawDoorWindowCalloutsLayer(canvas, toCanvas, scale, size);
+        break;
       default:
         break;
     }
+  }
+
+  void _drawDoorWindowCalloutsLayer(
+    Canvas canvas,
+    Offset Function(double, double) toCanvas,
+    double scale,
+    Size size,
+  ) {
+    int doorIdx = 1;
+    int winIdx = 1;
+    int gateIdx = 1;
+
+    for (final m in floor.modules) {
+      if (!m.isOpening || m.geometry.vertices.isEmpty) continue;
+      final bbox = m.geometry.boundingBox;
+      final spanW = math.max(bbox.width, bbox.height);
+      final center = toCanvas(
+        (bbox.minX + bbox.maxX) / 2,
+        (bbox.minY + bbox.maxY) / 2,
+      );
+
+      final String code;
+      final double heightM;
+      final Color tagColor;
+      if (m.isGate) {
+        code = 'PT-${gateIdx.toString().padLeft(2, '0')}';
+        gateIdx++;
+        heightM = 2.20;
+        tagColor = const Color(0xFFE65100);
+      } else if (m.isWindow) {
+        code = 'V-${winIdx.toString().padLeft(2, '0')}';
+        winIdx++;
+        heightM = 1.20;
+        tagColor = const Color(0xFF00838F);
+      } else {
+        code = 'P-${doorIdx.toString().padLeft(2, '0')}';
+        doorIdx++;
+        heightM = 2.10;
+        tagColor = const Color(0xFF1565C0);
+      }
+
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '$code (${spanW.toStringAsFixed(2)}×${heightM.toStringAsFixed(2)}m)',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 7.5,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+
+      final pillRect = Rect.fromCenter(
+        center: Offset(center.dx, center.dy - 14),
+        width: tp.width + 10,
+        height: tp.height + 5,
+      );
+      canvas.drawLine(
+        center,
+        Offset(center.dx, pillRect.bottom),
+        Paint()
+          ..color = tagColor
+          ..strokeWidth = 1.2,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(pillRect, const Radius.circular(8)),
+        Paint()..color = tagColor,
+      );
+      tp.paint(
+        canvas,
+        Offset(pillRect.left + 5, pillRect.top + 2.5),
+      );
+    }
+
+    _drawDisciplineLegend(
+      canvas,
+      size,
+      title: 'NOMENCLATURA DE PUERTAS Y VENTANAS',
+      items: const [
+        (Color(0xFF1565C0), 'P-XX : Puerta Interior / Acceso (H=2.10m)'),
+        (Color(0xFF00838F), 'V-XX : Ventana Aluminio + Vidrio (H=1.20m)'),
+        (Color(0xFFE65100), 'PT-XX : Portón Vehicular / Garaje (H=2.20m)'),
+      ],
+    );
   }
 
   void _drawElectricalLayer(

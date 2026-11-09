@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart' show listEquals;
@@ -26,6 +27,7 @@ class TechnicalPlanPdfService {
     PlanDiscipline.electricalLighting,
     PlanDiscipline.plumbingHydro,
     PlanDiscipline.finishesSchedule,
+    PlanDiscipline.doorWindowSchedule,
   ];
 
   /// Genera el archivo PDF completo con lámina(s) de arquitectura y cuadros ejecutivos.
@@ -241,6 +243,46 @@ class TechnicalPlanPdfService {
                       sheetCode: 'PL-CARP',
                       sheetTitle:
                           'DESPIECE EJECUTIVO DE CARPINTERÍA Y MOBILIARIO FIJO',
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
+    // 6. Página 5: Planilla Ejecutiva de Puertas, Ventanas y Cerramientos (PL-VAN)
+    if (options.discipline == PlanDiscipline.doorWindowSchedule ||
+        options.includeFullDisciplinePackage) {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: options.pageFormat.landscape,
+          margin: const pw.EdgeInsets.all(16),
+          build: (pwContext) {
+            return pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.5),
+              ),
+              padding: const pw.EdgeInsets.all(12),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _buildDoorWindowScheduleHeader(floor, options),
+                  pw.SizedBox(height: 8),
+                  pw.Expanded(
+                    child: _buildDoorWindowScheduleBody(floor),
+                  ),
+                  pw.SizedBox(height: 6),
+                  _buildTitleBlock(
+                    floor,
+                    project,
+                    lot,
+                    options.copyWith(
+                      sheetCode: 'PL-VAN-02',
+                      sheetTitle:
+                          'PLANILLA TÉCNICA Y ALZADOS DE PUERTAS, VENTANAS Y CERRAMIENTOS',
                     ),
                   ),
                 ],
@@ -1640,6 +1682,384 @@ class TechnicalPlanPdfService {
                 ),
               ],
             ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildDoorWindowScheduleHeader(
+    Floor floor,
+    PlanExportOptions options,
+  ) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      color: PdfColors.blueGrey900,
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            'PLANILLA TÉCNICA DE PUERTAS, VENTANAS Y CERRAMIENTOS (CUADRO + ALZADOS)',
+            style: pw.TextStyle(
+              color: PdfColors.white,
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 9.5,
+              letterSpacing: 0.7,
+            ),
+          ),
+          pw.Text(
+            'PROYECTO: ${options.projectName.toUpperCase()}  |  NIVEL: ${floor.name.toUpperCase()}',
+            style: const pw.TextStyle(color: PdfColors.cyan200, fontSize: 8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildDoorWindowScheduleBody(Floor floor) {
+    final rows = <({
+      String code,
+      String name,
+      String mechanism,
+      double widthM,
+      double heightM,
+      double sillM,
+      String spec,
+      String status,
+    })>[];
+
+    int dIdx = 1;
+    int wIdx = 1;
+    int gIdx = 1;
+
+    for (final m in floor.modules) {
+      if (!m.isOpening) continue;
+      final bbox = m.geometry.boundingBox;
+      final spanW = math.max(bbox.width, bbox.height).clamp(0.60, 4.50);
+      if (m.isGate) {
+        rows.add((
+          code: 'PT-${gIdx.toString().padLeft(2, '0')}',
+          name: m.name,
+          mechanism: 'Seccional / Corredizo Motorizado',
+          widthM: spanW,
+          heightM: 2.20,
+          sillM: 0.00,
+          spec: 'Lámina Galvanizada Termoacústica + Motor 1/2 HP',
+          status: m.status.pdfBadgeLabelEs,
+        ));
+        gIdx++;
+      } else if (m.isWindow) {
+        rows.add((
+          code: 'V-${wIdx.toString().padLeft(2, '0')}',
+          name: m.name,
+          mechanism: 'Corrediza 2 Hojas (OX)',
+          widthM: spanW,
+          heightM: 1.20,
+          sillM: 0.90,
+          spec: 'Aluminio Anodizado Negro + Vidrio Laminado 6mm',
+          status: m.status.pdfBadgeLabelEs,
+        ));
+        wIdx++;
+      } else if (m.isSlidingDoor) {
+        rows.add((
+          code: 'P-${dIdx.toString().padLeft(2, '0')}',
+          name: m.name,
+          mechanism: 'Puerta-Ventana Corrediza Piso a Techo',
+          widthM: spanW,
+          heightM: 2.10,
+          sillM: 0.00,
+          spec: 'Aluminio Arquitectónico Pesado + Templado 8mm',
+          status: m.status.pdfBadgeLabelEs,
+        ));
+        dIdx++;
+      } else {
+        rows.add((
+          code: 'P-${dIdx.toString().padLeft(2, '0')}',
+          name: m.name,
+          mechanism: 'Abatible 1 Hoja (Giro 90°)',
+          widthM: spanW,
+          heightM: 2.10,
+          sillM: 0.00,
+          spec: 'Hoja Entamborada RH 42mm + Marco Dilatado + Cerradura Manija',
+          status: m.status.pdfBadgeLabelEs,
+        ));
+        dIdx++;
+      }
+    }
+
+    if (rows.isEmpty) {
+      rows.addAll([
+        (
+          code: 'P-01',
+          name: 'Puerta Acceso Principal',
+          mechanism: 'Abatible 1 Hoja Pivotante (90°)',
+          widthM: 1.00,
+          heightM: 2.20,
+          sillM: 0.00,
+          spec: 'Madera Maciza / Blindada + Manillón Acero Inox 80cm',
+          status: 'NUEVO',
+        ),
+        (
+          code: 'P-02',
+          name: 'Puerta Interior Alcobas / Baños',
+          mechanism: 'Abatible 1 Hoja (90°)',
+          widthM: 0.80,
+          heightM: 2.10,
+          sillM: 0.00,
+          spec: 'Entamborada Melamina RH Roble + Marco Completo',
+          status: 'NUEVO',
+        ),
+        (
+          code: 'V-01',
+          name: 'Ventana Corrediza Social / Alcoba',
+          mechanism: 'Corrediza 2 Naves (OX)',
+          widthM: 1.50,
+          heightM: 1.20,
+          sillM: 0.90,
+          spec: 'Perfil Aluminio Serie 7025 Negro + Vidrio Templado 6mm',
+          status: 'NUEVO',
+        ),
+      ]);
+    }
+
+    final displayRows = rows.take(10).toList();
+    final headers = [
+      'CÓD.',
+      'ELEMENTO',
+      'SISTEMA APERTURA',
+      'ANCHO x ALTO',
+      'ANTEPECHO / DINTEL',
+      'ÁREA',
+      'ESPECIFICACIÓN TÉCNICA Y HERRAJES',
+      'ESTADO',
+    ];
+
+    return pw.Column(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        pw.Table(
+          border: pw.TableBorder.all(color: PdfColors.grey300, width: 0.6),
+          children: [
+            pw.TableRow(
+              decoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+              children: headers
+                  .map(
+                    (h) => pw.Padding(
+                      padding: const pw.EdgeInsets.symmetric(
+                        horizontal: 4,
+                        vertical: 3,
+                      ),
+                      child: pw.Text(
+                        h,
+                        style: pw.TextStyle(
+                          color: PdfColors.white,
+                          fontWeight: pw.FontWeight.bold,
+                          fontSize: 7,
+                        ),
+                        textAlign: pw.TextAlign.center,
+                      ),
+                    ),
+                  )
+                  .toList(),
+            ),
+            ...displayRows.map((r) {
+              final area = r.widthM * r.heightM;
+              final lintel = r.sillM + r.heightM;
+              return pw.TableRow(
+                children: [
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      r.code,
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blue900,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      r.name,
+                      style: pw.TextStyle(
+                        fontSize: 7,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      r.mechanism,
+                      style: const pw.TextStyle(fontSize: 6.5),
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      '${r.widthM.toStringAsFixed(2)} × ${r.heightM.toStringAsFixed(2)} m',
+                      style: const pw.TextStyle(fontSize: 6.8),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      'Ant: ${r.sillM.toStringAsFixed(2)}m | Din: ${lintel.toStringAsFixed(2)}m',
+                      style: const pw.TextStyle(fontSize: 6.5),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      '${area.toStringAsFixed(2)} m²',
+                      style: pw.TextStyle(
+                        fontSize: 6.8,
+                        fontWeight: pw.FontWeight.bold,
+                      ),
+                      textAlign: pw.TextAlign.right,
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      r.spec,
+                      style: const pw.TextStyle(fontSize: 6.4),
+                    ),
+                  ),
+                  pw.Padding(
+                    padding: const pw.EdgeInsets.all(3),
+                    child: pw.Text(
+                      r.status,
+                      style: pw.TextStyle(
+                        fontSize: 6.5,
+                        fontWeight: pw.FontWeight.bold,
+                        color: PdfColors.blueGrey800,
+                      ),
+                      textAlign: pw.TextAlign.center,
+                    ),
+                  ),
+                ],
+              );
+            }),
+          ],
+        ),
+        pw.SizedBox(height: 10),
+        pw.Expanded(
+          child: pw.Row(
+            crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+            children: [
+              for (var i = 0; i < displayRows.take(3).length; i++) ...[
+                if (i > 0) pw.SizedBox(width: 10),
+                pw.Expanded(
+                  child: _buildOpeningElevationCard(displayRows[i]),
+                ),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  static pw.Widget _buildOpeningElevationCard(({
+    String code,
+    String name,
+    String mechanism,
+    double widthM,
+    double heightM,
+    double sillM,
+    String spec,
+    String status,
+  }) item) {
+    final isWindow = item.code.startsWith('V-');
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.blueGrey300, width: 0.8),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.center,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Container(
+            width: double.infinity,
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            color: PdfColors.blueGrey50,
+            child: pw.Text(
+              'ALZADO FRONTAL ${item.code} — ${item.name.toUpperCase()}',
+              style: pw.TextStyle(
+                fontSize: 7,
+                fontWeight: pw.FontWeight.bold,
+                color: PdfColors.blueGrey900,
+              ),
+              textAlign: pw.TextAlign.center,
+            ),
+          ),
+          pw.Container(
+            width: isWindow ? 120 : 68,
+            height: isWindow ? 64 : 92,
+            decoration: pw.BoxDecoration(
+              color: isWindow
+                  ? const PdfColor.fromInt(0xFFE0F7FA)
+                  : const PdfColor.fromInt(0xFFD7CCC8),
+              border: pw.Border.all(color: PdfColors.blueGrey900, width: 1.5),
+            ),
+            child: isWindow
+                ? pw.Row(
+                    children: [
+                      pw.Expanded(
+                        child: pw.Container(
+                          decoration: const pw.BoxDecoration(
+                            border: pw.Border(
+                              right: pw.BorderSide(
+                                color: PdfColors.blueGrey800,
+                                width: 1.0,
+                              ),
+                            ),
+                          ),
+                          child: pw.Center(
+                            child: pw.Text(
+                              'FIJO (O)',
+                              style: const pw.TextStyle(
+                                fontSize: 5.5,
+                                color: PdfColors.cyan900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      pw.Expanded(
+                        child: pw.Center(
+                          child: pw.Text(
+                            '<-- MÓVIL (X)',
+                            style: pw.TextStyle(
+                              fontSize: 5.5,
+                              fontWeight: pw.FontWeight.bold,
+                              color: PdfColors.cyan900,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  )
+                : pw.Align(
+                    alignment: pw.Alignment.centerRight,
+                    child: pw.Container(
+                      margin: const pw.EdgeInsets.only(right: 5),
+                      width: 4,
+                      height: 10,
+                      color: PdfColors.blueGrey900,
+                    ),
+                  ),
+          ),
+          pw.Text(
+            'Ancho: ${item.widthM.toStringAsFixed(2)}m  |  Alto: ${item.heightM.toStringAsFixed(2)}m  |  Ant: ${item.sillM.toStringAsFixed(2)}m',
+            style: pw.TextStyle(fontSize: 6.2, fontWeight: pw.FontWeight.bold),
           ),
         ],
       ),

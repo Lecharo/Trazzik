@@ -8,6 +8,7 @@ enum PlanDiscipline {
   electricalLighting,
   plumbingHydro,
   finishesSchedule,
+  doorWindowSchedule,
   axonometric3d,
 }
 
@@ -26,6 +27,8 @@ extension PlanDisciplineMeta on PlanDiscipline {
         return 'PL-HID';
       case PlanDiscipline.finishesSchedule:
         return 'PL-ACA';
+      case PlanDiscipline.doorWindowSchedule:
+        return 'PL-VAN';
       case PlanDiscipline.axonometric3d:
         return 'PL-3D';
     }
@@ -45,6 +48,8 @@ extension PlanDisciplineMeta on PlanDiscipline {
         return 'PLANO DE INSTALACIONES HIDROSANITARIAS';
       case PlanDiscipline.finishesSchedule:
         return 'PLANO DE ACABADOS ARQUITECTÓNICOS (PISOS Y MUROS)';
+      case PlanDiscipline.doorWindowSchedule:
+        return 'PLANO Y PLANILLA DE PUERTAS, VENTANAS Y CERRAMIENTOS';
       case PlanDiscipline.axonometric3d:
         return 'MAQUETA AXONOMÉTRICA 3D Y VOLUMETRÍA ARQUITECTÓNICA';
     }
@@ -64,6 +69,8 @@ extension PlanDisciplineMeta on PlanDiscipline {
         return 'Hidrosanitario (Agua/Desagües)';
       case PlanDiscipline.finishesSchedule:
         return 'Acabados (Pisos y Muros)';
+      case PlanDiscipline.doorWindowSchedule:
+        return 'Planilla de Puertas y Ventanas';
       case PlanDiscipline.axonometric3d:
         return 'Maqueta Axonométrica 3D';
     }
@@ -84,6 +91,8 @@ extension PlanDisciplineMeta on PlanDiscipline {
         return 'Plumbing & Hydro-Sanitary';
       case PlanDiscipline.finishesSchedule:
         return 'Finishes (Floors & Walls)';
+      case PlanDiscipline.doorWindowSchedule:
+        return 'Door & Window Schedule';
       case PlanDiscipline.axonometric3d:
         return '3D Axonometric Model';
     }
