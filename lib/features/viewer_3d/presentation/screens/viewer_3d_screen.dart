@@ -672,7 +672,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   Flexible(
                     child: Text(
                       lang == 'es'
-                          ? 'Configurador 3D: Tocá un piso o elegí un ambiente'
+                          ? 'Configurador 3D: Toca un piso o elige un ambiente'
                           : '3D Configurator: Tap a floor or pick a room',
                       style: const TextStyle(
                         fontSize: 11.5,
@@ -831,9 +831,14 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                     itemBuilder: (ctx, index) {
                       final item = catalogItems[index];
                       final isSelected = item.id == activeMatId;
+                      final targetFloorH = floors
+                          .where((f) => f.id == selectedModule.floorId)
+                          .map((f) => f.heightMeters)
+                          .firstOrNull ??
+                          2.60;
                       final estCostCop = _activeSurfaceTab == FinishSurfaceTarget.floor
                           ? (selectedModule.area * 1.10 * item.pricePerM2Cop)
-                          : (selectedModule.geometry.perimeter * 2.20 * 0.85 * item.pricePerM2Cop);
+                          : (selectedModule.geometry.perimeter * targetFloorH * 0.85 * item.pricePerM2Cop);
                       final costThousands = (estCostCop / 1000).round();
 
                       return InkWell(

@@ -133,7 +133,11 @@ class EditorDialogs {
           ],
         );
       },
-    );
+    ).whenComplete(() {
+      nameCtrl.dispose();
+      heightCtrl.dispose();
+      levelCtrl.dispose();
+    });
   }
 
   static void showCreateVariantDialog({
@@ -231,7 +235,7 @@ class EditorDialogs {
           ),
         ],
       ),
-    );
+    ).whenComplete(variantCtrl.dispose);
   }
 
   static void showDemarcateWallsDialog({

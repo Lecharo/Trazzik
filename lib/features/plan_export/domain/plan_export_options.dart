@@ -61,6 +61,24 @@ extension PlanDisciplineMeta on PlanDiscipline {
         return 'Acabados (Pisos y Muros)';
     }
   }
+
+  String shortLabel(String lang) {
+    if (lang != 'en') return shortLabelEs;
+    switch (this) {
+      case PlanDiscipline.architectural:
+        return 'General Architectural';
+      case PlanDiscipline.comparativeBeforeAfter:
+        return 'Before vs. After Comparison';
+      case PlanDiscipline.demolitionMasonry:
+        return 'Demolition & Masonry';
+      case PlanDiscipline.electricalLighting:
+        return 'Electrical & Lighting';
+      case PlanDiscipline.plumbingHydro:
+        return 'Plumbing & Hydro-Sanitary';
+      case PlanDiscipline.finishesSchedule:
+        return 'Finishes (Floors & Walls)';
+    }
+  }
 }
 
 /// Configuration options for exporting technical architectural sheets.

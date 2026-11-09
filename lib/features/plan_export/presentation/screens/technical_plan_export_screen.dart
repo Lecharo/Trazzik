@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
@@ -112,18 +114,26 @@ class _TechnicalPlanExportScreenState
     final floorName = ref.watch(
       floorEditorProvider.select((s) => s.floor.name),
     );
+    final lang = ref.watch(appLocaleProvider);
+    final colors = AppColors.of(context);
     final isMobile = MediaQuery.of(context).size.width < 720;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0A192F),
+      backgroundColor: colors.panelBg,
       appBar: AppBar(
         title: Row(
           children: [
-            const Icon(Icons.picture_as_pdf, color: Color(0xFF00E5FF), size: 20),
+            Icon(Icons.picture_as_pdf, color: colors.accentCyan, size: 20),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                isMobile ? 'Lámina Técnica — $floorName' : 'Exportar Lámina Técnica — $floorName',
+                isMobile
+                    ? (lang == 'es'
+                        ? 'Lámina Técnica — $floorName'
+                        : 'Technical Sheet — $floorName')
+                    : (lang == 'es'
+                        ? 'Exportar Lámina Técnica — $floorName'
+                        : 'Export Technical Plan — $floorName'),
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -134,15 +144,17 @@ class _TechnicalPlanExportScreenState
           IconButton(
             icon: Icon(
               (!isMobile && _isDrawerOpen) ? Icons.view_sidebar : Icons.tune,
-              color: const Color(0xFF00E5FF),
+              color: colors.accentCyan,
             ),
-            tooltip: 'Configuración del Rótulo y Lámina',
+            tooltip: lang == 'es'
+                ? 'Configuración del Rótulo y Lámina'
+                : 'Title Block & Sheet Settings',
             onPressed: () {
               if (isMobile) {
                 showModalBottomSheet(
                   context: context,
                   isScrollControlled: true,
-                  backgroundColor: const Color(0xFF112240),
+                  backgroundColor: colors.cardBg,
                   shape: const RoundedRectangleBorder(
                     borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
                   ),
@@ -151,7 +163,8 @@ class _TechnicalPlanExportScreenState
                     minChildSize: 0.5,
                     maxChildSize: 0.95,
                     expand: false,
-                    builder: (_, scrollCtrl) => _buildSettingsSidebar(scrollCtrl),
+                    builder: (_, scrollCtrl) =>
+                        _buildSettingsSidebar(colors, lang, scrollCtrl),
                   ),
                 );
               } else {
@@ -168,13 +181,13 @@ class _TechnicalPlanExportScreenState
           if (!isMobile && _isDrawerOpen)
             Container(
               width: 320,
-              decoration: const BoxDecoration(
-                color: Color(0xFF112240),
+              decoration: BoxDecoration(
+                color: colors.cardBg,
                 border: Border(
-                  right: BorderSide(color: Color(0xFF233554), width: 1.0),
+                  right: BorderSide(color: colors.borderSubtle, width: 1.0),
                 ),
               ),
-              child: _buildSettingsSidebar(),
+              child: _buildSettingsSidebar(colors, lang),
             ),
 
           // Visor y Generador de PDF + Barra rápida de Especialidad Técnica
@@ -184,22 +197,22 @@ class _TechnicalPlanExportScreenState
                 Container(
                   height: 46,
                   padding: const EdgeInsets.symmetric(horizontal: 12),
-                  decoration: const BoxDecoration(
-                    color: Color(0xFF112240),
+                  decoration: BoxDecoration(
+                    color: colors.cardBg,
                     border: Border(
-                      bottom: BorderSide(color: Color(0xFF233554)),
+                      bottom: BorderSide(color: colors.borderSubtle),
                     ),
                   ),
                   child: ListView(
                     scrollDirection: Axis.horizontal,
                     children: [
-                      const Center(
+                      Center(
                         child: Padding(
-                          padding: EdgeInsets.only(right: 10),
+                          padding: const EdgeInsets.only(right: 10),
                           child: Text(
-                            'Especialidad:',
+                            lang == 'es' ? 'Especialidad:' : 'Discipline:',
                             style: TextStyle(
-                              color: Colors.white70,
+                              color: colors.textSecondary,
                               fontSize: 11.5,
                               fontWeight: FontWeight.w700,
                             ),
@@ -217,10 +230,12 @@ class _TechnicalPlanExportScreenState
                             size: 14,
                             color: _options.includeFullDisciplinePackage
                                 ? const Color(0xFF0A192F)
-                                : const Color(0xFF00E5FF),
+                                : colors.accentCyan,
                           ),
                           label: Text(
-                            'Dossier Completo (Todas las Láminas)',
+                            lang == 'es'
+                                ? 'Dossier Completo (Todas las Láminas)'
+                                : 'Full Executive Dossier (All Sheets)',
                             style: TextStyle(
                               fontSize: 11,
                               fontWeight: _options.includeFullDisciplinePackage
@@ -228,12 +243,12 @@ class _TechnicalPlanExportScreenState
                                   : FontWeight.w600,
                               color: _options.includeFullDisciplinePackage
                                   ? const Color(0xFF0A192F)
-                                  : const Color(0xFF00E5FF),
+                                  : colors.accentCyan,
                             ),
                           ),
                           selected: _options.includeFullDisciplinePackage,
                           selectedColor: const Color(0xFF00E5FF),
-                          backgroundColor: const Color(0xFF0A192F),
+                          backgroundColor: colors.panelBg,
                           visualDensity: VisualDensity.compact,
                           onSelected: (val) {
                             setState(() {
@@ -254,7 +269,7 @@ class _TechnicalPlanExportScreenState
                           ),
                           child: ChoiceChip(
                             label: Text(
-                              d.shortLabelEs,
+                              d.shortLabel(lang),
                               style: TextStyle(
                                 fontSize: 11,
                                 fontWeight: !_options.includeFullDisciplinePackage &&
@@ -264,13 +279,13 @@ class _TechnicalPlanExportScreenState
                                 color: !_options.includeFullDisciplinePackage &&
                                         _options.discipline == d
                                     ? const Color(0xFF0A192F)
-                                    : Colors.white70,
+                                    : colors.textSecondary,
                               ),
                             ),
                             selected: !_options.includeFullDisciplinePackage &&
                                 _options.discipline == d,
                             selectedColor: const Color(0xFF00E5FF),
-                            backgroundColor: const Color(0xFF0A192F),
+                            backgroundColor: colors.panelBg,
                             visualDensity: VisualDensity.compact,
                             onSelected: (_) {
                               _sheetCodeCtrl.text = d.defaultSheetCode;
@@ -298,15 +313,20 @@ class _TechnicalPlanExportScreenState
                     canChangeOrientation: false,
                     pdfFileName:
                         '${_options.projectName.replaceAll(' ', '_')}_${floorName}_${_options.sheetCode}.pdf',
-                    loadingWidget: const Center(
+                    loadingWidget: Center(
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          CircularProgressIndicator(color: Color(0xFF00E5FF)),
-                          SizedBox(height: 12),
+                          CircularProgressIndicator(color: colors.accentCyan),
+                          const SizedBox(height: 12),
                           Text(
-                            'Trazando lámina ejecutiva y cuadro de superficies...',
-                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                            lang == 'es'
+                                ? 'Trazando lámina ejecutiva y cuadro de superficies...'
+                                : 'Rendering executive technical sheet & area schedule...',
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 13,
+                            ),
                           ),
                         ],
                       ),
@@ -321,19 +341,23 @@ class _TechnicalPlanExportScreenState
     );
   }
 
-  Widget _buildSettingsSidebar([ScrollController? scrollController]) {
+  Widget _buildSettingsSidebar(
+    AppColors colors,
+    String lang, [
+    ScrollController? scrollController,
+  ]) {
     return ListView(
       controller: scrollController,
       padding: const EdgeInsets.all(16),
       children: [
-        const Row(
+        Row(
           children: [
-            Icon(Icons.tune, color: Color(0xFF00E5FF), size: 18),
-            SizedBox(width: 8),
+            Icon(Icons.tune, color: colors.accentCyan, size: 18),
+            const SizedBox(width: 8),
             Text(
-              'PARÁMETROS DE LÁMINA',
+              lang == 'es' ? 'PARÁMETROS DE LÁMINA' : 'SHEET PARAMETERS',
               style: TextStyle(
-                color: Color(0xFF00E5FF),
+                color: colors.accentCyan,
                 fontWeight: FontWeight.bold,
                 fontSize: 13,
                 letterSpacing: 1.0,
@@ -344,14 +368,14 @@ class _TechnicalPlanExportScreenState
         const SizedBox(height: 14),
 
         // Especialidad Técnica del Plano
-        const Text(
-          'Especialidad del Plano:',
-          style: TextStyle(color: Colors.white70, fontSize: 12),
+        Text(
+          lang == 'es' ? 'Especialidad del Plano:' : 'Plan Discipline:',
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<PlanDiscipline>(
           initialValue: _options.discipline,
-          dropdownColor: const Color(0xFF112240),
+          dropdownColor: colors.cardBg,
           decoration: const InputDecoration(
             isDense: true,
             border: OutlineInputBorder(),
@@ -361,7 +385,7 @@ class _TechnicalPlanExportScreenState
               DropdownMenuItem(
                 value: d,
                 child: Text(
-                  d.shortLabelEs,
+                  d.shortLabel(lang),
                   style: const TextStyle(fontSize: 12),
                 ),
               ),
@@ -382,26 +406,34 @@ class _TechnicalPlanExportScreenState
         const SizedBox(height: 12),
 
         // Tamaño de Hoja
-        const Text(
-          'Tamaño de Papel:',
-          style: TextStyle(color: Colors.white70, fontSize: 12),
+        Text(
+          lang == 'es' ? 'Tamaño de Papel:' : 'Paper Size:',
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<PdfPageFormat>(
           initialValue: _options.pageFormat,
-          dropdownColor: const Color(0xFF112240),
+          dropdownColor: colors.cardBg,
           decoration: const InputDecoration(
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          items: const [
+          items: [
             DropdownMenuItem(
               value: PdfPageFormat.a4,
-              child: Text('A4 Horizontal (297 x 210 mm)'),
+              child: Text(
+                lang == 'es'
+                    ? 'A4 Horizontal (297 x 210 mm)'
+                    : 'A4 Landscape (297 x 210 mm)',
+              ),
             ),
             DropdownMenuItem(
               value: PdfPageFormat.a3,
-              child: Text('A3 Horizontal (420 x 297 mm)'),
+              child: Text(
+                lang == 'es'
+                    ? 'A3 Horizontal (420 x 297 mm)'
+                    : 'A3 Landscape (420 x 297 mm)',
+              ),
             ),
           ],
           onChanged: (val) {
@@ -414,22 +446,35 @@ class _TechnicalPlanExportScreenState
         const SizedBox(height: 12),
 
         // Escala Reglamentaria
-        const Text(
-          'Escala Indicada:',
-          style: TextStyle(color: Colors.white70, fontSize: 12),
+        Text(
+          lang == 'es' ? 'Escala Indicada:' : 'Nominal Scale:',
+          style: TextStyle(color: colors.textSecondary, fontSize: 12),
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<String>(
           initialValue: _options.scaleLabel,
-          dropdownColor: const Color(0xFF112240),
+          dropdownColor: colors.cardBg,
           decoration: const InputDecoration(
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          items: const [
-            DropdownMenuItem(value: '1:50', child: Text('Escala 1:50 (Detallada)')),
-            DropdownMenuItem(value: '1:75', child: Text('Escala 1:75')),
-            DropdownMenuItem(value: '1:100', child: Text('Escala 1:100 (General)')),
+          items: [
+            DropdownMenuItem(
+              value: '1:50',
+              child: Text(
+                lang == 'es' ? 'Escala 1:50 (Detallada)' : 'Scale 1:50 (Detailed)',
+              ),
+            ),
+            DropdownMenuItem(
+              value: '1:75',
+              child: Text(lang == 'es' ? 'Escala 1:75' : 'Scale 1:75'),
+            ),
+            DropdownMenuItem(
+              value: '1:100',
+              child: Text(
+                lang == 'es' ? 'Escala 1:100 (General)' : 'Scale 1:100 (General)',
+              ),
+            ),
           ],
           onChanged: (val) {
             if (val != null) {
@@ -438,13 +483,13 @@ class _TechnicalPlanExportScreenState
           },
         ),
 
-        const Divider(color: Color(0xFF233554), height: 28),
+        Divider(color: colors.borderSubtle, height: 28),
 
         // Opciones de Contenido
-        const Text(
-          'Capas del Plano:',
+        Text(
+          lang == 'es' ? 'Capas del Plano:' : 'Plan Layers:',
           style: TextStyle(
-            color: Color(0xFF00E5FF),
+            color: colors.accentCyan,
             fontWeight: FontWeight.bold,
             fontSize: 12,
           ),
@@ -452,7 +497,10 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Mobiliario y Equipamiento', style: TextStyle(fontSize: 12)),
+          title: Text(
+            lang == 'es' ? 'Mobiliario y Equipamiento' : 'Furniture & Fixtures',
+            style: const TextStyle(fontSize: 12),
+          ),
           value: _options.includeFurniture,
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
@@ -461,7 +509,10 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Muros con Espesor Real', style: TextStyle(fontSize: 12)),
+          title: Text(
+            lang == 'es' ? 'Muros con Espesor Real' : 'True-Thickness Walls',
+            style: const TextStyle(fontSize: 12),
+          ),
           value: _options.includeWalls,
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
@@ -470,7 +521,10 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Líneas de Cotas Métricas', style: TextStyle(fontSize: 12)),
+          title: Text(
+            lang == 'es' ? 'Líneas de Cotas Métricas' : 'Metric Dimension Lines',
+            style: const TextStyle(fontSize: 12),
+          ),
           value: _options.includeDimensions,
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
@@ -479,7 +533,12 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Página: Cuadro de Áreas (PL-02)', style: TextStyle(fontSize: 12)),
+          title: Text(
+            lang == 'es'
+                ? 'Página: Cuadro de Áreas (PL-02)'
+                : 'Page: Area Schedule (PL-02)',
+            style: const TextStyle(fontSize: 12),
+          ),
           value: _options.includeAreaSchedulePage,
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
@@ -488,7 +547,12 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text('Página: Diagnóstico IA (PL-03)', style: TextStyle(fontSize: 12)),
+          title: Text(
+            lang == 'es'
+                ? 'Página: Diagnóstico IA (PL-03)'
+                : 'Page: AI Habitability Audit (PL-03)',
+            style: const TextStyle(fontSize: 12),
+          ),
           value: _options.includeAuditPage,
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
@@ -497,9 +561,11 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Página: Despiece de Carpintería (PL-CARP)',
-            style: TextStyle(fontSize: 12),
+          title: Text(
+            lang == 'es'
+                ? 'Página: Despiece de Carpintería (PL-CARP)'
+                : 'Page: Millwork Cut-Sheet (PL-CARP)',
+            style: const TextStyle(fontSize: 12),
           ),
           value: _options.includeMillworkPage,
           activeThumbColor: const Color(0xFF00E5FF),
@@ -509,9 +575,11 @@ class _TechnicalPlanExportScreenState
         SwitchListTile(
           dense: true,
           contentPadding: EdgeInsets.zero,
-          title: const Text(
-            'Dossier Ejecutivo Completo (Todas las Especialidades)',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          title: Text(
+            lang == 'es'
+                ? 'Dossier Ejecutivo Completo (Todas las Especialidades)'
+                : 'Full Executive Dossier (All Disciplines)',
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
           ),
           value: _options.includeFullDisciplinePackage,
           activeThumbColor: const Color(0xFF00E5FF),
@@ -523,13 +591,13 @@ class _TechnicalPlanExportScreenState
           ),
         ),
 
-        const Divider(color: Color(0xFF233554), height: 28),
+        Divider(color: colors.borderSubtle, height: 28),
 
         // Campos del Rótulo
-        const Text(
-          'Datos del Rótulo / Cajetín:',
+        Text(
+          lang == 'es' ? 'Datos del Rótulo / Cajetín:' : 'Title Block Fields:',
           style: TextStyle(
-            color: Color(0xFF00E5FF),
+            color: colors.accentCyan,
             fontWeight: FontWeight.bold,
             fontSize: 12,
           ),
@@ -538,10 +606,10 @@ class _TechnicalPlanExportScreenState
 
         TextField(
           controller: _projectCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Nombre del Proyecto',
+          decoration: InputDecoration(
+            labelText: lang == 'es' ? 'Nombre del Proyecto' : 'Project Name',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => _scheduleOptionsUpdate(),
         ),
@@ -549,10 +617,12 @@ class _TechnicalPlanExportScreenState
 
         TextField(
           controller: _profCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Profesional / Arquitecto',
+          decoration: InputDecoration(
+            labelText: lang == 'es'
+                ? 'Profesional / Arquitecto'
+                : 'Lead Architect',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => _scheduleOptionsUpdate(),
         ),
@@ -560,10 +630,10 @@ class _TechnicalPlanExportScreenState
 
         TextField(
           controller: _clientCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Propietario / Cliente',
+          decoration: InputDecoration(
+            labelText: lang == 'es' ? 'Propietario / Cliente' : 'Client / Owner',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => _scheduleOptionsUpdate(),
         ),
@@ -571,10 +641,10 @@ class _TechnicalPlanExportScreenState
 
         TextField(
           controller: _locCtrl,
-          decoration: const InputDecoration(
-            labelText: 'Ubicación / Ciudad',
+          decoration: InputDecoration(
+            labelText: lang == 'es' ? 'Ubicación / Ciudad' : 'Location / City',
             isDense: true,
-            border: OutlineInputBorder(),
+            border: const OutlineInputBorder(),
           ),
           onChanged: (_) => _scheduleOptionsUpdate(),
         ),
@@ -585,10 +655,10 @@ class _TechnicalPlanExportScreenState
             Expanded(
               child: TextField(
                 controller: _sheetCodeCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Cód. Lámina',
+                decoration: InputDecoration(
+                  labelText: lang == 'es' ? 'Cód. Lámina' : 'Sheet Code',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
                 onChanged: (_) => _scheduleOptionsUpdate(),
               ),
@@ -597,10 +667,10 @@ class _TechnicalPlanExportScreenState
             Expanded(
               child: TextField(
                 controller: _revCtrl,
-                decoration: const InputDecoration(
-                  labelText: 'Versión / Rev',
+                decoration: InputDecoration(
+                  labelText: lang == 'es' ? 'Versión / Rev' : 'Revision',
                   isDense: true,
-                  border: OutlineInputBorder(),
+                  border: const OutlineInputBorder(),
                 ),
                 onChanged: (_) => _scheduleOptionsUpdate(),
               ),

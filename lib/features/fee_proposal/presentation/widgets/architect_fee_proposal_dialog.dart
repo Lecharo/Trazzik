@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/fee_proposal/domain/architect_fee_proposal.dart';
 import 'package:trazzik/features/fee_proposal/presentation/services/architect_fee_proposal_pdf_service.dart';
@@ -135,13 +136,14 @@ class _ArchitectFeeProposalDialogState
   @override
   Widget build(BuildContext context) {
     final lang = ref.watch(appLocaleProvider);
+    final colors = AppColors.of(context);
     final totalFee = _proposal.totalFeeCop;
 
     return Dialog(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: colors.panelBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(14),
-        side: const BorderSide(color: Color(0xFF334155)),
+        side: BorderSide(color: colors.borderSubtle),
       ),
       child: ConstrainedBox(
         constraints: const BoxConstraints(maxWidth: 820, maxHeight: 740),
@@ -150,15 +152,15 @@ class _ArchitectFeeProposalDialogState
             // Header
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: Color(0xFF1E293B),
-                borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+              decoration: BoxDecoration(
+                color: colors.cardBg,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(14)),
               ),
               child: Row(
                 children: [
-                  const Icon(
+                  Icon(
                     Icons.request_quote_outlined,
-                    color: Color(0xFF00E5FF),
+                    color: colors.accentCyan,
                     size: 22,
                   ),
                   const SizedBox(width: 10),
@@ -170,24 +172,24 @@ class _ArchitectFeeProposalDialogState
                           lang == 'es'
                               ? 'Cotizador de Honorarios Profesionales y Entregables'
                               : 'Professional Design Fee & Deliverables Proposal',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 15,
                             fontWeight: FontWeight.bold,
-                            color: Colors.white,
+                            color: colors.textPrimary,
                           ),
                         ),
                         Text(
-                          '${_proposal.projectName}  •  ${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m²  •  ${_proposal.floorCount} nivel(es)  •  ${_proposal.estimatedWeeksLabel}',
-                          style: const TextStyle(
+                          '${_proposal.projectName}  •  ${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m²  •  ${_proposal.floorCount} ${lang == 'es' ? 'nivel(es)' : 'level(s)'}  •  ${_proposal.estimatedWeeksLabel}',
+                          style: TextStyle(
                             fontSize: 11,
-                            color: Color(0xFF94A3B8),
+                            color: colors.textSecondary,
                           ),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white70),
+                    icon: Icon(Icons.close, color: colors.textSecondary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -206,6 +208,7 @@ class _ArchitectFeeProposalDialogState
                       children: [
                         Expanded(
                           child: _buildTextField(
+                            colors: colors,
                             controller: _studioCtrl,
                             label: lang == 'es' ? 'Estudio / Firma' : 'Studio Name',
                             onChanged: (v) => _updateProposal(
@@ -216,6 +219,7 @@ class _ArchitectFeeProposalDialogState
                         const SizedBox(width: 10),
                         Expanded(
                           child: _buildTextField(
+                            colors: colors,
                             controller: _architectCtrl,
                             label: lang == 'es'
                                 ? 'Arquitecto(a) Responsable'
@@ -228,6 +232,7 @@ class _ArchitectFeeProposalDialogState
                         const SizedBox(width: 10),
                         Expanded(
                           child: _buildTextField(
+                            colors: colors,
                             controller: _clientCtrl,
                             label: lang == 'es' ? 'Cliente' : 'Client Name',
                             onChanged: (v) => _updateProposal(
@@ -243,9 +248,9 @@ class _ArchitectFeeProposalDialogState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF1E293B),
+                        color: colors.cardBg,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white12),
+                        border: Border.all(color: colors.borderSubtle),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
@@ -254,10 +259,10 @@ class _ArchitectFeeProposalDialogState
                             lang == 'es'
                                 ? 'MODALIDAD DE CÁLCULO DE HONORARIOS'
                                 : 'FEE PRICING FORMULA',
-                            style: const TextStyle(
+                            style: TextStyle(
                               fontSize: 11,
                               fontWeight: FontWeight.bold,
-                              color: Color(0xFF00E5FF),
+                              color: colors.accentCyan,
                               letterSpacing: 0.8,
                             ),
                           ),
@@ -319,6 +324,7 @@ class _ArchitectFeeProposalDialogState
                                 SizedBox(
                                   width: 220,
                                   child: _buildTextField(
+                                    colors: colors,
                                     controller: _rateM2Ctrl,
                                     label: lang == 'es'
                                         ? 'Tarifa COP / m²'
@@ -341,9 +347,9 @@ class _ArchitectFeeProposalDialogState
                                     lang == 'es'
                                         ? '${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m² × ${ArchitectFeeProposalPdfService.formatCop(_proposal.ratePerM2Cop)}/m² × ${(_proposal.scopeRatio * 100).round()}% alcance'
                                         : '${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m² × ${ArchitectFeeProposalPdfService.formatCop(_proposal.ratePerM2Cop)}/m² × ${(_proposal.scopeRatio * 100).round()}% scope',
-                                    style: const TextStyle(
+                                    style: TextStyle(
                                       fontSize: 11.5,
-                                      color: Colors.white70,
+                                      color: colors.textSecondary,
                                     ),
                                   ),
                                 ),
@@ -372,10 +378,10 @@ class _ArchitectFeeProposalDialogState
                                   lang == 'es'
                                       ? '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}% de Obra'
                                       : '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}% of Build Cost',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF00E5FF),
+                                    color: colors.accentCyan,
                                   ),
                                 ),
                               ],
@@ -384,6 +390,7 @@ class _ArchitectFeeProposalDialogState
                             SizedBox(
                               width: 240,
                               child: _buildTextField(
+                                colors: colors,
                                 controller: _fixedFeeCtrl,
                                 label: lang == 'es'
                                     ? 'Valor Total Fijo (COP)'
@@ -410,10 +417,10 @@ class _ArchitectFeeProposalDialogState
                       lang == 'es'
                           ? 'FASES DE ENTREGABLES Y CRONOGRAMA (DÍAS HÁBILES)'
                           : 'DELIVERABLE PHASES & BUSINESS-DAY SCHEDULE',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 11,
                         fontWeight: FontWeight.bold,
-                        color: Color(0xFF00E5FF),
+                        color: colors.accentCyan,
                         letterSpacing: 0.8,
                       ),
                     ),
@@ -428,13 +435,13 @@ class _ArchitectFeeProposalDialogState
                         ),
                         decoration: BoxDecoration(
                           color: phase.included
-                              ? const Color(0xFF1E293B)
-                              : const Color(0xFF131B2B),
+                              ? colors.cardBg
+                              : colors.surfaceSubtle,
                           borderRadius: BorderRadius.circular(8),
                           border: Border.all(
                             color: phase.included
-                                ? const Color(0xFF00E5FF).withValues(alpha: 0.35)
-                                : Colors.white10,
+                                ? colors.accentCyan.withValues(alpha: 0.35)
+                                : colors.borderSubtle,
                           ),
                         ),
                         child: Row(
@@ -442,95 +449,95 @@ class _ArchitectFeeProposalDialogState
                             Checkbox(
                               value: phase.included,
                               activeColor: const Color(0xFF00E5FF),
-                                onChanged: (val) {
-                                  if (val == null) return;
-                                  final updated = List<DesignScopePhase>.from(
-                                    _proposal.phases,
-                                  );
-                                  updated[idx] = phase.copyWith(included: val);
-                                  _updateProposal(
-                                    _proposal.copyWith(phases: updated),
-                                  );
-                                },
+                              onChanged: (val) {
+                                if (val == null) return;
+                                final updated = List<DesignScopePhase>.from(
+                                  _proposal.phases,
+                                );
+                                updated[idx] = phase.copyWith(included: val);
+                                _updateProposal(
+                                  _proposal.copyWith(phases: updated),
+                                );
+                              },
+                            ),
+                            Text(
+                              phase.code,
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.bold,
+                                color: colors.accentCyan,
                               ),
-                              Text(
-                                phase.code,
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.bold,
-                                  color: Color(0xFF00E5FF),
-                                ),
-                              ),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text(
-                                      phase.title,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        fontWeight: FontWeight.bold,
-                                        color: phase.included
-                                            ? Colors.white
-                                            : Colors.white38,
-                                      ),
+                            ),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    phase.title,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.bold,
+                                      color: phase.included
+                                          ? colors.textPrimary
+                                          : colors.textMuted,
                                     ),
-                                    Text(
-                                      phase.description,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(
-                                        fontSize: 10.5,
-                                        color: Color(0xFF94A3B8),
-                                      ),
+                                  ),
+                                  Text(
+                                    phase.description,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: TextStyle(
+                                      fontSize: 10.5,
+                                      color: colors.textSecondary,
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                ],
                               ),
-                              const SizedBox(width: 8),
-                              IconButton(
-                                icon: const Icon(Icons.remove_circle_outline, size: 18),
-                                color: Colors.white54,
-                                visualDensity: VisualDensity.compact,
-                                onPressed: phase.businessDays > 1
-                                    ? () {
-                                        final updated = List<DesignScopePhase>.from(
-                                          _proposal.phases,
-                                        );
-                                        updated[idx] = phase.copyWith(
-                                          businessDays: phase.businessDays - 1,
-                                        );
-                                        _updateProposal(
-                                          _proposal.copyWith(phases: updated),
-                                        );
-                                      }
-                                    : null,
+                            ),
+                            const SizedBox(width: 8),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, size: 18),
+                              color: colors.textSecondary,
+                              visualDensity: VisualDensity.compact,
+                              onPressed: phase.businessDays > 1
+                                  ? () {
+                                      final updated = List<DesignScopePhase>.from(
+                                        _proposal.phases,
+                                      );
+                                      updated[idx] = phase.copyWith(
+                                        businessDays: phase.businessDays - 1,
+                                      );
+                                      _updateProposal(
+                                        _proposal.copyWith(phases: updated),
+                                      );
+                                    }
+                                  : null,
+                            ),
+                            Text(
+                              '${phase.businessDays} d',
+                              style: TextStyle(
+                                fontSize: 11.5,
+                                fontWeight: FontWeight.bold,
+                                color: colors.textPrimary,
                               ),
-                              Text(
-                                '${phase.businessDays} d',
-                                style: const TextStyle(
-                                  fontSize: 11.5,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                              IconButton(
-                                icon: const Icon(Icons.add_circle_outline, size: 18),
-                                color: const Color(0xFF00E5FF),
-                                visualDensity: VisualDensity.compact,
-                                onPressed: () {
-                                  final updated = List<DesignScopePhase>.from(
-                                    _proposal.phases,
-                                  );
-                                  updated[idx] = phase.copyWith(
-                                    businessDays: phase.businessDays + 1,
-                                  );
-                                  _updateProposal(
-                                    _proposal.copyWith(phases: updated),
-                                  );
-                                },
-                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline, size: 18),
+                              color: colors.accentCyan,
+                              visualDensity: VisualDensity.compact,
+                              onPressed: () {
+                                final updated = List<DesignScopePhase>.from(
+                                  _proposal.phases,
+                                );
+                                updated[idx] = phase.copyWith(
+                                  businessDays: phase.businessDays + 1,
+                                );
+                                _updateProposal(
+                                  _proposal.copyWith(phases: updated),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       );
@@ -542,9 +549,9 @@ class _ArchitectFeeProposalDialogState
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF131C2E),
+                        color: colors.cardBg,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white12),
+                        border: Border.all(color: colors.borderSubtle),
                       ),
                       child: Row(
                         children: _proposal.milestones.map((m) {
@@ -554,10 +561,10 @@ class _ArchitectFeeProposalDialogState
                               children: [
                                 Text(
                                   '${m.title} (${m.percentage.toStringAsFixed(0)}%)',
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 10.5,
                                     fontWeight: FontWeight.bold,
-                                    color: Color(0xFF94A3B8),
+                                    color: colors.textSecondary,
                                   ),
                                 ),
                                 const SizedBox(height: 3),
@@ -565,10 +572,10 @@ class _ArchitectFeeProposalDialogState
                                   ArchitectFeeProposalPdfService.formatCop(
                                     m.amountFor(totalFee),
                                   ),
-                                  style: const TextStyle(
+                                  style: TextStyle(
                                     fontSize: 12.5,
                                     fontWeight: FontWeight.bold,
-                                    color: Colors.white,
+                                    color: colors.textPrimary,
                                   ),
                                 ),
                               ],
@@ -585,9 +592,9 @@ class _ArchitectFeeProposalDialogState
             // Footer with Total Investment & Export PDF button
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-              decoration: const BoxDecoration(
-                color: Color(0xFF1E293B),
-                borderRadius: BorderRadius.vertical(bottom: Radius.circular(14)),
+              decoration: BoxDecoration(
+                color: colors.cardBg,
+                borderRadius: const BorderRadius.vertical(bottom: Radius.circular(14)),
               ),
               child: Row(
                 children: [
@@ -599,18 +606,18 @@ class _ArchitectFeeProposalDialogState
                           lang == 'es'
                               ? 'HONORARIOS PROFESIONALES TOTALES'
                               : 'TOTAL PROFESSIONAL DESIGN FEE',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 10,
-                            color: Color(0xFF94A3B8),
+                            color: colors.textSecondary,
                             fontWeight: FontWeight.bold,
                           ),
                         ),
                         Text(
                           '${ArchitectFeeProposalPdfService.formatCop(totalFee)}  •  ${_proposal.estimatedWeeksLabel}',
-                          style: const TextStyle(
+                          style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF00E5FF),
+                            color: colors.accentCyan,
                           ),
                         ),
                       ],
@@ -650,22 +657,23 @@ class _ArchitectFeeProposalDialogState
   }
 
   Widget _buildTextField({
+    required AppColors colors,
     required TextEditingController controller,
     required String label,
     required ValueChanged<String> onChanged,
   }) {
     return TextField(
       controller: controller,
-      style: const TextStyle(fontSize: 12, color: Colors.white),
+      style: TextStyle(fontSize: 12, color: colors.textPrimary),
       decoration: InputDecoration(
         labelText: label,
-        labelStyle: const TextStyle(fontSize: 11, color: Color(0xFF94A3B8)),
+        labelStyle: TextStyle(fontSize: 11, color: colors.textSecondary),
         isDense: true,
         filled: true,
-        fillColor: const Color(0xFF0F172A),
+        fillColor: colors.panelBg,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(8),
-          borderSide: const BorderSide(color: Colors.white24),
+          borderSide: BorderSide(color: colors.borderSubtle),
         ),
       ),
       onChanged: onChanged,

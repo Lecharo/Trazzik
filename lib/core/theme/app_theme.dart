@@ -32,6 +32,11 @@ class AppColors extends ThemeExtension<AppColors> {
   final Color textMuted;
   final Color borderSubtle;
 
+  Color get accentCyan => accent;
+  Color get panelBg => panelBackground;
+  Color get cardBg => cardSurface;
+  Color get surfaceSubtle => subtleSurface;
+
   const AppColors({
     required this.accent,
     required this.warning,
