@@ -12,6 +12,7 @@ import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/projects/presentation/notifiers/projects_list_notifier.dart';
 import 'package:trazzik/features/projects/presentation/screens/lot_setup_screen.dart';
 import 'package:trazzik/features/projects/presentation/widgets/project_form_dialog.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 
 class ProjectsListScreen extends ConsumerStatefulWidget {
   const ProjectsListScreen({super.key});
@@ -199,6 +200,17 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: lang == 'es'
+                ? 'Abrir código o enlace 3D de cliente'
+                : 'Open client 3D code or link',
+            icon: const Icon(
+              Icons.vpn_key_outlined,
+              size: 20,
+              color: Color(0xFF00E5FF),
+            ),
+            onPressed: () => OpenSharedLinkDialog.show(context),
+          ),
           IconButton(
             tooltip: AppStrings.tr('lang_switch', lang),
             icon: const Icon(Icons.language, size: 20),

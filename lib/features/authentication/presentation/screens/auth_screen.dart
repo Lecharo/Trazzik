@@ -5,6 +5,7 @@ import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/authentication/data/supabase_auth_repository.dart';
 import 'package:trazzik/features/projects/presentation/screens/projects_list_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 
 class AuthScreen extends ConsumerStatefulWidget {
   final SupabaseAuthRepository? authRepo;
@@ -345,6 +346,21 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
                                 : AppStrings.tr('submit_register', lang),
                             style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
                           ),
+                  ),
+                  const SizedBox(height: 14),
+                  OutlinedButton.icon(
+                    onPressed: () => OpenSharedLinkDialog.show(context),
+                    icon: const Icon(
+                      Icons.view_in_ar_rounded,
+                      size: 18,
+                      color: Color(0xFF00E5FF),
+                    ),
+                    label: Text(
+                      lang == 'es'
+                          ? 'Abrir código o enlace 3D de cliente'
+                          : 'Open client 3D code or link',
+                      style: const TextStyle(fontSize: 12.5),
+                    ),
                   ),
                 ],
               ),

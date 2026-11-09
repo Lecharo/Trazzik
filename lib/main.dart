@@ -6,6 +6,8 @@ import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/authentication/data/supabase_auth_repository.dart';
 import 'package:trazzik/features/authentication/presentation/screens/auth_screen.dart';
 import 'package:trazzik/features/projects/presentation/screens/projects_list_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,7 +40,16 @@ class TrazzikApp extends ConsumerWidget {
       home = _StartupConfigErrorScreen(message: startupError!);
     } else {
       final user = ref.watch(authRepositoryProvider).currentUser;
-      home = user != null ? const ProjectsListScreen() : const AuthScreen();
+      final defaultHome =
+          user != null ? const ProjectsListScreen() : const AuthScreen();
+      final initialShareToken =
+          SharedProjectOpener.extractToken(Uri.base.queryParameters['share'] ?? '');
+      home = initialShareToken.length >= 8
+          ? _StartupShareGate(
+              shareToken: initialShareToken,
+              fallbackHome: defaultHome,
+            )
+          : defaultHome;
     }
 
     return MaterialApp(
@@ -49,6 +60,70 @@ class TrazzikApp extends ConsumerWidget {
       themeMode: themeMode,
       home: home,
     );
+  }
+}
+
+class _StartupShareGate extends ConsumerStatefulWidget {
+  final String shareToken;
+  final Widget fallbackHome;
+
+  const _StartupShareGate({
+    required this.shareToken,
+    required this.fallbackHome,
+  });
+
+  @override
+  ConsumerState<_StartupShareGate> createState() => _StartupShareGateState();
+}
+
+class _StartupShareGateState extends ConsumerState<_StartupShareGate> {
+  bool _loading = true;
+  ({bool allowFinishSelection, String token, String projectName})? _hydrated;
+
+  @override
+  void initState() {
+    super.initState();
+    _resolveShareToken();
+  }
+
+  Future<void> _resolveShareToken() async {
+    try {
+      final res = await SharedProjectOpener.hydrateSharedProject(
+        ref,
+        widget.shareToken,
+      );
+      if (mounted) {
+        setState(() {
+          _hydrated = res;
+          _loading = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() => _loading = false);
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_loading) {
+      return const Scaffold(
+        body: Center(
+          child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
+        ),
+      );
+    }
+    final hydrated = _hydrated;
+    if (hydrated != null) {
+      return Viewer3dScreen(
+        initialClientMode: true,
+        initialAllowFinishSelection: hydrated.allowFinishSelection,
+        initialShareToken: hydrated.token,
+        isStandaloneClientSession: true,
+      );
+    }
+    return widget.fallbackHome;
   }
 }
 

@@ -16,7 +16,18 @@ import 'package:trazzik/features/viewer_3d/presentation/widgets/client_share_lin
 
 /// Pantalla completa de Maqueta Axonométrica 3D del Proyecto
 class Viewer3dScreen extends ConsumerStatefulWidget {
-  const Viewer3dScreen({super.key});
+  final bool initialClientMode;
+  final bool initialAllowFinishSelection;
+  final String initialShareToken;
+  final bool isStandaloneClientSession;
+
+  const Viewer3dScreen({
+    super.key,
+    this.initialClientMode = false,
+    this.initialAllowFinishSelection = true,
+    this.initialShareToken = '',
+    this.isStandaloneClientSession = false,
+  });
 
   @override
   ConsumerState<Viewer3dScreen> createState() => _Viewer3dScreenState();
@@ -38,9 +49,17 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   String? _selectedModuleFloorId;
   FinishSurfaceTarget _activeSurfaceTab = FinishSurfaceTarget.floor;
   bool _applyToEntireFloor = false;
-  bool _isClientPreviewMode = false;
-  bool _clientAllowFinishSelection = true;
-  String _clientShareToken = '';
+  late bool _isClientPreviewMode;
+  late bool _clientAllowFinishSelection;
+  late String _clientShareToken;
+
+  @override
+  void initState() {
+    super.initState();
+    _isClientPreviewMode = widget.initialClientMode;
+    _clientAllowFinishSelection = widget.initialAllowFinishSelection;
+    _clientShareToken = widget.initialShareToken;
+  }
 
   // Caché de escena 3D para evitar regenerar mallas al cambiar cámara o etiquetas
   List<Face3D>? _cachedFaces;
@@ -671,28 +690,31 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                         ),
                       ),
                     ],
-                    const SizedBox(width: 8),
-                    InkWell(
-                      onTap: () => setState(() => _isClientPreviewMode = false),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 6,
-                          vertical: 2,
-                        ),
-                        decoration: BoxDecoration(
-                          color: Colors.black26,
-                          borderRadius: BorderRadius.circular(6),
-                        ),
-                        child: Text(
-                          lang == 'es' ? 'Salir' : 'Exit',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
+                    if (!widget.isStandaloneClientSession) ...[
+                      const SizedBox(width: 8),
+                      InkWell(
+                        onTap: () =>
+                            setState(() => _isClientPreviewMode = false),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            color: Colors.black26,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            lang == 'es' ? 'Salir' : 'Exit',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 10,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
                       ),
-                    ),
+                    ],
                   ],
                 ),
               ),

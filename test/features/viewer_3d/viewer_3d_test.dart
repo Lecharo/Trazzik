@@ -14,6 +14,7 @@ import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
 
 void main() {
@@ -370,6 +371,17 @@ void main() {
       expect(
         find.textContaining('VISTA CLIENTE (60d) • Acabados interactivos'),
         findsOneWidget,
+      );
+    });
+
+    test('SharedProjectOpener.extractToken extrae token desde URL completa o código directo', () {
+      expect(
+        SharedProjectOpener.extractToken('https://trazzik.app/?share=abc123456789'),
+        equals('abc123456789'),
+      );
+      expect(
+        SharedProjectOpener.extractToken('  tz_demo_token_998877  '),
+        equals('tz_demo_token_998877'),
       );
     });
   });
