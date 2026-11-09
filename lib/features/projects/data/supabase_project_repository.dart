@@ -275,4 +275,36 @@ class SupabaseProjectRepository {
     });
     return token;
   }
+
+  /// Consulta un proyecto compartido mediante el RPC `get_shared_project_by_token`.
+  Future<Map<String, dynamic>?> getSharedProjectByToken(String token) async {
+    final res = await _client.rpc(
+      'get_shared_project_by_token',
+      params: {'p_token': token.trim()},
+    );
+    if (res is Map<String, dynamic>) return res;
+    if (res is Map) return Map<String, dynamic>.from(res);
+    return null;
+  }
+
+  /// Actualiza acabados de un módulo compartido mediante el RPC `update_shared_module_finishes`.
+  Future<bool> updateSharedModuleFinishes({
+    required String token,
+    required String moduleId,
+    String? floorMaterialId,
+    String? wallFinishId,
+    bool clearFinishes = false,
+  }) async {
+    final res = await _client.rpc(
+      'update_shared_module_finishes',
+      params: {
+        'p_token': token.trim(),
+        'p_module_id': moduleId,
+        'p_floor_material_id': floorMaterialId,
+        'p_wall_finish_id': wallFinishId,
+        'p_clear_finishes': clearFinishes,
+      },
+    );
+    return res == true;
+  }
 }

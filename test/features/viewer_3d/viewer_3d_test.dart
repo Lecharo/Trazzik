@@ -326,6 +326,52 @@ void main() {
         isTrue,
       );
     });
+
+    testWidgets('Botón Compartir en Viewer3dScreen abre ClientShareLinkDialog y activa Vista Cliente 60d', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final project = Project(
+        id: 'p1',
+        name: 'Casa Moderna 2 Plantas',
+        ownerId: 'owner-1',
+        createdAt: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            floorEditorProvider.overrideWith(
+              () => _Test3DFloorEditorNotifier(lot, floor1, allFloors, project),
+            ),
+          ],
+          child: const MaterialApp(
+            home: Viewer3dScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.share_rounded), findsOneWidget);
+      await tester.tap(find.byIcon(Icons.share_rounded));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Compartir Maqueta 3D con Cliente'), findsOneWidget);
+      expect(find.textContaining('https://trazzik.app/?share='), findsOneWidget);
+      expect(find.text('Probar Vista Cliente'), findsOneWidget);
+
+      await tester.tap(find.text('Probar Vista Cliente'));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('VISTA CLIENTE (60d) • Acabados interactivos'),
+        findsOneWidget,
+      );
+    });
   });
 }
 

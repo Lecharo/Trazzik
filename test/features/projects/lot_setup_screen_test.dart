@@ -76,6 +76,20 @@ class _InMemoryProjectRepo implements SupabaseProjectRepository {
     bool allowFinishSelection = true,
   }) async =>
       'test-share-token';
+
+  @override
+  Future<Map<String, dynamic>?> getSharedProjectByToken(String token) async =>
+      null;
+
+  @override
+  Future<bool> updateSharedModuleFinishes({
+    required String token,
+    required String moduleId,
+    String? floorMaterialId,
+    String? wallFinishId,
+    bool clearFinishes = false,
+  }) async =>
+      true;
 }
 
 class _InMemoryFloorRepo implements SupabaseFloorRepository {

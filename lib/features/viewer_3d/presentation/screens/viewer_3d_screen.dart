@@ -8,9 +8,11 @@ import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_n
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/projects/data/supabase_project_repository.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/client_share_link_dialog.dart';
 
 /// Pantalla completa de Maqueta Axonométrica 3D del Proyecto
 class Viewer3dScreen extends ConsumerStatefulWidget {
@@ -36,6 +38,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   String? _selectedModuleFloorId;
   FinishSurfaceTarget _activeSurfaceTab = FinishSurfaceTarget.floor;
   bool _applyToEntireFloor = false;
+  bool _isClientPreviewMode = false;
+  bool _clientAllowFinishSelection = true;
+  String _clientShareToken = '';
 
   // Caché de escena 3D para evitar regenerar mallas al cambiar cámara o etiquetas
   List<Face3D>? _cachedFaces;
@@ -173,6 +178,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           floorEditorProvider.select((s) => s.project?.name),
         ) ??
         'Proyecto Arquitectónico';
+    final projectId = ref.watch(
+          floorEditorProvider.select((s) => s.project?.id),
+        ) ??
+        'demo-project';
     final lang = ref.watch(appLocaleProvider);
 
     final floors = allFloors.isNotEmpty ? allFloors : [floor];
@@ -352,6 +361,28 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   : (_showLabels ? 'Hide labels' : 'Show labels'),
               onPressed: () => setState(() => _showLabels = !_showLabels),
             ),
+            IconButton(
+              icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
+              tooltip: lang == 'es'
+                  ? 'Compartir enlace interactivo 3D (60 días)'
+                  : 'Share interactive 3D link (60 days)',
+              onPressed: () => ClientShareLinkDialog.show(
+                context,
+                projectId: projectId,
+                projectName: projectName,
+                onEnterClientPreview: (allowFinishes, token) {
+                  setState(() {
+                    _isClientPreviewMode = true;
+                    _clientAllowFinishSelection = allowFinishes;
+                    _clientShareToken = token;
+                    if (!allowFinishes) {
+                      _selectedModuleId = null;
+                      _selectedModuleFloorId = null;
+                    }
+                  });
+                },
+              ),
+            ),
           ] else ...[
             // Vistas rápidas (Presets de cámara)
             IconButton(
@@ -405,6 +436,28 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   : (_showLabels ? 'Hide labels' : 'Show short labels'),
               onPressed: () => setState(() => _showLabels = !_showLabels),
             ),
+            IconButton(
+              icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
+              tooltip: lang == 'es'
+                  ? 'Compartir enlace interactivo 3D (60 días)'
+                  : 'Share interactive 3D link (60 days)',
+              onPressed: () => ClientShareLinkDialog.show(
+                context,
+                projectId: projectId,
+                projectName: projectName,
+                onEnterClientPreview: (allowFinishes, token) {
+                  setState(() {
+                    _isClientPreviewMode = true;
+                    _clientAllowFinishSelection = allowFinishes;
+                    _clientShareToken = token;
+                    if (!allowFinishes) {
+                      _selectedModuleId = null;
+                      _selectedModuleFloorId = null;
+                    }
+                  });
+                },
+              ),
+            ),
           ],
           const SizedBox(width: 8),
         ],
@@ -431,6 +484,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   highlightWallSelection:
                       _activeSurfaceTab == FinishSurfaceTarget.wall,
                   onSurfaceTapped: (moduleId, floorId, isWallFace) {
+                    if (_isClientPreviewMode && !_clientAllowFinishSelection) {
+                      return;
+                    }
                     setState(() {
                       _selectedModuleId = moduleId;
                       _selectedModuleFloorId = floorId;
@@ -558,11 +614,89 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           ),
 
           // 3.5 Selector rápido de recinto cuando no hay uno tocado (o dock completo cuando sí lo hay)
-          _buildFinishConfiguratorOverlay(
-            floors: floors,
-            lang: lang,
-            isMobile: isMobile,
-          ),
+          if (!_isClientPreviewMode || _clientAllowFinishSelection)
+            _buildFinishConfiguratorOverlay(
+              floors: floors,
+              lang: lang,
+              isMobile: isMobile,
+            ),
+
+          if (_isClientPreviewMode)
+            Positioned(
+              top: 16,
+              right: 16,
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF065F46).withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: const Color(0xFF10B981).withValues(alpha: 0.7),
+                  ),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.verified_user_outlined,
+                      size: 16,
+                      color: Color(0xFF34D399),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      lang == 'es'
+                          ? (_clientAllowFinishSelection
+                              ? 'VISTA CLIENTE (60d) • Acabados interactivos'
+                              : 'VISTA CLIENTE (60d) • Solo lectura')
+                          : (_clientAllowFinishSelection
+                              ? 'CLIENT VIEW (60d) • Interactive finishes'
+                              : 'CLIENT VIEW (60d) • Read-only'),
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                    if (_clientShareToken.isNotEmpty) ...[
+                      const SizedBox(width: 6),
+                      Text(
+                        '#${_clientShareToken.substring(0, math.min(6, _clientShareToken.length))}',
+                        style: const TextStyle(
+                          color: Color(0xFFA7F3D0),
+                          fontSize: 10,
+                          fontFamily: 'monospace',
+                        ),
+                      ),
+                    ],
+                    const SizedBox(width: 8),
+                    InkWell(
+                      onTap: () => setState(() => _isClientPreviewMode = false),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.black26,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          lang == 'es' ? 'Salir' : 'Exit',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
 
           // 4. Controles flotantes de Zoom y Ajuste
           Positioned(
@@ -852,6 +986,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                               floorId: _selectedModuleFloorId ?? selectedModule.floorId,
                               applyToAllRoomsOnFloor: _applyToEntireFloor,
                             );
+                            if (_isClientPreviewMode &&
+                                _clientShareToken.isNotEmpty &&
+                                !_clientShareToken.startsWith('tz_')) {
+                              ref
+                                  .read(projectRepositoryProvider)
+                                  .updateSharedModuleFinishes(
+                                    token: _clientShareToken,
+                                    moduleId: selectedModule.id,
+                                    floorMaterialId: item.id,
+                                  )
+                                  .ignore();
+                            }
                           } else {
                             notifier.setModuleWallFinish(
                               selectedModule.id,
@@ -859,6 +1005,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                               floorId: _selectedModuleFloorId ?? selectedModule.floorId,
                               applyToAllRoomsOnFloor: _applyToEntireFloor,
                             );
+                            if (_isClientPreviewMode &&
+                                _clientShareToken.isNotEmpty &&
+                                !_clientShareToken.startsWith('tz_')) {
+                              ref
+                                  .read(projectRepositoryProvider)
+                                  .updateSharedModuleFinishes(
+                                    token: _clientShareToken,
+                                    moduleId: selectedModule.id,
+                                    wallFinishId: item.id,
+                                  )
+                                  .ignore();
+                            }
                           }
                         },
                         child: AnimatedContainer(
