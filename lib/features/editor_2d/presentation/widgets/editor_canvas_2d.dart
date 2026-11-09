@@ -339,6 +339,11 @@ class _Canvas2DPainter extends CustomPainter {
 
   _Canvas2DPainter(this.state);
 
+  static bool _isOpeningModule(Module module) {
+    final t = module.moduleType.toUpperCase();
+    return t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE');
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final zoom = state.zoom;
