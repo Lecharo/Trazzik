@@ -17,6 +17,7 @@ import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/domain/gltf_exporter_service.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
 
@@ -535,6 +536,53 @@ void main() {
       );
       expect(nightFloorColor.r, greaterThan(nightSlabColor.r));
       expect(SunPreset3D.nightInterior.label('es'), contains('2700K'));
+    });
+
+    test('Corte Seccional 3D (SectionCutAxis3D) y Roomstyles 1-Clic aplican acabados coordinados por tipología', () {
+      final faces = Building3DBuilder.buildScene(
+        floors: [floor1],
+        lot: lot,
+        wallHeight: 2.60,
+      );
+
+      final cutX = AxonometricSceneRenderer.resolveSectionCutLimit(
+        faces,
+        SectionCutAxis3D.axisX,
+        0.50,
+      );
+      expect(cutX, isNotNull);
+      final culledCountX = faces
+          .where(
+            (f) => AxonometricSceneRenderer.isFaceCulledBySection(
+              f,
+              SectionCutAxis3D.axisX,
+              cutX!,
+            ),
+          )
+          .length;
+      expect(culledCountX, greaterThan(0));
+      expect(culledCountX, lessThan(faces.length));
+
+      // Verificar resolución de ArchitecturalStylePack (Japandi vs Loft Industrial)
+      final japandi = FinishMaterialCatalog.stylePacks.firstWhere(
+        (p) => p.id == 'style_japandi',
+      );
+      final bathModule = Module(
+        id: 'bath-1',
+        floorId: 'f1',
+        name: 'Baño Principal',
+        moduleType: 'BATHROOM',
+        geometry: Polygon2D.fromRect(0, 0, 2, 2),
+        status: ElementStatus.preserved,
+      );
+      final livingModule = floor1.modules.first;
+
+      final (livingFloor, livingWall) = japandi.resolveForModule(livingModule);
+      final (bathFloor, bathWall) = japandi.resolveForModule(bathModule);
+      expect(livingFloor, equals('floor_oak_wood'));
+      expect(livingWall, equals('wall_japandi_sand'));
+      expect(bathFloor, equals('floor_grey_porcelain'));
+      expect(bathWall, equals('wall_travertine'));
     });
   });
 }

@@ -5,6 +5,7 @@ import 'package:uuid/uuid.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/core/validation/validation_engine.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/mvp_floor_seed.dart';
@@ -1033,6 +1034,28 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
         );
       }
       return m;
+    }).toList();
+    _applyFloorChange(state.floor.copyWith(modules: updatedModules));
+  }
+
+  /// Applies a coordinated whole-floor architectural finish palette ("Roomstyle")
+  /// across all non-demolished rooms on [floorId] (or the active floor) in one undo step.
+  void applyArchitecturalStylePack(
+    ArchitecturalStylePack pack, {
+    String? floorId,
+  }) {
+    if (floorId != null && floorId != state.floor.id) {
+      switchFloor(floorId);
+    }
+    final updatedModules = state.floor.modules.map((m) {
+      if (m.isOpening || m.isStairs || m.status == ElementStatus.toDemolish) {
+        return m;
+      }
+      final (floorIdMat, wallIdMat) = pack.resolveForModule(m);
+      return m.copyWith(
+        floorMaterialId: floorIdMat,
+        wallFinishId: wallIdMat,
+      );
     }).toList();
     _applyFloorChange(state.floor.copyWith(modules: updatedModules));
   }

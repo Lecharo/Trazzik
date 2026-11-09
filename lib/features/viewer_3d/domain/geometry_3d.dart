@@ -13,6 +13,25 @@ enum FaceLayer3D {
   openingPanel,
 }
 
+/// Interactive 3D vertical cross-section cutting axis (SketchUp / Foyr Neo Clip View).
+enum SectionCutAxis3D {
+  none,
+  axisX,
+  axisY;
+
+  String label(String lang) {
+    final isEs = lang == 'es';
+    switch (this) {
+      case SectionCutAxis3D.none:
+        return isEs ? 'Sin Corte Seccional' : 'No Section Cut';
+      case SectionCutAxis3D.axisX:
+        return isEs ? 'Corte Eje X (Transversal)' : 'X-Axis Section (Cross)';
+      case SectionCutAxis3D.axisY:
+        return isEs ? 'Corte Eje Y (Longitudinal)' : 'Y-Axis Section (Long.)';
+    }
+  }
+}
+
 /// Architectural daylight and interior lighting presets for 3D shading and cast shadows.
 enum SunPreset3D {
   studioNoon(

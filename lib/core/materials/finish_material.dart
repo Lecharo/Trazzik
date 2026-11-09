@@ -311,4 +311,121 @@ class FinishMaterialCatalog {
     }
     return walls[0];
   }
+
+  /// Curated 1-click whole-floor architectural style palettes ("Roomstyles").
+  static const List<ArchitecturalStylePack> stylePacks = [
+    ArchitecturalStylePack(
+      id: 'style_japandi',
+      nameEs: 'Japandi Cálido',
+      nameEn: 'Japandi Warmth',
+      livingFloorId: 'floor_oak_wood',
+      bedroomFloorId: 'floor_oak_wood',
+      livingWallId: 'wall_japandi_sand',
+      wetFloorId: 'floor_grey_porcelain',
+      wetWallId: 'wall_travertine',
+      swatchPrimary: Color(0xFFC89D72),
+      swatchSecondary: Color(0xFFE6DEC8),
+    ),
+    ArchitecturalStylePack(
+      id: 'style_nordic',
+      nameEs: 'Nórdico Minimal',
+      nameEn: 'Nordic Minimal',
+      livingFloorId: 'floor_oak_wood',
+      bedroomFloorId: 'floor_oak_wood',
+      livingWallId: 'wall_pure_white',
+      wetFloorId: 'floor_hydraulic_mosaic',
+      wetWallId: 'wall_sage_green',
+      swatchPrimary: Color(0xFFF4F6F8),
+      swatchSecondary: Color(0xFF9CAF9E),
+    ),
+    ArchitecturalStylePack(
+      id: 'style_industrial',
+      nameEs: 'Loft Industrial',
+      nameEn: 'Industrial Loft',
+      livingFloorId: 'floor_polished_concrete',
+      bedroomFloorId: 'floor_walnut_wood',
+      livingWallId: 'wall_exposed_brick',
+      wetFloorId: 'floor_grey_porcelain',
+      wetWallId: 'wall_stone_grey',
+      swatchPrimary: Color(0xFF78909C),
+      swatchSecondary: Color(0xFFB85D43),
+    ),
+    ArchitecturalStylePack(
+      id: 'style_mediterranean',
+      nameEs: 'Mediterráneo Terracota',
+      nameEn: 'Mediterranean Terracotta',
+      livingFloorId: 'floor_hydraulic_mosaic',
+      bedroomFloorId: 'floor_oak_wood',
+      livingWallId: 'wall_terracotta',
+      wetFloorId: 'floor_calacatta_marble',
+      wetWallId: 'wall_japandi_sand',
+      swatchPrimary: Color(0xFFC97A57),
+      swatchSecondary: Color(0xFF546E7A),
+    ),
+    ArchitecturalStylePack(
+      id: 'style_calacatta_luxury',
+      nameEs: 'Calacatta Luxury',
+      nameEn: 'Calacatta Luxury',
+      livingFloorId: 'floor_calacatta_marble',
+      bedroomFloorId: 'floor_walnut_wood',
+      livingWallId: 'wall_travertine',
+      wetFloorId: 'floor_calacatta_marble',
+      wetWallId: 'wall_travertine',
+      swatchPrimary: Color(0xFFECEFF1),
+      swatchSecondary: Color(0xFF6E4B35),
+    ),
+  ];
+}
+
+/// Coordinated whole-floor architectural finish palette ("Roomstyle") that routes
+/// floor and wall materials by functional room typology in a single action.
+class ArchitecturalStylePack {
+  final String id;
+  final String nameEs;
+  final String nameEn;
+  final String livingFloorId;
+  final String bedroomFloorId;
+  final String livingWallId;
+  final String wetFloorId;
+  final String wetWallId;
+  final Color swatchPrimary;
+  final Color swatchSecondary;
+
+  const ArchitecturalStylePack({
+    required this.id,
+    required this.nameEs,
+    required this.nameEn,
+    required this.livingFloorId,
+    required this.bedroomFloorId,
+    required this.livingWallId,
+    required this.wetFloorId,
+    required this.wetWallId,
+    required this.swatchPrimary,
+    required this.swatchSecondary,
+  });
+
+  String label(String lang) => lang == 'en' ? nameEn : nameEs;
+
+  /// Resolves the appropriate `(floorMaterialId, wallFinishId)` pair for [mod]
+  /// based on canonical room classification.
+  (String floorId, String wallId) resolveForModule(Module mod) {
+    if (mod.isOutdoorUnpaved) {
+      return ('floor_natural_grass', livingWallId);
+    }
+    final upperType = mod.moduleType.toUpperCase();
+    final upperName = mod.name.toUpperCase();
+    if (upperType.contains('TERRACE') ||
+        upperType.contains('DECK') ||
+        upperName.contains('TERRAZA') ||
+        upperName.contains('BALC')) {
+      return ('floor_outdoor_deck', livingWallId);
+    }
+    if (mod.isWetCore) {
+      return (wetFloorId, wetWallId);
+    }
+    if (mod.isBedroom) {
+      return (bedroomFloorId, livingWallId);
+    }
+    return (livingFloorId, livingWallId);
+  }
 }

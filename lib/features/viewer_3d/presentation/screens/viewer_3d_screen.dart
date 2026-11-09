@@ -49,6 +49,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   double _wallHeight = 1.20; // 1.20m Maqueta axonométrica (o 2.60m volumen completo)
   bool _isPerspective = false;
   SunPreset3D _sunPreset = SunPreset3D.studioNoon;
+  SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
+  double _sectionCutRatio = 0.65;
   BoxConstraints? _lastConstraints;
   String? _selectedModuleId;
   String? _selectedModuleFloorId;
@@ -162,12 +164,26 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       _panOffset = Offset.zero;
       _explodedFactor = 0.0;
       _wallHeight = 1.20;
+      _sectionCutAxis = SectionCutAxis3D.none;
+      _sectionCutRatio = 0.65;
       _cameraRevision++;
     });
     if (_lastConstraints != null) {
       final lot = ref.read(floorEditorProvider).lot;
       _fitView(lot, _lastConstraints);
     }
+  }
+
+  void _cycleSectionCut() {
+    setState(() {
+      final nextIdx =
+          (_sectionCutAxis.index + 1) % SectionCutAxis3D.values.length;
+      _sectionCutAxis = SectionCutAxis3D.values[nextIdx];
+      if (_sectionCutAxis != SectionCutAxis3D.none &&
+          _sectionCutRatio >= 0.95) {
+        _sectionCutRatio = 0.65;
+      }
+    });
   }
 
   void _setPresetView(String preset) {
@@ -177,6 +193,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           _yaw = -0.35;
           _pitch = 0.70;
           break;
+        case 'dollhouse':
+          _yaw = -0.18;
+          _pitch = 0.24; // Planta 3D amoblada tipo Dollhouse
+          _wallHeight = 1.20;
+          break;
         case 'top':
           _yaw = 0.0;
           _pitch = 0.0; // Vista superior plana idéntica al plano 2D
@@ -184,6 +205,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         case 'front':
           _yaw = 0.0;
           _pitch = 1.35; // Vista frontal de calle / acceso
+          break;
+        case 'side':
+          _yaw = -math.pi / 2;
+          _pitch = 1.35; // Alzado lateral derecho
           break;
         case 'rear':
           _yaw = math.pi;
@@ -327,6 +352,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                         (_sunPreset.index + 1) % SunPreset3D.values.length;
                     _sunPreset = SunPreset3D.values[nextIdx];
                   });
+                } else if (val == 'cycle_section') {
+                  _cycleSectionCut();
                 } else if (val == 'render_studio') {
                   Render3dStudioDialog.show(
                     context,
@@ -352,6 +379,16 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   ),
                 ),
                 PopupMenuItem(
+                  value: 'dollhouse',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.home_work_outlined, size: 18, color: Color(0xFF38BDF8)),
+                      const SizedBox(width: 8),
+                      Text(lang == 'es' ? 'Planta 3D (Dollhouse)' : '3D Dollhouse Plan'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
                   value: 'top',
                   child: Row(
                     children: [
@@ -372,6 +409,16 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   ),
                 ),
                 PopupMenuItem(
+                  value: 'side',
+                  child: Row(
+                    children: [
+                      const Icon(Icons.swap_horiz, size: 18, color: Colors.white70),
+                      const SizedBox(width: 8),
+                      Text(lang == 'es' ? 'Alzado Lateral' : 'Side Elevation'),
+                    ],
+                  ),
+                ),
+                PopupMenuItem(
                   value: 'rear',
                   child: Row(
                     children: [
@@ -382,6 +429,22 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   ),
                 ),
                 const PopupMenuDivider(),
+                PopupMenuItem(
+                  value: 'cycle_section',
+                  child: Row(
+                    children: [
+                      Icon(
+                        Icons.content_cut_rounded,
+                        size: 18,
+                        color: _sectionCutAxis != SectionCutAxis3D.none
+                            ? Colors.amber
+                            : const Color(0xFF00E5FF),
+                      ),
+                      const SizedBox(width: 8),
+                      Text(_sectionCutAxis.label(lang)),
+                    ],
+                  ),
+                ),
                 PopupMenuItem(
                   value: 'toggle_perspective',
                   child: Row(
@@ -498,33 +561,51 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             // Vistas rápidas (Presets de cámara)
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.layers, size: 20, color: Colors.white70),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.home_work_outlined, size: 19, color: Color(0xFF38BDF8)),
+              tooltip: lang == 'es' ? 'Planta 3D (Dollhouse)' : '3D Dollhouse Plan',
+              onPressed: () => _setPresetView('dollhouse'),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.layers, size: 19, color: Colors.white70),
               tooltip: lang == 'es' ? 'Vista Superior (Plano 2D)' : 'Top-Down (2D Plan)',
               onPressed: () => _setPresetView('top'),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.door_front_door, size: 20, color: Colors.white70),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.door_front_door, size: 19, color: Colors.white70),
               tooltip: lang == 'es' ? 'Fachada Principal (Acceso)' : 'Front Facade',
               onPressed: () => _setPresetView('front'),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.deck, size: 20, color: Colors.white70),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.deck, size: 19, color: Colors.white70),
               tooltip: lang == 'es' ? 'Fachada Posterior (Fondo)' : 'Rear Facade',
               onPressed: () => _setPresetView('rear'),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.view_in_ar, size: 20, color: Color(0xFF00E5FF)),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.view_in_ar, size: 19, color: Color(0xFF00E5FF)),
               tooltip: lang == 'es' ? 'Maqueta 3D (Isométrica)' : '3D Axonometric',
               onPressed: () => _setPresetView('iso'),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: Icon(
                 _wallHeight <= 1.50 ? Icons.view_compact_alt : Icons.apartment,
-                size: 20,
+                size: 19,
                 color: _wallHeight <= 1.50 ? const Color(0xFF00E5FF) : Colors.amber,
               ),
               tooltip: _wallHeight <= 1.50
@@ -538,15 +619,33 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.restart_alt, size: 20, color: Colors.amber),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(
+                Icons.content_cut_rounded,
+                size: 19,
+                color: _sectionCutAxis != SectionCutAxis3D.none
+                    ? Colors.amber
+                    : Colors.white70,
+              ),
+              tooltip: _sectionCutAxis.label(lang),
+              onPressed: _cycleSectionCut,
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.restart_alt, size: 19, color: Colors.amber),
               tooltip: lang == 'es' ? 'Restablecer Cámara' : 'Reset Camera',
               onPressed: _resetCamera,
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: Icon(
                 _isPerspective ? Icons.vrpano : Icons.grid_4x4,
-                size: 20,
+                size: 19,
                 color: _isPerspective ? const Color(0xFF00E5FF) : Colors.white70,
               ),
               tooltip: lang == 'es'
@@ -556,11 +655,13 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: Icon(
                 _sunPreset == SunPreset3D.nightInterior
                     ? Icons.nightlight_round
                     : Icons.wb_sunny_outlined,
-                size: 20,
+                size: 19,
                 color: _sunPreset == SunPreset3D.goldenHourWest ||
                         _sunPreset == SunPreset3D.nightInterior
                     ? Colors.amber
@@ -577,9 +678,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: Icon(
                 _showLabels ? Icons.label : Icons.label_off_outlined,
-                size: 20,
+                size: 19,
                 color: _showLabels ? const Color(0xFF00E5FF) : Colors.white60,
               ),
               tooltip: lang == 'es'
@@ -589,7 +692,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
-              icon: const Icon(Icons.camera_enhance_outlined, size: 20, color: Color(0xFF38BDF8)),
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: const Icon(Icons.camera_enhance_outlined, size: 19, color: Color(0xFF38BDF8)),
               tooltip: lang == 'es'
                   ? 'Render Studio 3D / Exportar glTF y Lámina PL-3D'
                   : '3D Render Studio / Export glTF & PL-3D Sheet',
@@ -604,7 +709,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             if (!widget.isStandaloneClientSession)
               IconButton(
-                icon: const Icon(Icons.share_rounded, size: 20, color: Color(0xFF10B981)),
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.share_rounded, size: 19, color: Color(0xFF10B981)),
                 tooltip: lang == 'es'
                     ? 'Compartir enlace interactivo 3D (60 días)'
                     : 'Share interactive 3D link (60 days)',
@@ -647,6 +755,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   explodedFactor: _explodedFactor,
                   isPerspective: _isPerspective,
                   sunPreset: _sunPreset,
+                  sectionCutAxis: _sectionCutAxis,
+                  sectionCutRatio: _sectionCutRatio,
                   cameraRevision: _cameraRevision,
                   orientationDegrees: lot.orientationDegrees,
                   showLabels: _showLabels,
@@ -752,6 +862,76 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                           ? 'Separa los pisos para inspeccionar la distribución interior y la escalera.'
                           : 'Separates floors to inspect internal layout and stairs.',
                       style: const TextStyle(fontSize: 10, color: Colors.grey),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+          // 2.5 Control flotante: Plano de Corte Seccional X/Y en vivo (0 rebuilds)
+          if (_sectionCutAxis != SectionCutAxis3D.none)
+            Positioned(
+              left: 20,
+              bottom: _selectedModuleId != null
+                  ? 190
+                  : (_selectedFloorId == null && floors.length > 1 ? 136 : 24),
+              child: Container(
+                width: 320,
+                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1E293B).withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.55)),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.content_cut_rounded, color: Colors.amber, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            _sectionCutAxis.label(lang),
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                        Text(
+                          '${(_sectionCutRatio * 100).round()}%',
+                          style: const TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.amber,
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        InkWell(
+                          onTap: () => setState(() => _sectionCutAxis = SectionCutAxis3D.none),
+                          child: const Icon(Icons.close, size: 15, color: Colors.white60),
+                        ),
+                      ],
+                    ),
+                    SliderTheme(
+                      data: SliderTheme.of(context).copyWith(
+                        activeTrackColor: Colors.amber,
+                        inactiveTrackColor: Colors.white24,
+                        thumbColor: Colors.amber,
+                        thumbShape: const RoundSliderThumbShape(enabledThumbRadius: 6),
+                        overlayShape: const RoundSliderOverlayShape(overlayRadius: 12),
+                      ),
+                      child: Slider(
+                        value: _sectionCutRatio,
+                        min: 0.15,
+                        max: 1.0,
+                        onChanged: (val) => setState(() => _sectionCutRatio = val),
+                      ),
                     ),
                   ],
                 ),
@@ -1022,6 +1202,67 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                           _activeSurfaceTab = FinishSurfaceTarget.floor;
                         });
                       },
+                    );
+                  },
+                ),
+              ),
+              const SizedBox(height: 6),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.auto_fix_high, size: 13, color: Colors.amber),
+                  const SizedBox(width: 5),
+                  Flexible(
+                    child: Text(
+                      lang == 'es'
+                          ? 'Estilos 1-Clic (Roomstyles):'
+                          : '1-Click Roomstyles:',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        color: Colors.white70,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 4),
+              SizedBox(
+                height: 26,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  shrinkWrap: true,
+                  itemCount: FinishMaterialCatalog.stylePacks.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (ctx, idx) {
+                    final pack = FinishMaterialCatalog.stylePacks[idx];
+                    return ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      backgroundColor: const Color(0xFF0F172A),
+                      side: BorderSide(
+                        color: pack.swatchPrimary.withValues(alpha: 0.75),
+                      ),
+                      avatar: Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: LinearGradient(
+                            colors: [pack.swatchPrimary, pack.swatchSecondary],
+                          ),
+                        ),
+                      ),
+                      label: Text(
+                        pack.label(lang),
+                        style: const TextStyle(
+                          fontSize: 10,
+                          color: Colors.white,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                      onPressed: () => _applyStylePack(pack),
                     );
                   },
                 ),
@@ -1345,6 +1586,40 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         ),
       ),
     );
+  }
+
+  void _applyStylePack(ArchitecturalStylePack pack) {
+    final notifier = ref.read(floorEditorProvider.notifier);
+    notifier.applyArchitecturalStylePack(
+      pack,
+      floorId: _selectedFloorId,
+    );
+
+    if (_isClientPreviewMode &&
+        _clientShareToken.isNotEmpty &&
+        !_clientShareToken.startsWith('tz_')) {
+      final editorState = ref.read(floorEditorProvider);
+      final targetFloor = _selectedFloorId != null
+          ? (editorState.allFloors
+                  .where((f) => f.id == _selectedFloorId)
+                  .firstOrNull ??
+              editorState.floor)
+          : editorState.floor;
+      final repo = ref.read(projectRepositoryProvider);
+      for (final m in targetFloor.modules) {
+        if (m.isOpening || m.isStairs || m.status == ElementStatus.toDemolish) {
+          continue;
+        }
+        repo
+            .updateSharedModuleFinishes(
+              token: _clientShareToken,
+              moduleId: m.id,
+              floorMaterialId: m.floorMaterialId,
+              wallFinishId: m.wallFinishId,
+            )
+            .ignore();
+      }
+    }
   }
 
   Widget _buildSurfaceTabButton({

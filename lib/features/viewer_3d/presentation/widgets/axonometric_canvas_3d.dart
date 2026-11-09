@@ -17,6 +17,8 @@ class AxonometricCanvas3D extends StatefulWidget {
   final double explodedFactor; // 0.0 to 1.0 (applied at projection time)
   final bool isPerspective;
   final SunPreset3D sunPreset;
+  final SectionCutAxis3D sectionCutAxis;
+  final double sectionCutRatio; // 0.15 to 1.0
   final int cameraRevision;
   final double orientationDegrees;
   final Function(double newYaw, double newPitch)? onOrbitChanged;
@@ -38,6 +40,8 @@ class AxonometricCanvas3D extends StatefulWidget {
     this.explodedFactor = 0.0,
     this.isPerspective = false,
     this.sunPreset = SunPreset3D.studioNoon,
+    this.sectionCutAxis = SectionCutAxis3D.none,
+    this.sectionCutRatio = 1.0,
     this.cameraRevision = 0,
     this.orientationDegrees = 0.0,
     this.onOrbitChanged,
@@ -61,6 +65,8 @@ class _Viewport3D {
   final double explodedFactor;
   final bool isPerspective;
   final SunPreset3D sunPreset;
+  final SectionCutAxis3D sectionCutAxis;
+  final double sectionCutRatio;
 
   const _Viewport3D({
     required this.yaw,
@@ -70,6 +76,8 @@ class _Viewport3D {
     this.explodedFactor = 0.0,
     this.isPerspective = false,
     this.sunPreset = SunPreset3D.studioNoon,
+    this.sectionCutAxis = SectionCutAxis3D.none,
+    this.sectionCutRatio = 1.0,
   });
 
   _Viewport3D copyWith({
@@ -80,6 +88,8 @@ class _Viewport3D {
     double? explodedFactor,
     bool? isPerspective,
     SunPreset3D? sunPreset,
+    SectionCutAxis3D? sectionCutAxis,
+    double? sectionCutRatio,
   }) {
     return _Viewport3D(
       yaw: yaw ?? this.yaw,
@@ -89,6 +99,8 @@ class _Viewport3D {
       explodedFactor: explodedFactor ?? this.explodedFactor,
       isPerspective: isPerspective ?? this.isPerspective,
       sunPreset: sunPreset ?? this.sunPreset,
+      sectionCutAxis: sectionCutAxis ?? this.sectionCutAxis,
+      sectionCutRatio: sectionCutRatio ?? this.sectionCutRatio,
     );
   }
 
@@ -147,6 +159,8 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
         explodedFactor: widget.explodedFactor,
         isPerspective: widget.isPerspective,
         sunPreset: widget.sunPreset,
+        sectionCutAxis: widget.sectionCutAxis,
+        sectionCutRatio: widget.sectionCutRatio,
       ),
     );
   }
@@ -165,7 +179,9 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
             widget.panOffset != oldWidget.panOffset ||
             widget.explodedFactor != oldWidget.explodedFactor ||
             widget.isPerspective != oldWidget.isPerspective ||
-            widget.sunPreset != oldWidget.sunPreset;
+            widget.sunPreset != oldWidget.sunPreset ||
+            widget.sectionCutAxis != oldWidget.sectionCutAxis ||
+            widget.sectionCutRatio != oldWidget.sectionCutRatio;
     if (cameraControlledExternally) {
       final current = _viewportNotifier.value;
       final useWidgetPose = widget.cameraRevision != oldWidget.cameraRevision ||
@@ -181,6 +197,8 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
         explodedFactor: widget.explodedFactor,
         isPerspective: widget.isPerspective,
         sunPreset: widget.sunPreset,
+        sectionCutAxis: widget.sectionCutAxis,
+        sectionCutRatio: widget.sectionCutRatio,
       );
     }
   }
@@ -204,6 +222,12 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
     final cosPitch = math.cos(viewport.pitch);
     final sinPitch = math.sin(viewport.pitch);
 
+    final cutLimit = AxonometricSceneRenderer.resolveSectionCutLimit(
+      widget.faces,
+      viewport.sectionCutAxis,
+      viewport.sectionCutRatio,
+    );
+
     final projected = <({
       Face3D face,
       List<Offset> pts,
@@ -212,6 +236,14 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
     })>[];
     for (final face in widget.faces) {
       if (face.moduleId == null || face.vertices.length < 3) continue;
+      if (cutLimit != null &&
+          AxonometricSceneRenderer.isFaceCulledBySection(
+            face,
+            viewport.sectionCutAxis,
+            cutLimit,
+          )) {
+        continue;
+      }
       double depthSum = 0;
       double maxD = double.negativeInfinity;
       final pts = <Offset>[];
@@ -385,6 +417,43 @@ class AxonometricSceneRenderer {
     );
   }
 
+  /// Computes the active world-space X or Y section cut threshold (`null` when inactive).
+  static double? resolveSectionCutLimit(
+    List<Face3D> faces,
+    SectionCutAxis3D axis,
+    double ratio,
+  ) {
+    if (axis == SectionCutAxis3D.none || ratio >= 0.995) return null;
+    double minC = double.infinity;
+    double maxC = double.negativeInfinity;
+    int count = 0;
+
+    for (final face in faces) {
+      if (face.layer == FaceLayer3D.shadow || face.layer == FaceLayer3D.terrain) {
+        continue;
+      }
+      for (final v in face.vertices) {
+        final coord = axis == SectionCutAxis3D.axisX ? v.x : v.y;
+        if (coord < minC) minC = coord;
+        if (coord > maxC) maxC = coord;
+        count++;
+      }
+    }
+    if (count == 0 || maxC <= minC) return null;
+    return minC + (maxC - minC) * ratio.clamp(0.10, 1.0);
+  }
+
+  /// Returns true when [face] lies beyond the active vertical section plane.
+  static bool isFaceCulledBySection(
+    Face3D face,
+    SectionCutAxis3D axis,
+    double cutLimit,
+  ) {
+    if (face.layer == FaceLayer3D.terrain) return false;
+    final c = face.centroid;
+    return axis == SectionCutAxis3D.axisX ? c.x > cutLimit : c.y > cutLimit;
+  }
+
   static Size? _cachedBgSize;
   static bool? _cachedBgDark;
   static bool? _cachedBgNight;
@@ -432,6 +501,8 @@ class AxonometricSceneRenderer {
     double explodedFactor = 0.0,
     bool isPerspective = false,
     SunPreset3D sunPreset = SunPreset3D.studioNoon,
+    SectionCutAxis3D sectionCutAxis = SectionCutAxis3D.none,
+    double sectionCutRatio = 1.0,
     bool showLabels = true,
     double orientationDegrees = 0.0,
     String? selectedModuleId,
@@ -448,6 +519,8 @@ class AxonometricSceneRenderer {
       explodedFactor: explodedFactor,
       isPerspective: isPerspective,
       sunPreset: sunPreset,
+      sectionCutAxis: sectionCutAxis,
+      sectionCutRatio: sectionCutRatio,
     );
     final center = Offset(
       size.width / 2 + panOffset.dx,
@@ -499,9 +572,18 @@ class AxonometricSceneRenderer {
     final projectedFaces = <_ProjectedFace>[];
     final lightDir = sunPreset.lightDirection;
     final useDefaultSun = sunPreset == SunPreset3D.studioNoon;
+    final cutLimit = resolveSectionCutLimit(
+      faces,
+      sectionCutAxis,
+      sectionCutRatio,
+    );
 
     for (final face in faces) {
       if (face.vertices.length < 3) continue;
+      if (cutLimit != null &&
+          isFaceCulledBySection(face, sectionCutAxis, cutLimit)) {
+        continue;
+      }
 
       double depthSum = 0;
       double maxD = double.negativeInfinity;
@@ -983,6 +1065,8 @@ class _AxonometricPainter extends CustomPainter {
       explodedFactor: viewport.explodedFactor,
       isPerspective: viewport.isPerspective,
       sunPreset: viewport.sunPreset,
+      sectionCutAxis: viewport.sectionCutAxis,
+      sectionCutRatio: viewport.sectionCutRatio,
       showLabels: showLabels,
       orientationDegrees: orientationDegrees,
       selectedModuleId: selectedModuleId,
