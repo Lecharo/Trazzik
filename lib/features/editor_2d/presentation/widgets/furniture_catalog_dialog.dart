@@ -91,6 +91,33 @@ class _FurnitureCatalogDialogState extends ConsumerState<FurnitureCatalogDialog>
                     ],
                   ),
                 ),
+                FilledButton.tonalIcon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: const Color(0xFF00E5FF).withValues(alpha: 0.16),
+                    foregroundColor: const Color(0xFF00E5FF),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  ),
+                  icon: const Icon(Icons.auto_fix_high, size: 16),
+                  label: Text(
+                    isMobile ? 'Auto-Amoblar' : 'Auto-Amoblar Recinto (1-Clic)',
+                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold),
+                  ),
+                  onPressed: () {
+                    final count = notifier.autoFurnishModule(module.id);
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text(
+                          count > 0
+                              ? 'Se distribuyeron automáticamente $count piezas en ${module.name}'
+                              : 'Este tipo de recinto no admite amoblado automático',
+                        ),
+                        duration: const Duration(milliseconds: 1800),
+                        backgroundColor: const Color(0xFF1E293B),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 6),
                 IconButton(
                   icon: const Icon(Icons.close, color: Colors.white70),
                   onPressed: () => Navigator.of(context).pop(),

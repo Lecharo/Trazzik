@@ -615,6 +615,67 @@ class RenovationPlannerEngine {
         yieldFormula: 'Circuitos dedicados de iluminación balanceados con protección de 15A',
         targetRoomNames: lightingRoomNames,
       ));
+
+      // Cielorrasos Drywall (RH Hidrófugo en zonas húmedas + Estándar y Foseado LED en zonas secas)
+      final wetCeilingRooms = lightingRooms.where((r) => r.isWetCore).toList();
+      final dryCeilingRooms = lightingRooms.where((r) => !r.isWetCore).toList();
+
+      if (wetCeilingRooms.isNotEmpty) {
+        final wetCeilingM2 =
+            (wetCeilingRooms.fold(0.0, (s, r) => s + r.area) * 1.10 * 100).round() / 100.0;
+        final rhSheets = math.max(1, (wetCeilingM2 / 2.98).ceil());
+        materials.add(MaterialItem(
+          id: 'mat_drywall_ceiling_rh',
+          name: 'Cielorraso Drywall RH Hidrófugo (Placa Verde 1/2" + Perfilería)',
+          category: MaterialCategory.electrical,
+          quantity: wetCeilingM2,
+          unit: 'm²',
+          packagingDetail:
+              '$rhSheets placa(s) RH 1.22×2.44m + omega, vigueta, ángulo y masilla',
+          wastePercentage: 10.0,
+          yieldFormula:
+              'Área de baños/cocina/lavadero + 10% desperdicio (1 placa = 2.98 m²)',
+          targetRoomNames: wetCeilingRooms.map((r) => r.name).toList(),
+          purchaseTip:
+              'En baños y cocinas instalá siempre placa RH verde antihumedad con dilatación plástica perimetral.',
+        ));
+      }
+
+      if (dryCeilingRooms.isNotEmpty) {
+        final dryCeilingM2 =
+            (dryCeilingRooms.fold(0.0, (s, r) => s + r.area) * 1.10 * 100).round() / 100.0;
+        final stdSheets = math.max(1, (dryCeilingM2 / 2.98).ceil());
+        materials.add(MaterialItem(
+          id: 'mat_drywall_ceiling_std',
+          name: 'Cielorraso Drywall Acústico Estándar (Placa 1/2" + Estructura Galvanizada)',
+          category: MaterialCategory.electrical,
+          quantity: dryCeilingM2,
+          unit: 'm²',
+          packagingDetail:
+              '$stdSheets placa(s) 1.22×2.44m + perfilería galvanizada calibre 26',
+          wastePercentage: 10.0,
+          yieldFormula:
+              'Área de recintos sociales/privados + 10% desperdicio por cortes',
+          targetRoomNames: dryCeilingRooms.map((r) => r.name).toList(),
+        ));
+
+        final coveLinearM =
+            (dryCeilingRooms.fold(0.0, (s, r) => s + r.geometry.perimeter * 0.5) * 100)
+                .round() /
+            100.0;
+        materials.add(MaterialItem(
+          id: 'mat_drywall_led_cove',
+          name: 'Cenefa / Foseado Perimetral Drywall para Luz Indirecta LED',
+          category: MaterialCategory.electrical,
+          quantity: coveLinearM,
+          unit: 'ml',
+          packagingDetail:
+              '${coveLinearM.toStringAsFixed(1)} m lineales de garganta luminosa con esquinero plástico',
+          yieldFormula:
+              '50% del perímetro de ambientes sociales y dormitorios para foseado indirecto',
+          targetRoomNames: dryCeilingRooms.map((r) => r.name).toList(),
+        ));
+      }
     }
 
     // 7. PLANIFICACIÓN DE CUADRILLAS (SECUENCIAL VS PARALELO)

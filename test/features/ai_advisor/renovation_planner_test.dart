@@ -187,6 +187,24 @@ void main() {
       expect(csv, contains('COMPUTO METRICO DE MATERIALES (BOQ)'));
       expect(csv, contains('Madera Roble Europeo'));
       expect(csv, contains('Arena Japandi'));
+
+      // Verificar cómputo de Cielorrasos Drywall (RH Hidrófugo en zonas húmedas + Acústico y Foseado LED en zonas secas)
+      final planWithCeilings = RenovationPlannerEngine.generatePlan(
+        allRooms: sampleRooms,
+        renovateLighting: true,
+      );
+      expect(
+        planWithCeilings.materials.any((m) => m.id == 'mat_drywall_ceiling_rh'),
+        isTrue,
+      );
+      expect(
+        planWithCeilings.materials.any((m) => m.id == 'mat_drywall_ceiling_std'),
+        isTrue,
+      );
+      expect(
+        planWithCeilings.materials.any((m) => m.id == 'mat_drywall_led_cove'),
+        isTrue,
+      );
     });
   });
 }

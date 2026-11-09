@@ -190,5 +190,56 @@ void main() {
 
       expect(find.textContaining('instalado en este espacio'), findsOneWidget);
     });
+
+    test('AutoFurnishEngine y FloorEditorNotifier.autoFurnishAllRooms amueblan dormitorios, baños, cocinas y salas en 1 clic', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+
+      final notifier = container.read(floorEditorProvider.notifier);
+      final masterBed = Module(
+        id: 'mod-bed',
+        floorId: 'fl-1',
+        name: 'Alcoba Principal',
+        moduleType: 'BEDROOM',
+        geometry: Polygon2D.fromRect(0, 0, 3.8, 3.6),
+        status: ElementStatus.isNew,
+      );
+      final fullBath = Module(
+        id: 'mod-bath',
+        floorId: 'fl-1',
+        name: 'Baño Principal',
+        moduleType: 'BATHROOM',
+        geometry: Polygon2D.fromRect(4.0, 0, 2.4, 2.0),
+        status: ElementStatus.isNew,
+      );
+      final kitchen = Module(
+        id: 'mod-kit',
+        floorId: 'fl-1',
+        name: 'Cocina Integral',
+        moduleType: 'KITCHEN',
+        geometry: Polygon2D.fromRect(0, 4.0, 3.6, 3.0),
+        status: ElementStatus.isNew,
+      );
+
+      final multiRoomFloor = floor.copyWith(
+        modules: [livingRoom, masterBed, fullBath, kitchen],
+      );
+      notifier.loadProjectData(lot: lot, floor: multiRoomFloor);
+
+      final totalPlaced = notifier.autoFurnishAllRooms();
+      expect(totalPlaced, greaterThanOrEqualTo(10));
+
+      final updatedFloor = container.read(floorEditorProvider).floor;
+      for (final m in updatedFloor.modules) {
+        expect(m.subModules, isNotEmpty, reason: '${m.name} debe quedar equipado');
+        for (final sub in m.subModules) {
+          expect(
+            m.geometry.boundingBox.inflate(0.05).containsBoundingBox(sub.geometry.boundingBox),
+            isTrue,
+            reason: '${sub.name} debe estar contenido dentro de ${m.name}',
+          );
+        }
+      }
+    });
   });
 }

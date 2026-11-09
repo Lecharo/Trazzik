@@ -882,6 +882,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
             : 'Starter Layout Wizard',
       ),
       _menuItem(
+        'auto_furnish_floor',
+        Icons.auto_fix_high,
+        lang == 'es'
+            ? 'Auto-Amoblar Planta Completa (1-Clic)'
+            : 'Auto-Furnish Full Floor (1-Click)',
+      ),
+      _menuItem(
         'multi_story',
         Icons.cottage_outlined,
         lang == 'es' ? 'Programa Vivienda 2 Pisos' : '2-Story Brief Wizard',
@@ -988,6 +995,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         lang == 'es'
             ? 'Esquemas Base de Distribución'
             : 'Starter Layout Wizard',
+      ),
+      _menuItem(
+        'auto_furnish_floor',
+        Icons.auto_fix_high,
+        lang == 'es'
+            ? 'Auto-Amoblar Planta Completa (1-Clic)'
+            : 'Auto-Furnish Full Floor (1-Click)',
       ),
       _menuItem(
         'multi_story',
@@ -1100,6 +1114,15 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         break;
       case 'starter_layout':
         StarterLayoutDialog.show(context);
+        break;
+      case 'auto_furnish_floor':
+        final count = notifier.autoFurnishAllRooms();
+        _showOrientationSnackBar(
+          context,
+          lang == 'es'
+              ? 'Planta auto-amoblada: $count piezas distribuidas en 2D y 3D.'
+              : 'Floor auto-furnished: $count items placed in 2D and 3D.',
+        );
         break;
       case 'multi_story':
         MultiStoryBriefDialog.show(context);

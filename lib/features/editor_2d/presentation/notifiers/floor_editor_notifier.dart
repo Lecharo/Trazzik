@@ -11,6 +11,7 @@ import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_s
 import 'package:trazzik/features/editor_2d/presentation/notifiers/mvp_floor_seed.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
+import 'package:trazzik/features/modules/domain/auto_furnish_engine.dart';
 import 'package:trazzik/features/modules/domain/furniture_template.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
@@ -666,6 +667,47 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
     final updatedSubs = List<SubModule>.from(mod.subModules)..add(subModule);
     updateModule(mod.copyWith(subModules: updatedSubs));
+  }
+
+  /// Auto-populates [moduleId] with an ergonomically spaced furniture ensemble
+  /// based on its room classification and dimensions ("Magic Layout").
+  /// Returns the number of generated furniture items.
+  int autoFurnishModule(String moduleId) {
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null) return 0;
+
+    final generated = AutoFurnishEngine.generateFurnitureForModule(
+      mod,
+      allFloorModules: state.floor.modules,
+    );
+    if (generated.isEmpty) return 0;
+
+    updateModule(mod.copyWith(subModules: generated));
+    return generated.length;
+  }
+
+  /// Auto-populates all eligible rooms on the active floor in a single undo step.
+  /// If [overwriteExisting] is false, only rooms with empty `subModules` are populated.
+  /// Returns the total number of generated furniture items across the floor.
+  int autoFurnishAllRooms({bool overwriteExisting = true}) {
+    int totalAdded = 0;
+    final updatedModules = state.floor.modules.map((mod) {
+      if (!overwriteExisting && mod.subModules.isNotEmpty) {
+        return mod;
+      }
+      final generated = AutoFurnishEngine.generateFurnitureForModule(
+        mod,
+        allFloorModules: state.floor.modules,
+      );
+      if (generated.isEmpty) return mod;
+      totalAdded += generated.length;
+      return mod.copyWith(subModules: generated);
+    }).toList();
+
+    if (totalAdded > 0) {
+      _applyFloorChange(state.floor.copyWith(modules: updatedModules));
+    }
+    return totalAdded;
   }
 
   /// Elimina una pieza de mobiliario / submódulo
