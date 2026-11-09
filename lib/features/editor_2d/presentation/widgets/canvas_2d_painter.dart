@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:trazzik/core/cad/cad_symbol_drawer.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/lots/domain/zoning_type.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -372,9 +373,9 @@ class Canvas2DPainter extends CustomPainter {
     }
 
     // Relleno arquitectónico
-    if (state.isRenderedMode && !module.isOpening) {
+    if ((state.isRenderedMode || module.floorMaterialId != null) && !module.isOpening) {
       _drawRenderedFloorFinish(canvas, module, zoom, path);
-      canvas.drawPath(path, Paint()..color = fillColor..style = PaintingStyle.fill);
+      canvas.drawPath(path, Paint()..color = fillColor.withValues(alpha: 0.16)..style = PaintingStyle.fill);
     } else {
       canvas.drawPath(path, Paint()..color = fillColor..style = PaintingStyle.fill);
     }
@@ -467,8 +468,7 @@ class Canvas2DPainter extends CustomPainter {
     double zoom,
     Path path,
   ) {
-    final type = module.moduleType.toUpperCase();
-    final name = module.name.toUpperCase();
+    final finish = FinishMaterialCatalog.resolveFloorForModule(module);
     final bb = module.geometry.boundingBox;
     final left = bb.minX * zoom;
     final top = bb.minY * zoom;
@@ -478,60 +478,54 @@ class Canvas2DPainter extends CustomPainter {
     canvas.save();
     canvas.clipPath(path);
 
-    if (type.contains('BEDROOM') ||
-        name.contains('HABITACIÓN') ||
-        name.contains('HABITACION') ||
-        name.contains('DORMITORIO') ||
-        type.contains('STUDIO') ||
-        name.contains('ESTUDIO') ||
-        type.contains('LIVING') ||
-        name.contains('SALA')) {
-      // 1. Piso cálido tipo madera estructurada / entablonado parquet
-      final woodBase = Paint()..color = const Color(0xFFD7CCC8).withValues(alpha: 0.35);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), woodBase);
+    final basePaint = Paint()
+      ..color = finish.baseColor.withValues(alpha: 0.42)
+      ..style = PaintingStyle.fill;
+    canvas.drawRect(Rect.fromLTWH(left, top, w, h), basePaint);
 
-      final plankPaint = Paint()
-        ..color = const Color(0xFF8D6E63).withValues(alpha: 0.28)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.8;
+    final accentPaint = Paint()
+      ..color = finish.accentColor.withValues(alpha: 0.36)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 0.85;
 
-      final plankStep = math.max(6.0, 0.22 * zoom);
-      for (double y = top; y <= top + h; y += plankStep) {
-        canvas.drawLine(Offset(left, y), Offset(left + w, y), plankPaint);
-      }
-    } else if (type.contains('BATH') ||
-        name.contains('BAÑO') ||
-        name.contains('BANO') ||
-        type.contains('KITCHEN') ||
-        name.contains('COCINA')) {
-      // 2. Cerámica / Porcelanato rectificado en cuadrícula técnica
-      final tileBase = Paint()..color = const Color(0xFFECEFF1).withValues(alpha: 0.30);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), tileBase);
-
-      final jointPaint = Paint()
-        ..color = const Color(0xFF90A4AE).withValues(alpha: 0.32)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.7;
-
-      final tileStep = math.max(10.0, 0.60 * zoom);
-      for (double x = left; x <= left + w; x += tileStep) {
-        canvas.drawLine(Offset(x, top), Offset(x, top + h), jointPaint);
-      }
-      for (double y = top; y <= top + h; y += tileStep) {
-        canvas.drawLine(Offset(left, y), Offset(left + w, y), jointPaint);
-      }
-    } else if (type.contains('GARDEN') ||
-        type.contains('PATIO') ||
-        name.contains('JARDIN') ||
-        name.contains('JARDÍN') ||
-        name.contains('PATIO')) {
-      // 3. Césped / Zona verde natural
-      final grassBase = Paint()..color = const Color(0xFF81C784).withValues(alpha: 0.25);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), grassBase);
-    } else {
-      // 4. Piso neutro arquitectónico para circulaciones y comedor
-      final neutralBase = Paint()..color = const Color(0xFFCFD8DC).withValues(alpha: 0.22);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), neutralBase);
+    switch (finish.pattern) {
+      case FinishPatternType.woodPlanks:
+      case FinishPatternType.outdoorDeck:
+        final plankStep = math.max(6.0, 0.22 * zoom);
+        for (double y = top; y <= top + h; y += plankStep) {
+          canvas.drawLine(Offset(left, y), Offset(left + w, y), accentPaint);
+        }
+        break;
+      case FinishPatternType.porcelainGrid:
+      case FinishPatternType.hydraulicTile:
+        final tileStep = finish.pattern == FinishPatternType.hydraulicTile
+            ? math.max(8.0, 0.35 * zoom)
+            : math.max(10.0, 0.60 * zoom);
+        for (double x = left; x <= left + w; x += tileStep) {
+          canvas.drawLine(Offset(x, top), Offset(x, top + h), accentPaint);
+        }
+        for (double y = top; y <= top + h; y += tileStep) {
+          canvas.drawLine(Offset(left, y), Offset(left + w, y), accentPaint);
+        }
+        break;
+      case FinishPatternType.marbleVeins:
+        final veinStep = math.max(14.0, 0.80 * zoom);
+        for (double d = left - h; d <= left + w; d += veinStep) {
+          canvas.drawLine(
+            Offset(d, top),
+            Offset(d + h * 0.65, top + h),
+            accentPaint,
+          );
+        }
+        break;
+      case FinishPatternType.naturalGrass:
+        _drawGarden(canvas, left, top, w, h, zoom);
+        break;
+      case FinishPatternType.polishedConcrete:
+      case FinishPatternType.paintedWall:
+      case FinishPatternType.exposedBrick:
+      case FinishPatternType.travertineStone:
+        break;
     }
 
     canvas.restore();

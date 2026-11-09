@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
@@ -297,6 +298,35 @@ class RenovationPlannerEngine {
         targetRoomNames: floorRoomNames,
         purchaseTip: 'Se corta del mismo lote de piso o se compran piezas prefabricadas con canto boleado.',
       ));
+
+      // Desglose específico por acabado configurado en 3D / 2D
+      final customFloorGroups = <String, List<Module>>{};
+      for (final room in floorRooms) {
+        if (room.floorMaterialId != null) {
+          customFloorGroups.putIfAbsent(room.floorMaterialId!, () => []).add(room);
+        }
+      }
+      for (final entry in customFloorGroups.entries) {
+        final mat = FinishMaterialCatalog.byId(entry.key);
+        if (mat == null) continue;
+        final groupArea = entry.value.fold(0.0, (s, r) => s + r.area);
+        final groupM2WithWaste = (groupArea * wasteMult * 100).round() / 100.0;
+        final groupBoxes = (groupM2WithWaste / mat.boxCoverageM2).ceil();
+        final totalCop = groupM2WithWaste * mat.pricePerM2Cop;
+        materials.add(MaterialItem(
+          id: 'mat_custom_floor_${mat.id}',
+          name: 'Acabado Elegido: ${mat.nameEs}',
+          category: MaterialCategory.flooring,
+          quantity: groupM2WithWaste,
+          unit: 'm²',
+          packagingDetail: '$groupBoxes cajas (${mat.boxCoverageM2.toStringAsFixed(2)} m²/caja) • Est. \$${totalCop.toStringAsFixed(0)} COP',
+          wastePercentage: floorTileWastePercent,
+          yieldFormula: '${mat.specDescriptionEs} (${groupArea.toStringAsFixed(2)} m² + ${floorTileWastePercent.toStringAsFixed(0)}% desp.)',
+          targetRoomNames: entry.value.map((r) => r.name).toList(),
+          estimatedUnitCostCop: mat.pricePerM2Cop,
+          estimatedTotalCostCop: totalCop,
+        ));
+      }
     }
 
     // 3. CÓMPUTO DE BAÑOS (DIFERENCIANDO COMPLETOS Y MEDIO BAÑOS)

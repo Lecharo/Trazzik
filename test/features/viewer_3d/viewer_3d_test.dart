@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
+import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
@@ -204,6 +206,90 @@ void main() {
 
       // No debe haber excepciones de overflow
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('Configurador 3D cambia acabado de piso y muro en tiempo real y sincroniza con presupuesto', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final project = Project(
+        id: 'p1',
+        name: 'Casa Moderna 2 Plantas',
+        ownerId: 'owner-1',
+        createdAt: DateTime.now(),
+      );
+
+      late ProviderContainer container;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            floorEditorProvider.overrideWith(
+              () => _Test3DFloorEditorNotifier(lot, floor1, allFloors, project),
+            ),
+          ],
+          child: Builder(
+            builder: (ctx) {
+              container = ProviderScope.containerOf(ctx);
+              return const MaterialApp(
+                home: Viewer3dScreen(),
+              );
+            },
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      // Seleccionar el recinto "Sala de Estar" desde el selector rápido 3D
+      expect(find.text('Sala de Estar'), findsOneWidget);
+      await tester.tap(find.text('Sala de Estar'));
+      await tester.pumpAndSettle();
+
+      // Debe abrirse el dock configurador mostrando el nombre y m² de la sala (4x5 = 20.0 m²)
+      expect(find.textContaining('Sala de Estar (20.0 m²)'), findsOneWidget);
+
+      // Cambiar piso a "Mármol Calacatta"
+      expect(find.text('Mármol Calacatta'), findsOneWidget);
+      await tester.tap(find.text('Mármol Calacatta'));
+      await tester.pumpAndSettle();
+
+      final updatedMod = container
+          .read(floorEditorProvider)
+          .floor
+          .modules
+          .firstWhere((m) => m.id == 'm1');
+      expect(updatedMod.floorMaterialId, equals('floor_calacatta_marble'));
+      expect(
+        FinishMaterialCatalog.resolveFloorForModule(updatedMod).id,
+        equals('floor_calacatta_marble'),
+      );
+
+      // Cambiar a pestaña "Muros" y elegir "Verde Salvia Botánico"
+      await tester.tap(find.text('Muros'));
+      await tester.pumpAndSettle();
+      expect(find.text('Verde Salvia Botánico'), findsOneWidget);
+      await tester.tap(find.text('Verde Salvia Botánico'));
+      await tester.pumpAndSettle();
+
+      final updatedModAfterWall = container
+          .read(floorEditorProvider)
+          .floor
+          .modules
+          .firstWhere((m) => m.id == 'm1');
+      expect(updatedModAfterWall.wallFinishId, equals('wall_sage_green'));
+
+      // Verificar que RenovationPlannerEngine refleje el acabado elegido en el presupuesto
+      final plan = RenovationPlannerEngine.generatePlan(
+        allRooms: container.read(floorEditorProvider).floor.modules,
+        renovateFloors: true,
+      );
+      expect(
+        plan.materials.any((m) => m.id == 'mat_custom_floor_floor_calacatta_marble'),
+        isTrue,
+      );
     });
   });
 }

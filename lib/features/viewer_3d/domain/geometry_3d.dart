@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 
 /// Punto en el espacio euclidiano 3D (X: Ancho, Y: Fondo, Z: Cota/Elevación en metros)
 class Point3D {
@@ -27,12 +28,22 @@ class Face3D {
   final Color baseColor;
   final String? label;
   final bool isEdgeVisible;
+  final String? moduleId;
+  final String? floorId;
+  final FinishPatternType? pattern;
+  final Color? patternColor;
+  final bool isWallFace;
 
   Face3D({
     required this.vertices,
     required this.baseColor,
     this.label,
     this.isEdgeVisible = true,
+    this.moduleId,
+    this.floorId,
+    this.pattern,
+    this.patternColor,
+    this.isWallFace = false,
   });
 
   /// Centroide tridimensional de la cara

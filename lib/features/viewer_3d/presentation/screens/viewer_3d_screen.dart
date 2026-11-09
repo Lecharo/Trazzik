@@ -3,9 +3,11 @@ import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
+import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
@@ -30,6 +32,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   bool _showLabels = true; // Rótulos activados por defecto
   double _wallHeight = 1.20; // 1.20m Maqueta axonométrica (o 2.60m volumen completo)
   BoxConstraints? _lastConstraints;
+  String? _selectedModuleId;
+  String? _selectedModuleFloorId;
+  FinishSurfaceTarget _activeSurfaceTab = FinishSurfaceTarget.floor;
+  bool _applyToEntireFloor = false;
 
   // Caché de escena 3D para evitar regenerar mallas al cambiar cámara o etiquetas
   List<Face3D>? _cachedFaces;
@@ -421,6 +427,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   cameraRevision: _cameraRevision,
                   orientationDegrees: lot.orientationDegrees,
                   showLabels: _showLabels,
+                  selectedModuleId: _selectedModuleId,
+                  onSurfaceTapped: (moduleId, floorId, isWallFace) {
+                    setState(() {
+                      _selectedModuleId = moduleId;
+                      _selectedModuleFloorId = floorId;
+                      if (moduleId != null) {
+                        _activeSurfaceTab = isWallFace
+                            ? FinishSurfaceTarget.wall
+                            : FinishSurfaceTarget.floor;
+                      }
+                    });
+                  },
                   onOrbitChanged: (ny, np) {
                     _yaw = ny;
                     _pitch = np;
@@ -430,11 +448,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 ),
               ),
 
-          // 2. Control flotante: Despiece Vertical / Maqueta Explotada
-          if (_selectedFloorId == null && floors.length > 1)
+          // 2. Control flotante: Despiece Vertical / Maqueta Explotada (se oculta mientras se edita un recinto en móvil)
+          if (_selectedFloorId == null && floors.length > 1 && (!isMobile || _selectedModuleId == null))
             Positioned(
               left: 20,
-              bottom: 24,
+              bottom: _selectedModuleId != null ? 190 : 24,
               child: Container(
                 width: 320,
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
@@ -527,20 +545,27 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _buildHelpItem(Icons.touch_app, lang == 'es' ? 'Arrastrar: Orbitar 360°' : 'Drag: Orbit 360°'),
+                  _buildHelpItem(Icons.touch_app, lang == 'es' ? 'Tocar piso/muro: Cambiar acabado' : 'Tap floor/wall: Change finish'),
+                  const SizedBox(height: 4),
+                  _buildHelpItem(Icons.threesixty, lang == 'es' ? 'Arrastrar: Orbitar 360°' : 'Drag: Orbit 360°'),
                   const SizedBox(height: 4),
                   _buildHelpItem(Icons.pinch, lang == 'es' ? 'Pellizco / Rueda: Zoom' : 'Pinch / Wheel: Zoom'),
-                  const SizedBox(height: 4),
-                  _buildHelpItem(Icons.open_with, lang == 'es' ? '2 dedos: Desplazar' : '2 fingers: Pan'),
                 ],
               ),
             ),
           ),
 
+          // 3.5 Selector rápido de recinto cuando no hay uno tocado (o dock completo cuando sí lo hay)
+          _buildFinishConfiguratorOverlay(
+            floors: floors,
+            lang: lang,
+            isMobile: isMobile,
+          ),
+
           // 4. Controles flotantes de Zoom y Ajuste
           Positioned(
             right: 20,
-            bottom: 24,
+            bottom: _selectedModuleId != null ? 190 : 24,
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 4),
               decoration: BoxDecoration(
@@ -591,6 +616,419 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   ),
 );
 }
+
+  Module? _findSelectedModule(List<Floor> floors) {
+    if (_selectedModuleId == null) return null;
+    for (final f in floors) {
+      for (final m in f.modules) {
+        if (m.id == _selectedModuleId && !m.isOpening && !m.isStairs) {
+          return m;
+        }
+      }
+    }
+    return null;
+  }
+
+  Widget _buildFinishConfiguratorOverlay({
+    required List<Floor> floors,
+    required String lang,
+    required bool isMobile,
+  }) {
+    final selectedModule = _findSelectedModule(floors);
+    final rooms = floors
+        .where((f) => _selectedFloorId == null || f.id == _selectedFloorId)
+        .expand((f) => f.modules)
+        .where((m) => !m.isOpening && !m.isStairs)
+        .toList();
+
+    if (rooms.isEmpty) return const SizedBox.shrink();
+
+    if (selectedModule == null) {
+      return Positioned(
+        top: 20,
+        left: 16,
+        right: isMobile ? 16 : null,
+        child: Container(
+          constraints: const BoxConstraints(maxWidth: 420),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          decoration: BoxDecoration(
+            color: const Color(0xFF1E293B).withValues(alpha: 0.92),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+              color: const Color(0xFF00E5FF).withValues(alpha: 0.35),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.palette_outlined, size: 16, color: Color(0xFF00E5FF)),
+                  const SizedBox(width: 6),
+                  Flexible(
+                    child: Text(
+                      lang == 'es'
+                          ? 'Configurador 3D: Tocá un piso o elegí un ambiente'
+                          : '3D Configurator: Tap a floor or pick a room',
+                      style: const TextStyle(
+                        fontSize: 11.5,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 6),
+              SizedBox(
+                height: 28,
+                child: ListView.separated(
+                  scrollDirection: Axis.horizontal,
+                  shrinkWrap: true,
+                  itemCount: rooms.length,
+                  separatorBuilder: (_, _) => const SizedBox(width: 6),
+                  itemBuilder: (ctx, idx) {
+                    final r = rooms[idx];
+                    final mat = FinishMaterialCatalog.resolveFloorForModule(r);
+                    return ActionChip(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 6),
+                      backgroundColor: const Color(0xFF0F172A),
+                      side: BorderSide(color: mat.baseColor.withValues(alpha: 0.8)),
+                      avatar: CircleAvatar(
+                        radius: 6,
+                        backgroundColor: mat.baseColor,
+                      ),
+                      label: Text(
+                        r.name,
+                        style: const TextStyle(fontSize: 10.5, color: Colors.white),
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _selectedModuleId = r.id;
+                          _selectedModuleFloorId = r.floorId;
+                          _activeSurfaceTab = FinishSurfaceTarget.floor;
+                        });
+                      },
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final currentFloorMat = FinishMaterialCatalog.resolveFloorForModule(selectedModule);
+    final currentWallMat = FinishMaterialCatalog.resolveWallForModule(selectedModule);
+    final catalogItems = _activeSurfaceTab == FinishSurfaceTarget.floor
+        ? FinishMaterialCatalog.floors
+        : FinishMaterialCatalog.walls;
+    final activeMatId = _activeSurfaceTab == FinishSurfaceTarget.floor
+        ? currentFloorMat.id
+        : currentWallMat.id;
+
+    return Positioned(
+      left: isMobile ? 12 : 24,
+      right: isMobile ? 12 : 24,
+      bottom: 16,
+      child: Center(
+        child: ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 760),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+            decoration: BoxDecoration(
+              color: const Color(0xFF0F172A).withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: const Color(0xFF00E5FF).withValues(alpha: 0.55),
+                width: 1.4,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.55),
+                  blurRadius: 16,
+                  offset: const Offset(0, 6),
+                ),
+              ],
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF), size: 18),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            '${selectedModule.name} (${selectedModule.area.toStringAsFixed(1)} m²)',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.white,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          Text(
+                            '${lang == 'es' ? 'Piso' : 'Floor'}: ${currentFloorMat.label(lang)}  •  ${lang == 'es' ? 'Muros' : 'Walls'}: ${currentWallMat.label(lang)}',
+                            style: const TextStyle(
+                              fontSize: 10.5,
+                              color: Color(0xFF94A3B8),
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
+                    ),
+                    // Toggle Piso / Muros
+                    Container(
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1E293B),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _buildSurfaceTabButton(
+                            target: FinishSurfaceTarget.floor,
+                            icon: Icons.grid_on,
+                            label: lang == 'es' ? 'Piso' : 'Floor',
+                          ),
+                          _buildSurfaceTabButton(
+                            target: FinishSurfaceTarget.wall,
+                            icon: Icons.format_paint,
+                            label: lang == 'es' ? 'Muros' : 'Walls',
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    IconButton(
+                      icon: const Icon(Icons.close, size: 18, color: Colors.white70),
+                      visualDensity: VisualDensity.compact,
+                      tooltip: lang == 'es' ? 'Cerrar configurador' : 'Close configurator',
+                      onPressed: () => setState(() => _selectedModuleId = null),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  height: 82,
+                  child: ListView.separated(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: catalogItems.length,
+                    separatorBuilder: (_, _) => const SizedBox(width: 8),
+                    itemBuilder: (ctx, index) {
+                      final item = catalogItems[index];
+                      final isSelected = item.id == activeMatId;
+                      final estCostCop = _activeSurfaceTab == FinishSurfaceTarget.floor
+                          ? (selectedModule.area * 1.10 * item.pricePerM2Cop)
+                          : (selectedModule.geometry.perimeter * 2.20 * 0.85 * item.pricePerM2Cop);
+                      final costThousands = (estCostCop / 1000).round();
+
+                      return InkWell(
+                        borderRadius: BorderRadius.circular(10),
+                        onTap: () {
+                          final notifier = ref.read(floorEditorProvider.notifier);
+                          if (_activeSurfaceTab == FinishSurfaceTarget.floor) {
+                            notifier.setModuleFloorMaterial(
+                              selectedModule.id,
+                              item.id,
+                              floorId: _selectedModuleFloorId ?? selectedModule.floorId,
+                              applyToAllRoomsOnFloor: _applyToEntireFloor,
+                            );
+                          } else {
+                            notifier.setModuleWallFinish(
+                              selectedModule.id,
+                              item.id,
+                              floorId: _selectedModuleFloorId ?? selectedModule.floorId,
+                              applyToAllRoomsOnFloor: _applyToEntireFloor,
+                            );
+                          }
+                        },
+                        child: AnimatedContainer(
+                          duration: const Duration(milliseconds: 160),
+                          width: 152,
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                          decoration: BoxDecoration(
+                            color: isSelected
+                                ? const Color(0xFF1E293B)
+                                : const Color(0xFF131C2E),
+                            borderRadius: BorderRadius.circular(10),
+                            border: Border.all(
+                              color: isSelected
+                                  ? const Color(0xFF00E5FF)
+                                  : Colors.white12,
+                              width: isSelected ? 1.8 : 1.0,
+                            ),
+                          ),
+                          child: Row(
+                            children: [
+                              Container(
+                                width: 32,
+                                height: 32,
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(8),
+                                  gradient: LinearGradient(
+                                    colors: [item.baseColor, item.accentColor],
+                                    begin: Alignment.topLeft,
+                                    end: Alignment.bottomRight,
+                                  ),
+                                  border: Border.all(color: Colors.white30),
+                                ),
+                                child: isSelected
+                                    ? const Icon(
+                                        Icons.check,
+                                        size: 16,
+                                        color: Colors.white,
+                                      )
+                                    : null,
+                              ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Text(
+                                      item.label(lang),
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: TextStyle(
+                                        fontSize: 10.5,
+                                        fontWeight: isSelected
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                        color: Colors.white,
+                                        height: 1.1,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '\$$costThousands mil COP',
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 9.0,
+                                        color: Color(0xFF00E5FF),
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(
+                      child: InkWell(
+                        onTap: () => setState(
+                          () => _applyToEntireFloor = !_applyToEntireFloor,
+                        ),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(
+                              _applyToEntireFloor
+                                  ? Icons.check_box
+                                  : Icons.check_box_outline_blank,
+                              size: 16,
+                              color: _applyToEntireFloor
+                                  ? const Color(0xFF00E5FF)
+                                  : Colors.white54,
+                            ),
+                            const SizedBox(width: 6),
+                            Flexible(
+                              child: Text(
+                                lang == 'es'
+                                    ? 'Aplicar a todos los ambientes de esta planta'
+                                    : 'Apply to all rooms on this floor',
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10.5,
+                                  color: Colors.white70,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Text(
+                      lang == 'es'
+                          ? 'Sincronizado 2D + Presupuesto'
+                          : 'Synced 2D + Budget',
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: Color(0xFF66BB6A),
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSurfaceTabButton({
+    required FinishSurfaceTarget target,
+    required IconData icon,
+    required String label,
+  }) {
+    final active = _activeSurfaceTab == target;
+    return InkWell(
+      borderRadius: BorderRadius.circular(8),
+      onTap: () => setState(() => _activeSurfaceTab = target),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: active ? const Color(0xFF00E5FF) : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 14,
+              color: active ? const Color(0xFF0F172A) : Colors.white70,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.bold,
+                color: active ? const Color(0xFF0F172A) : Colors.white70,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildHelpItem(IconData icon, String text) {
     return Row(

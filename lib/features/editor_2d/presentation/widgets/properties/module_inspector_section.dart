@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/demolition/domain/replacement_relationship.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
@@ -219,6 +220,15 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
           label: 'Área',
           value: '${selectedModule.area.toStringAsFixed(2)} m²',
         ),
+        if (!isOpening && !isStairs) ...[
+          const SizedBox(height: 8),
+          _buildFinishSelectorCard(
+            selectedModule: selectedModule,
+            notifier: notifier,
+            lang: lang,
+            colors: colors,
+          ),
+        ],
         if (selectedModule.geometry.vertices.length > 4)
           Container(
             margin: const EdgeInsets.only(top: 8, bottom: 6),
@@ -802,6 +812,138 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
           ),
         ],
       ],
+    );
+  }
+
+  Widget _buildFinishSelectorCard({
+    required Module selectedModule,
+    required FloorEditorNotifier notifier,
+    required String lang,
+    required AppColors colors,
+  }) {
+    final floorMat = FinishMaterialCatalog.resolveFloorForModule(selectedModule);
+    final wallMat = FinishMaterialCatalog.resolveWallForModule(selectedModule);
+
+    return Container(
+      padding: const EdgeInsets.all(8),
+      decoration: BoxDecoration(
+        color: colors.subtleSurface,
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(color: colors.borderSubtle),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.palette_outlined, size: 14, color: colors.accent),
+              const SizedBox(width: 6),
+              Expanded(
+                child: Text(
+                  lang == 'es'
+                      ? 'Acabados 2D / 3D y Presupuesto'
+                      : '2D / 3D Finishes & Budget',
+                  style: TextStyle(
+                    fontSize: 10.5,
+                    fontWeight: FontWeight.bold,
+                    color: colors.accent,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Text(
+            lang == 'es' ? 'Piso del recinto' : 'Floor finish',
+            style: TextStyle(fontSize: 9.5, color: colors.textMuted),
+          ),
+          const SizedBox(height: 2),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isDense: true,
+              isExpanded: true,
+              value: floorMat.id,
+              style: TextStyle(fontSize: 11, color: colors.textPrimary),
+              dropdownColor: colors.panelBackground,
+              items: FinishMaterialCatalog.floors.map((m) {
+                return DropdownMenuItem<String>(
+                  value: m.id,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: m.baseColor,
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          m.label(lang),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) {
+                  notifier.setModuleFloorMaterial(selectedModule.id, val);
+                }
+              },
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            lang == 'es' ? 'Acabado de muros' : 'Wall finish',
+            style: TextStyle(fontSize: 9.5, color: colors.textMuted),
+          ),
+          const SizedBox(height: 2),
+          DropdownButtonHideUnderline(
+            child: DropdownButton<String>(
+              isDense: true,
+              isExpanded: true,
+              value: wallMat.id,
+              style: TextStyle(fontSize: 11, color: colors.textPrimary),
+              dropdownColor: colors.panelBackground,
+              items: FinishMaterialCatalog.walls.map((m) {
+                return DropdownMenuItem<String>(
+                  value: m.id,
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 12,
+                        height: 12,
+                        decoration: BoxDecoration(
+                          color: m.baseColor,
+                          borderRadius: BorderRadius.circular(3),
+                          border: Border.all(color: Colors.white24),
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          m.label(lang),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              }).toList(),
+              onChanged: (val) {
+                if (val != null) {
+                  notifier.setModuleWallFinish(selectedModule.id, val);
+                }
+              },
+            ),
+          ),
+        ],
+      ),
     );
   }
 }

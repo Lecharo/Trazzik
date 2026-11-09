@@ -20,6 +20,8 @@ class MaterialItem {
   final List<String> targetRoomNames;
   final String? purchaseTip;
   final String? packagingDetail;
+  final double? estimatedUnitCostCop;
+  final double? estimatedTotalCostCop;
 
   const MaterialItem({
     required this.id,
@@ -32,6 +34,8 @@ class MaterialItem {
     this.targetRoomNames = const [],
     this.purchaseTip,
     this.packagingDetail,
+    this.estimatedUnitCostCop,
+    this.estimatedTotalCostCop,
   });
 
   String get categoryLabel {

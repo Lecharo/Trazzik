@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -76,6 +77,7 @@ class Building3DBuilder {
           ? floor.walls
           : WallGenerationEngine.generateWallsForFloor(floor);
       final wallLabel = hasExplicitWalls ? 'Muro' : 'Muro Exterior';
+      final roomModules = floor.modules.where((m) => !m.isOpening && !m.isStairs).toList();
       for (final wall in effectiveWalls) {
         _buildWall3D(
           faces,
@@ -83,6 +85,7 @@ class Building3DBuilder {
           elevationZ,
           overrideHeight: math.min(wall.height, wallHeight),
           label: wallLabel,
+          roomModules: roomModules,
         );
       }
     }
@@ -126,20 +129,36 @@ class Building3DBuilder {
     }
   }
 
-  /// Construye el pavimento coloreado de un recinto
+  /// Construye el pavimento coloreado y texturizado de un recinto
   static void _buildRoomFloor(List<Face3D> faces, Module mod, double elevationZ) {
     final verts = mod.geometry.vertices;
     if (verts.length < 3) return;
 
-    final floorColor = _getColorForModuleType(mod.moduleType);
+    final finish = FinishMaterialCatalog.resolveFloorForModule(mod);
+    final floorColor = mod.floorMaterialId != null
+        ? finish.baseColor.withValues(alpha: 0.90)
+        : _getColorForModuleType(mod.moduleType);
 
     faces.add(
       Face3D(
         vertices: verts.map((p) => Point3D(p.x, p.y, elevationZ + 0.01)).toList(),
         baseColor: floorColor,
         label: mod.name,
+        moduleId: mod.id,
+        floorId: mod.floorId,
+        pattern: finish.pattern,
+        patternColor: finish.accentColor,
       ),
     );
+  }
+
+  static Module? _findRoomContainingPoint(List<Module> rooms, Point2D pt) {
+    for (final room in rooms) {
+      if (room.geometry.containsPoint(pt)) {
+        return room;
+      }
+    }
+    return null;
   }
 
   /// Construye un segmento de muro tridimensional
@@ -153,6 +172,7 @@ class Building3DBuilder {
     Color wallColor = const Color(0xFFECEFF1), // Blanco marfil técnico
     Color topCapColor = const Color(0xFFCFD8DC),
     String? label,
+    List<Module> roomModules = const [],
   }) {
     final len = p1.distanceTo(p2);
     if (len < 0.10) return;
@@ -162,6 +182,32 @@ class Building3DBuilder {
     final uy = (p2.y - p1.y) / len;
     final nx = -uy * halfThick;
     final ny = ux * halfThick;
+
+    final midX = (p1.x + p2.x) / 2.0;
+    final midY = (p1.y + p2.y) / 2.0;
+    final probeScale = 2.2;
+    final roomSideA = roomModules.isNotEmpty
+        ? _findRoomContainingPoint(
+            roomModules,
+            Point2D(midX + nx * probeScale, midY + ny * probeScale),
+          )
+        : null;
+    final roomSideB = roomModules.isNotEmpty
+        ? _findRoomContainingPoint(
+            roomModules,
+            Point2D(midX - nx * probeScale, midY - ny * probeScale),
+          )
+        : null;
+
+    final finishA = roomSideA != null
+        ? FinishMaterialCatalog.resolveWallForModule(roomSideA)
+        : null;
+    final finishB = roomSideB != null
+        ? FinishMaterialCatalog.resolveWallForModule(roomSideB)
+        : null;
+
+    final colorA = finishA != null ? finishA.baseColor : wallColor;
+    final colorB = finishB != null ? finishB.baseColor : wallColor;
 
     final b0 = Point3D(p1.x + nx, p1.y + ny, elevationZ);
     final b1 = Point3D(p2.x + nx, p2.y + ny, elevationZ);
@@ -174,11 +220,32 @@ class Building3DBuilder {
     final t2 = Point3D(b2.x, b2.y, topZ);
     final t3 = Point3D(b3.x, b3.y, topZ);
 
-    faces.add(Face3D(vertices: [b0, b1, t1, t0], baseColor: wallColor, label: label));
-    faces.add(Face3D(vertices: [b2, b3, t3, t2], baseColor: wallColor));
-    faces.add(Face3D(vertices: [b3, b0, t0, t3], baseColor: wallColor));
-    faces.add(Face3D(vertices: [b1, b2, t2, t1], baseColor: wallColor));
-    faces.add(Face3D(vertices: [t0, t1, t2, t3], baseColor: topCapColor));
+    faces.add(
+      Face3D(
+        vertices: [b0, b1, t1, t0],
+        baseColor: colorA,
+        label: label,
+        moduleId: roomSideA?.id ?? roomSideB?.id,
+        floorId: roomSideA?.floorId ?? roomSideB?.floorId,
+        pattern: finishA?.pattern,
+        patternColor: finishA?.accentColor,
+        isWallFace: true,
+      ),
+    );
+    faces.add(
+      Face3D(
+        vertices: [b2, b3, t3, t2],
+        baseColor: colorB,
+        moduleId: roomSideB?.id ?? roomSideA?.id,
+        floorId: roomSideB?.floorId ?? roomSideA?.floorId,
+        pattern: finishB?.pattern,
+        patternColor: finishB?.accentColor,
+        isWallFace: true,
+      ),
+    );
+    faces.add(Face3D(vertices: [b3, b0, t0, t3], baseColor: wallColor, isWallFace: true));
+    faces.add(Face3D(vertices: [b1, b2, t2, t1], baseColor: wallColor, isWallFace: true));
+    faces.add(Face3D(vertices: [t0, t1, t2, t3], baseColor: topCapColor, isWallFace: true));
   }
 
   /// Extruye un muro 3D completo con sus 6 caras
@@ -188,6 +255,7 @@ class Building3DBuilder {
     double elevationZ, {
     double? overrideHeight,
     String label = 'Muro',
+    List<Module> roomModules = const [],
   }) {
     _buildWallSegment3D(
       faces,
@@ -197,6 +265,7 @@ class Building3DBuilder {
       height: overrideHeight ?? wall.height,
       thickness: wall.thickness,
       label: label,
+      roomModules: roomModules,
     );
   }
 

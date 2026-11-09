@@ -90,6 +90,8 @@ class Module {
   final bool flipX;
   final bool flipY;
   final bool isLocked;
+  final String? floorMaterialId;
+  final String? wallFinishId;
   final DateTime createdAt;
 
   Module({
@@ -103,6 +105,8 @@ class Module {
     this.flipX = false,
     this.flipY = false,
     this.isLocked = false,
+    this.floorMaterialId,
+    this.wallFinishId,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -193,6 +197,10 @@ class Module {
     bool? flipX,
     bool? flipY,
     bool? isLocked,
+    String? floorMaterialId,
+    String? wallFinishId,
+    bool clearFloorMaterial = false,
+    bool clearWallFinish = false,
   }) {
     return Module(
       id: id ?? this.id,
@@ -205,6 +213,10 @@ class Module {
       flipX: flipX ?? this.flipX,
       flipY: flipY ?? this.flipY,
       isLocked: isLocked ?? this.isLocked,
+      floorMaterialId:
+          clearFloorMaterial ? null : (floorMaterialId ?? this.floorMaterialId),
+      wallFinishId:
+          clearWallFinish ? null : (wallFinishId ?? this.wallFinishId),
       createdAt: createdAt,
     );
   }
@@ -219,10 +231,14 @@ class Module {
           'flip_x': flipX,
           'flip_y': flipY,
           'is_locked': isLocked,
+          if (floorMaterialId != null) 'floor_material_id': floorMaterialId,
+          if (wallFinishId != null) 'wall_finish_id': wallFinishId,
         },
         'status': status.name,
         'sub_modules': subModules.map((s) => s.toJson()).toList(),
         'is_locked': isLocked,
+        if (floorMaterialId != null) 'floor_material_id': floorMaterialId,
+        if (wallFinishId != null) 'wall_finish_id': wallFinishId,
         'created_at': createdAt.toIso8601String(),
       };
 
@@ -243,6 +259,10 @@ class Module {
       flipY: json['flip_y'] as bool? ?? geomRaw['flip_y'] as bool? ?? false,
       isLocked:
           json['is_locked'] as bool? ?? geomRaw['is_locked'] as bool? ?? false,
+      floorMaterialId: json['floor_material_id'] as String? ??
+          geomRaw['floor_material_id'] as String?,
+      wallFinishId: json['wall_finish_id'] as String? ??
+          geomRaw['wall_finish_id'] as String?,
       createdAt: DateTime.parse(json['created_at'] as String),
     );
   }

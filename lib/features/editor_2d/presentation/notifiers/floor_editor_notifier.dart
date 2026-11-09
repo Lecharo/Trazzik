@@ -915,6 +915,52 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     updateModule(mod.copyWith(name: name));
   }
 
+  /// Updates the floor finish material for a module (or all habitable rooms on its floor).
+  void setModuleFloorMaterial(
+    String moduleId,
+    String? materialId, {
+    String? floorId,
+    bool applyToAllRoomsOnFloor = false,
+  }) {
+    if (floorId != null && floorId != state.floor.id) {
+      switchFloor(floorId);
+    }
+    final updatedModules = state.floor.modules.map((m) {
+      if (m.isOpening || m.isStairs) return m;
+      if (applyToAllRoomsOnFloor || m.id == moduleId) {
+        return m.copyWith(
+          floorMaterialId: materialId,
+          clearFloorMaterial: materialId == null,
+        );
+      }
+      return m;
+    }).toList();
+    _applyFloorChange(state.floor.copyWith(modules: updatedModules));
+  }
+
+  /// Updates the wall finish material for a module (or all habitable rooms on its floor).
+  void setModuleWallFinish(
+    String moduleId,
+    String? finishId, {
+    String? floorId,
+    bool applyToAllRoomsOnFloor = false,
+  }) {
+    if (floorId != null && floorId != state.floor.id) {
+      switchFloor(floorId);
+    }
+    final updatedModules = state.floor.modules.map((m) {
+      if (m.isOpening || m.isStairs) return m;
+      if (applyToAllRoomsOnFloor || m.id == moduleId) {
+        return m.copyWith(
+          wallFinishId: finishId,
+          clearWallFinish: finishId == null,
+        );
+      }
+      return m;
+    }).toList();
+    _applyFloorChange(state.floor.copyWith(modules: updatedModules));
+  }
+
   void clearAllModules() {
     final updatedFloor = state.floor.copyWith(
       modules: const [],
