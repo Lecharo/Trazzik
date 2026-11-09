@@ -81,6 +81,7 @@ class PlanExportOptions {
   final bool includeAreaSchedulePage;
   final bool includeAuditPage;
   final bool includeMillworkPage;
+  final bool includeFullDisciplinePackage;
 
   const PlanExportOptions({
     this.pageFormat = PdfPageFormat.a4,
@@ -99,6 +100,7 @@ class PlanExportOptions {
     this.includeAreaSchedulePage = true,
     this.includeAuditPage = true,
     this.includeMillworkPage = false,
+    this.includeFullDisciplinePackage = false,
   });
 
   PlanExportOptions copyWith({
@@ -118,6 +120,7 @@ class PlanExportOptions {
     bool? includeAreaSchedulePage,
     bool? includeAuditPage,
     bool? includeMillworkPage,
+    bool? includeFullDisciplinePackage,
   }) {
     return PlanExportOptions(
       pageFormat: pageFormat ?? this.pageFormat,
@@ -137,6 +140,8 @@ class PlanExportOptions {
           includeAreaSchedulePage ?? this.includeAreaSchedulePage,
       includeAuditPage: includeAuditPage ?? this.includeAuditPage,
       includeMillworkPage: includeMillworkPage ?? this.includeMillworkPage,
+      includeFullDisciplinePackage:
+          includeFullDisciplinePackage ?? this.includeFullDisciplinePackage,
     );
   }
 
@@ -168,7 +173,8 @@ class PlanExportOptions {
         other.includeDimensions == includeDimensions &&
         other.includeAreaSchedulePage == includeAreaSchedulePage &&
         other.includeAuditPage == includeAuditPage &&
-        other.includeMillworkPage == includeMillworkPage;
+        other.includeMillworkPage == includeMillworkPage &&
+        other.includeFullDisciplinePackage == includeFullDisciplinePackage;
   }
 
   @override
@@ -189,5 +195,6 @@ class PlanExportOptions {
         includeAreaSchedulePage,
         includeAuditPage,
         includeMillworkPage,
+        includeFullDisciplinePackage,
       );
 }

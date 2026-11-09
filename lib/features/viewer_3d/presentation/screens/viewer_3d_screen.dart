@@ -428,6 +428,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   orientationDegrees: lot.orientationDegrees,
                   showLabels: _showLabels,
                   selectedModuleId: _selectedModuleId,
+                  highlightWallSelection:
+                      _activeSurfaceTab == FinishSurfaceTarget.wall,
                   onSurfaceTapped: (moduleId, floorId, isWallFace) {
                     setState(() {
                       _selectedModuleId = moduleId;

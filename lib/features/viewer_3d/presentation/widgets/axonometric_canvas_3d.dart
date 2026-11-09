@@ -21,6 +21,7 @@ class AxonometricCanvas3D extends StatefulWidget {
   final void Function(String? moduleId, String? floorId, bool isWallFace)?
       onSurfaceTapped;
   final String? selectedModuleId;
+  final bool highlightWallSelection;
   final bool showLabels;
 
   const AxonometricCanvas3D({
@@ -37,6 +38,7 @@ class AxonometricCanvas3D extends StatefulWidget {
     this.onPanChanged,
     this.onSurfaceTapped,
     this.selectedModuleId,
+    this.highlightWallSelection = false,
     this.showLabels = false,
   });
 
@@ -69,6 +71,31 @@ class _Viewport3D {
       zoom: zoom ?? this.zoom,
       pan: pan ?? this.pan,
     );
+  }
+
+  /// Shared axonometric 3D-to-2D projection used by both hit-testing and rendering.
+  (Offset screenPos, double depth) projectPoint(
+    Point3D p,
+    Point3D sceneCenter,
+    Offset screenCenter,
+    double cosYaw,
+    double sinYaw,
+    double cosPitch,
+    double sinPitch,
+  ) {
+    final rx = p.x - sceneCenter.x;
+    final ry = p.y - sceneCenter.y;
+    final rz = p.z - sceneCenter.z;
+
+    final x1 = rx * cosYaw - ry * sinYaw;
+    final y1 = rx * sinYaw + ry * cosYaw;
+    final z1 = rz;
+
+    final sx = screenCenter.dx + x1 * zoom;
+    final sy = screenCenter.dy + (y1 * cosPitch - z1 * sinPitch) * zoom;
+    final depth = y1 * sinPitch + z1 * cosPitch;
+
+    return (Offset(sx, sy), depth);
   }
 }
 
@@ -148,26 +175,21 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
     final cosPitch = math.cos(viewport.pitch);
     final sinPitch = math.sin(viewport.pitch);
 
-    (Offset, double) project(Point3D p) {
-      final rx = p.x - _sceneCenter.x;
-      final ry = p.y - _sceneCenter.y;
-      final rz = p.z - _sceneCenter.z;
-      final x1 = rx * cosYaw - ry * sinYaw;
-      final y1 = rx * sinYaw + ry * cosYaw;
-      final z1 = rz;
-      final sx = center.dx + x1 * viewport.zoom;
-      final sy = center.dy + (y1 * cosPitch - z1 * sinPitch) * viewport.zoom;
-      final depth = y1 * sinPitch + z1 * cosPitch;
-      return (Offset(sx, sy), depth);
-    }
-
     final projected = <({Face3D face, List<Offset> pts, double depth})>[];
     for (final face in widget.faces) {
       if (face.moduleId == null || face.vertices.length < 3) continue;
       double depthSum = 0;
       final pts = <Offset>[];
       for (final v in face.vertices) {
-        final (pt, d) = project(v);
+        final (pt, d) = viewport.projectPoint(
+          v,
+          _sceneCenter,
+          center,
+          cosYaw,
+          sinYaw,
+          cosPitch,
+          sinPitch,
+        );
         pts.add(pt);
         depthSum += d;
       }
@@ -262,6 +284,7 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
                     showLabels: widget.showLabels,
                     orientationDegrees: widget.orientationDegrees,
                     selectedModuleId: widget.selectedModuleId,
+                    highlightWallSelection: widget.highlightWallSelection,
                   ),
                 ),
               ),
@@ -280,6 +303,7 @@ class _AxonometricPainter extends CustomPainter {
   final bool showLabels;
   final double orientationDegrees;
   final String? selectedModuleId;
+  final bool highlightWallSelection;
 
   _AxonometricPainter({
     required this.faces,
@@ -288,6 +312,7 @@ class _AxonometricPainter extends CustomPainter {
     required this.showLabels,
     required this.orientationDegrees,
     this.selectedModuleId,
+    this.highlightWallSelection = false,
   }) : super(repaint: viewportListenable);
 
   @override
@@ -316,21 +341,15 @@ class _AxonometricPainter extends CustomPainter {
     final cosPitch = math.cos(pitch);
     final sinPitch = math.sin(pitch);
 
-    (Offset screenPos, double depth) project(Point3D p) {
-      final rx = p.x - sceneCenter.x;
-      final ry = p.y - sceneCenter.y;
-      final rz = p.z - sceneCenter.z;
-
-      final x1 = rx * cosYaw - ry * sinYaw;
-      final y1 = rx * sinYaw + ry * cosYaw;
-      final z1 = rz;
-
-      final sx = center.dx + x1 * zoom;
-      final sy = center.dy + (y1 * cosPitch - z1 * sinPitch) * zoom;
-      final depth = y1 * sinPitch + z1 * cosPitch;
-
-      return (Offset(sx, sy), depth);
-    }
+    (Offset screenPos, double depth) project(Point3D p) => viewport.projectPoint(
+          p,
+          sceneCenter,
+          center,
+          cosYaw,
+          sinYaw,
+          cosPitch,
+          sinPitch,
+        );
 
     // 3. Project and depth-sort faces (Painter's Algorithm back-to-front)
     final projectedFaces = <_ProjectedFace>[];
@@ -377,6 +396,14 @@ class _AxonometricPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 2.6
       ..color = const Color(0xFF00E5FF);
+    final selectedWallBorderPaint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 2.0
+      ..color = const Color(0xFF38BDF8);
+
+    // Level-of-Detail (LOD): skip sub-pixel texture lines when zoomed far out
+    final enableTextures = zoom >= 18.0;
+    final lodFactor = zoom < 30.0 ? 1.8 : 1.0;
 
     for (final pFace in projectedFaces) {
       final path = Path();
@@ -389,24 +416,34 @@ class _AxonometricPainter extends CustomPainter {
       fillPaint.color = pFace.color;
       canvas.drawPath(path, fillPaint);
 
-      if (pFace.pattern != null && pFace.pattern != FinishPatternType.paintedWall) {
-        _drawFacePattern3D(canvas, path, pFace, project);
+      if (enableTextures &&
+          pFace.pattern != null &&
+          pFace.pattern != FinishPatternType.paintedWall) {
+        _drawFacePattern3D(canvas, path, pFace, project, lodFactor);
       }
 
       if (pFace.isEdgeVisible) {
         canvas.drawPath(path, strokePaint);
       }
 
-      if (selectedModuleId != null &&
-          pFace.moduleId == selectedModuleId &&
-          !pFace.isWallFace) {
-        canvas.drawPath(
-          path,
-          Paint()
-            ..style = PaintingStyle.fill
-            ..color = const Color(0xFF00E5FF).withValues(alpha: 0.14),
-        );
-        canvas.drawPath(path, selectedFloorBorderPaint);
+      if (selectedModuleId != null && pFace.moduleId == selectedModuleId) {
+        if (!pFace.isWallFace) {
+          canvas.drawPath(
+            path,
+            Paint()
+              ..style = PaintingStyle.fill
+              ..color = const Color(0xFF00E5FF).withValues(alpha: 0.14),
+          );
+          canvas.drawPath(path, selectedFloorBorderPaint);
+        } else if (highlightWallSelection) {
+          canvas.drawPath(
+            path,
+            Paint()
+              ..style = PaintingStyle.fill
+              ..color = const Color(0xFF38BDF8).withValues(alpha: 0.16),
+          );
+          canvas.drawPath(path, selectedWallBorderPaint);
+        }
       }
     }
 
@@ -422,6 +459,7 @@ class _AxonometricPainter extends CustomPainter {
     Path clipPath,
     _ProjectedFace pFace,
     (Offset, double) Function(Point3D) project,
+    double lodFactor,
   ) {
     final verts = pFace.vertices3D;
     if (verts.length < 3) return;
@@ -432,97 +470,110 @@ class _AxonometricPainter extends CustomPainter {
       ..strokeWidth = 0.85
       ..color = accent;
 
-    canvas.save();
-    canvas.clipPath(clipPath);
-
-    if (!pFace.isWallFace) {
-      double minX = verts.first.x, maxX = verts.first.x;
-      double minY = verts.first.y, maxY = verts.first.y;
-      final z = verts.first.z;
-      for (final v in verts) {
-        if (v.x < minX) minX = v.x;
-        if (v.x > maxX) maxX = v.x;
-        if (v.y < minY) minY = v.y;
-        if (v.y > maxY) maxY = v.y;
-      }
-
-      switch (pFace.pattern!) {
-        case FinishPatternType.woodPlanks:
-        case FinishPatternType.outdoorDeck:
-          final step = pFace.pattern == FinishPatternType.outdoorDeck ? 0.22 : 0.28;
-          for (double y = minY + step; y < maxY; y += step) {
-            final (p1, _) = project(Point3D(minX, y, z));
-            final (p2, _) = project(Point3D(maxX, y, z));
-            canvas.drawLine(p1, p2, linePaint);
+    // Fast path for 4-vertex wall faces: bilinear 2D edge interpolation without GPU clipPath
+    if (pFace.isWallFace) {
+      if (verts.length == 4 && pFace.points.length == 4) {
+        final b0 = verts[0];
+        final t0 = verts[3];
+        final wallH = (t0.z - b0.z).abs();
+        if (wallH > 0.20) {
+          final baseStep =
+              pFace.pattern == FinishPatternType.exposedBrick ? 0.18 : 0.35;
+          final stepZ = baseStep * lodFactor;
+          final pB0 = pFace.points[0];
+          final pB1 = pFace.points[1];
+          final pT1 = pFace.points[2];
+          final pT0 = pFace.points[3];
+          for (double dz = stepZ; dz < wallH; dz += stepZ) {
+            final t = (dz / wallH).clamp(0.0, 1.0);
+            final start = Offset.lerp(pB0, pT0, t)!;
+            final end = Offset.lerp(pB1, pT1, t)!;
+            canvas.drawLine(start, end, linePaint);
           }
-          break;
-        case FinishPatternType.porcelainGrid:
-        case FinishPatternType.hydraulicTile:
-          final step = pFace.pattern == FinishPatternType.hydraulicTile ? 0.40 : 0.65;
-          for (double x = minX + step; x < maxX; x += step) {
-            final (p1, _) = project(Point3D(x, minY, z));
-            final (p2, _) = project(Point3D(x, maxY, z));
-            canvas.drawLine(p1, p2, linePaint);
-          }
-          for (double y = minY + step; y < maxY; y += step) {
-            final (p1, _) = project(Point3D(minX, y, z));
-            final (p2, _) = project(Point3D(maxX, y, z));
-            canvas.drawLine(p1, p2, linePaint);
-          }
-          break;
-        case FinishPatternType.marbleVeins:
-          final step = 0.85;
-          for (double d = minX - (maxY - minY); d < maxX; d += step) {
-            final (p1, _) = project(Point3D(d, minY, z));
-            final (p2, _) = project(Point3D(d + (maxY - minY) * 0.65, maxY, z));
-            canvas.drawLine(p1, p2, linePaint);
-          }
-          for (double x = minX + 0.90; x < maxX; x += 0.90) {
-            final (p1, _) = project(Point3D(x, minY, z));
-            final (p2, _) = project(Point3D(x, maxY, z));
-            canvas.drawLine(
-              p1,
-              p2,
-              Paint()
-                ..color = accent.withValues(alpha: 0.16)
-                ..strokeWidth = 0.6,
-            );
-          }
-          break;
-        case FinishPatternType.naturalGrass:
-          const step = 0.75;
-          for (double x = minX + 0.35; x < maxX; x += step) {
-            for (double y = minY + 0.35; y < maxY; y += step) {
-              final (pt, _) = project(Point3D(x, y, z));
-              canvas.drawLine(pt, Offset(pt.dx - 2, pt.dy - 4), linePaint);
-              canvas.drawLine(pt, Offset(pt.dx + 2, pt.dy - 3), linePaint);
-            }
-          }
-          break;
-        case FinishPatternType.polishedConcrete:
-        case FinishPatternType.paintedWall:
-        case FinishPatternType.exposedBrick:
-        case FinishPatternType.travertineStone:
-          break;
-      }
-    } else if (verts.length == 4) {
-      // Wall horizontal courses for brick or travertine
-      final b0 = verts[0];
-      final b1 = verts[1];
-      final t0 = verts[3];
-      final wallH = (t0.z - b0.z).abs();
-      if (wallH > 0.20) {
-        final stepZ = pFace.pattern == FinishPatternType.exposedBrick ? 0.18 : 0.35;
-        for (double dz = stepZ; dz < wallH; dz += stepZ) {
-          final z = math.min(b0.z, t0.z) + dz;
-          final (p1, _) = project(Point3D(b0.x, b0.y, z));
-          final (p2, _) = project(Point3D(b1.x, b1.y, z));
-          canvas.drawLine(p1, p2, linePaint);
         }
       }
+      return;
     }
 
-    canvas.restore();
+    double minX = verts.first.x, maxX = verts.first.x;
+    double minY = verts.first.y, maxY = verts.first.y;
+    final z = verts.first.z;
+    for (final v in verts) {
+      if (v.x < minX) minX = v.x;
+      if (v.x > maxX) maxX = v.x;
+      if (v.y < minY) minY = v.y;
+      if (v.y > maxY) maxY = v.y;
+    }
+    final spanX = maxX - minX;
+    final spanY = maxY - minY;
+    if (spanX <= 0.05 || spanY <= 0.05) return;
+
+    // Check if floor polygon is an axis-aligned rectangle (4 vertices) to avoid clipPath stencil cost
+    final isAxisAlignedQuad = verts.length == 4 &&
+        pFace.pattern != FinishPatternType.marbleVeins &&
+        pFace.pattern != FinishPatternType.naturalGrass;
+
+    if (!isAxisAlignedQuad) {
+      canvas.save();
+      canvas.clipPath(clipPath);
+    }
+
+    switch (pFace.pattern!) {
+      case FinishPatternType.woodPlanks:
+      case FinishPatternType.outdoorDeck:
+        final baseStep =
+            pFace.pattern == FinishPatternType.outdoorDeck ? 0.22 : 0.28;
+        final step = baseStep * lodFactor;
+        for (double y = minY + step; y < maxY; y += step) {
+          final (p1, _) = project(Point3D(minX, y, z));
+          final (p2, _) = project(Point3D(maxX, y, z));
+          canvas.drawLine(p1, p2, linePaint);
+        }
+        break;
+      case FinishPatternType.porcelainGrid:
+      case FinishPatternType.hydraulicTile:
+        final baseStep =
+            pFace.pattern == FinishPatternType.hydraulicTile ? 0.40 : 0.65;
+        final step = baseStep * lodFactor;
+        for (double x = minX + step; x < maxX; x += step) {
+          final (p1, _) = project(Point3D(x, minY, z));
+          final (p2, _) = project(Point3D(x, maxY, z));
+          canvas.drawLine(p1, p2, linePaint);
+        }
+        for (double y = minY + step; y < maxY; y += step) {
+          final (p1, _) = project(Point3D(minX, y, z));
+          final (p2, _) = project(Point3D(maxX, y, z));
+          canvas.drawLine(p1, p2, linePaint);
+        }
+        break;
+      case FinishPatternType.marbleVeins:
+        final step = 0.85 * lodFactor;
+        for (double d = minX - spanY; d < maxX; d += step) {
+          final (p1, _) = project(Point3D(d, minY, z));
+          final (p2, _) = project(Point3D(d + spanY * 0.65, maxY, z));
+          canvas.drawLine(p1, p2, linePaint);
+        }
+        break;
+      case FinishPatternType.naturalGrass:
+        final step = 0.75 * lodFactor;
+        for (double x = minX + 0.35; x < maxX; x += step) {
+          for (double y = minY + 0.35; y < maxY; y += step) {
+            final (pt, _) = project(Point3D(x, y, z));
+            canvas.drawLine(pt, Offset(pt.dx - 2, pt.dy - 4), linePaint);
+            canvas.drawLine(pt, Offset(pt.dx + 2, pt.dy - 3), linePaint);
+          }
+        }
+        break;
+      case FinishPatternType.polishedConcrete:
+      case FinishPatternType.paintedWall:
+      case FinishPatternType.exposedBrick:
+      case FinishPatternType.travertineStone:
+        break;
+    }
+
+    if (!isAxisAlignedQuad) {
+      canvas.restore();
+    }
   }
 
   static String _toShortCode(String name) => Module.compactRoomCode(name);
@@ -640,6 +691,7 @@ class _AxonometricPainter extends CustomPainter {
         oldDelegate.showLabels != showLabels ||
         oldDelegate.orientationDegrees != orientationDegrees ||
         oldDelegate.selectedModuleId != selectedModuleId ||
+        oldDelegate.highlightWallSelection != highlightWallSelection ||
         oldDelegate.viewportListenable != viewportListenable;
   }
 }

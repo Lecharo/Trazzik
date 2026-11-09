@@ -174,6 +174,21 @@ void main() {
         expect(pdfBytes.length, greaterThan(1200));
         expect(String.fromCharCodes(pdfBytes.sublist(0, 5)), equals('%PDF-'));
       }
+
+      // Verificar Dossier Ejecutivo Completo (Todas las especialidades en 1 solo PDF)
+      final fullPackageBytes = await TechnicalPlanPdfService.generatePlanPdf(
+        floor: testFloor,
+        allFloors: [testFloor],
+        lot: testLot,
+        options: const PlanExportOptions(
+          pageFormat: PdfPageFormat.a4,
+          scaleLabel: '1:50',
+          projectName: 'Apartamento Valentina Buendía',
+          includeFullDisciplinePackage: true,
+        ),
+      );
+      expect(fullPackageBytes.length, greaterThan(5000));
+      expect(String.fromCharCodes(fullPackageBytes.sublist(0, 5)), equals('%PDF-'));
     });
 
     testWidgets('TechnicalPlanExportScreen monta sin errores y muestra AppBar y visor', (tester) async {

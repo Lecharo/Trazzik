@@ -24,6 +24,14 @@ class ArchitectFeeProposalDialog extends ConsumerStatefulWidget {
 
 class _ArchitectFeeProposalDialogState
     extends ConsumerState<ArchitectFeeProposalDialog> {
+  /// Session-level draft persistence keyed by project ID / name so closing and
+  /// reopening the dialog preserves all customized studio, client, fee, and schedule fields.
+  static final Map<String, ArchitectFeeProposal> _sessionDrafts = {};
+  static String? _lastStudioName;
+  static String? _lastArchitectName;
+  static double? _lastRatePerM2Cop;
+
+  late String _projectKey;
   late ArchitectFeeProposal _proposal;
   late TextEditingController _studioCtrl;
   late TextEditingController _architectCtrl;
@@ -40,11 +48,31 @@ class _ArchitectFeeProposalDialogState
         ? editorState.allFloors
         : [editorState.floor];
     final projectName = editorState.project?.name ?? 'Residencia Unifamiliar';
+    _projectKey = editorState.project?.id ?? projectName;
 
-    _proposal = ArchitectFeeProposal.fromProjectFloors(
+    final fresh = ArchitectFeeProposal.fromProjectFloors(
       projectName: projectName,
       floors: floors,
+      studioName:
+          _lastStudioName ?? 'ESTUDIO DE ARQUITECTURA & DISEÑO INTERIOR',
+      architectName:
+          _lastArchitectName ?? 'Dirección de Proyectos Arquitectónicos',
     );
+
+    final cached = _sessionDrafts[_projectKey];
+    if (cached != null) {
+      _proposal = cached.copyWith(
+        projectName: projectName,
+        totalBuiltAreaM2: fresh.totalBuiltAreaM2,
+        floorCount: fresh.floorCount,
+        habitableRoomsCount: fresh.habitableRoomsCount,
+      );
+    } else {
+      _proposal = _lastRatePerM2Cop != null
+          ? fresh.copyWith(ratePerM2Cop: _lastRatePerM2Cop)
+          : fresh;
+      _sessionDrafts[_projectKey] = _proposal;
+    }
 
     _studioCtrl = TextEditingController(text: _proposal.studioName);
     _architectCtrl = TextEditingController(text: _proposal.architectName);
@@ -57,8 +85,22 @@ class _ArchitectFeeProposalDialogState
     );
   }
 
+  void _updateProposal(ArchitectFeeProposal next) {
+    setState(() {
+      _proposal = next;
+      _sessionDrafts[_projectKey] = next;
+      _lastStudioName = next.studioName;
+      _lastArchitectName = next.architectName;
+      _lastRatePerM2Cop = next.ratePerM2Cop;
+    });
+  }
+
   @override
   void dispose() {
+    _sessionDrafts[_projectKey] = _proposal;
+    _lastStudioName = _proposal.studioName;
+    _lastArchitectName = _proposal.architectName;
+    _lastRatePerM2Cop = _proposal.ratePerM2Cop;
     _studioCtrl.dispose();
     _architectCtrl.dispose();
     _clientCtrl.dispose();
@@ -152,8 +194,8 @@ class _ArchitectFeeProposalDialogState
                           child: _buildTextField(
                             controller: _studioCtrl,
                             label: lang == 'es' ? 'Estudio / Firma' : 'Studio Name',
-                            onChanged: (v) => setState(
-                              () => _proposal = _proposal.copyWith(studioName: v),
+                            onChanged: (v) => _updateProposal(
+                              _proposal.copyWith(studioName: v),
                             ),
                           ),
                         ),
@@ -164,8 +206,8 @@ class _ArchitectFeeProposalDialogState
                             label: lang == 'es'
                                 ? 'Arquitecto(a) Responsable'
                                 : 'Lead Architect',
-                            onChanged: (v) => setState(
-                              () => _proposal = _proposal.copyWith(architectName: v),
+                            onChanged: (v) => _updateProposal(
+                              _proposal.copyWith(architectName: v),
                             ),
                           ),
                         ),
@@ -174,8 +216,8 @@ class _ArchitectFeeProposalDialogState
                           child: _buildTextField(
                             controller: _clientCtrl,
                             label: lang == 'es' ? 'Cliente' : 'Client Name',
-                            onChanged: (v) => setState(
-                              () => _proposal = _proposal.copyWith(clientName: v),
+                            onChanged: (v) => _updateProposal(
+                              _proposal.copyWith(clientName: v),
                             ),
                           ),
                         ),

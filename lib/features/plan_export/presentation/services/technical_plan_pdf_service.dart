@@ -15,9 +15,18 @@ import 'package:trazzik/features/projects/domain/project.dart';
 
 /// Servicio generador de Láminas Técnicas Arquitectónicas en formato PDF.
 class TechnicalPlanPdfService {
-  static _CachedPlanPng? _cachedPlanPng;
+  static final Map<PlanDiscipline, _CachedPlanPng> _cachedPlanPngByDiscipline = {};
 
-  /// Genera el archivo PDF completo con lámina de arquitectura y cuadro de superficies.
+  static const List<PlanDiscipline> _executivePackageOrder = [
+    PlanDiscipline.comparativeBeforeAfter,
+    PlanDiscipline.architectural,
+    PlanDiscipline.demolitionMasonry,
+    PlanDiscipline.electricalLighting,
+    PlanDiscipline.plumbingHydro,
+    PlanDiscipline.finishesSchedule,
+  ];
+
+  /// Genera el archivo PDF completo con lámina(s) de arquitectura y cuadros ejecutivos.
   static Future<Uint8List> generatePlanPdf({
     required Floor floor,
     List<Floor> allFloors = const [],
@@ -33,49 +42,58 @@ class TechnicalPlanPdfService {
       creator: 'Trazzik Architectural Engine',
     );
 
-    // 1. Renderizar el plano 2D a imagen de alta resolución (300 DPI equivalente)
-    final planImageBytes = await _renderPlanToPng(floor, lot, options);
-    final pwPlanImage = pw.MemoryImage(planImageBytes);
+    final disciplinesToRender = options.includeFullDisciplinePackage
+        ? _executivePackageOrder
+        : <PlanDiscipline>[options.discipline];
 
-    // 2. Página 1: Lámina Ejecutiva de Planta de Arquitectura y Equipamiento
-    pdf.addPage(
-      pw.Page(
-        pageFormat: options.pageFormat.landscape,
-        margin: const pw.EdgeInsets.all(16),
-        build: (pwContext) {
-          return pw.Container(
-            decoration: pw.BoxDecoration(
-              border: pw.Border.all(color: PdfColors.black, width: 1.5),
-            ),
-            padding: const pw.EdgeInsets.all(8),
-            child: pw.Column(
-              children: [
-                // Encabezado superior de lámina
-                _buildSheetTopBanner(floor, options),
-                pw.SizedBox(height: 6),
+    for (final disc in disciplinesToRender) {
+      final sheetOpts = options.includeFullDisciplinePackage
+          ? options.copyWith(
+              discipline: disc,
+              sheetCode: disc.defaultSheetCode,
+              sheetTitle: disc.defaultSheetTitle,
+            )
+          : options;
 
-                // Cuerpo central: Plano de planta de arquitectura
-                pw.Expanded(
-                  child: pw.Container(
-                    decoration: pw.BoxDecoration(
-                      border: pw.Border.all(color: PdfColors.grey400, width: 0.8),
-                    ),
-                    child: pw.Center(
-                      child: pw.Image(pwPlanImage, fit: pw.BoxFit.contain),
+      // 1. Renderizar el plano 2D a imagen de alta resolución (300 DPI equivalente)
+      final planImageBytes = await _renderPlanToPng(floor, lot, sheetOpts);
+      final pwPlanImage = pw.MemoryImage(planImageBytes);
+
+      // 2. Lámina Ejecutiva de Planta por Especialidad
+      pdf.addPage(
+        pw.Page(
+          pageFormat: sheetOpts.pageFormat.landscape,
+          margin: const pw.EdgeInsets.all(16),
+          build: (pwContext) {
+            return pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.5),
+              ),
+              padding: const pw.EdgeInsets.all(8),
+              child: pw.Column(
+                children: [
+                  _buildSheetTopBanner(floor, sheetOpts),
+                  pw.SizedBox(height: 6),
+                  pw.Expanded(
+                    child: pw.Container(
+                      decoration: pw.BoxDecoration(
+                        border:
+                            pw.Border.all(color: PdfColors.grey400, width: 0.8),
+                      ),
+                      child: pw.Center(
+                        child: pw.Image(pwPlanImage, fit: pw.BoxFit.contain),
+                      ),
                     ),
                   ),
-                ),
-
-                pw.SizedBox(height: 6),
-
-                // Rótulo Reglamentario / Cajetín Técnico
-                _buildTitleBlock(floor, project, lot, options),
-              ],
-            ),
-          );
-        },
-      ),
-    );
+                  pw.SizedBox(height: 6),
+                  _buildTitleBlock(floor, project, lot, sheetOpts),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
 
     // 3. Página 2: Cuadro Reglamentario de Superficies y Planilla de Locales
     if (options.includeAreaSchedulePage) {
@@ -188,7 +206,7 @@ class TechnicalPlanPdfService {
     }
 
     // 5. Página 4: Lámina de Despiece de Carpintería y Producción (Lámina PL-CARP)
-    if (options.includeMillworkPage) {
+    if (options.includeMillworkPage || options.includeFullDisciplinePackage) {
       pdf.addPage(
         pw.Page(
           pageFormat: options.pageFormat.landscape,
@@ -237,7 +255,7 @@ class TechnicalPlanPdfService {
     Lot? lot,
     PlanExportOptions options,
   ) async {
-    final cached = _cachedPlanPng;
+    final cached = _cachedPlanPngByDiscipline[options.discipline];
     if (cached != null &&
         identical(cached.floor, floor) &&
         identical(cached.lot, lot) &&
@@ -263,7 +281,7 @@ class TechnicalPlanPdfService {
       try {
         final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
         final pngBytes = byteData!.buffer.asUint8List();
-        _cachedPlanPng = _CachedPlanPng(
+        _cachedPlanPngByDiscipline[options.discipline] = _CachedPlanPng(
           floor: floor,
           lot: lot,
           options: options,

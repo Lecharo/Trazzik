@@ -206,6 +206,46 @@ class _TechnicalPlanExportScreenState
                           ),
                         ),
                       ),
+                      Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 3,
+                          vertical: 7,
+                        ),
+                        child: ChoiceChip(
+                          avatar: Icon(
+                            Icons.library_books_outlined,
+                            size: 14,
+                            color: _options.includeFullDisciplinePackage
+                                ? const Color(0xFF0A192F)
+                                : const Color(0xFF00E5FF),
+                          ),
+                          label: Text(
+                            'Dossier Completo (Todas las Láminas)',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: _options.includeFullDisciplinePackage
+                                  ? FontWeight.w800
+                                  : FontWeight.w600,
+                              color: _options.includeFullDisciplinePackage
+                                  ? const Color(0xFF0A192F)
+                                  : const Color(0xFF00E5FF),
+                            ),
+                          ),
+                          selected: _options.includeFullDisciplinePackage,
+                          selectedColor: const Color(0xFF00E5FF),
+                          backgroundColor: const Color(0xFF0A192F),
+                          visualDensity: VisualDensity.compact,
+                          onSelected: (val) {
+                            setState(() {
+                              _options = _options.copyWith(
+                                includeFullDisciplinePackage: val,
+                                includeMillworkPage:
+                                    val ? true : _options.includeMillworkPage,
+                              );
+                            });
+                          },
+                        ),
+                      ),
                       for (final d in PlanDiscipline.values)
                         Padding(
                           padding: const EdgeInsets.symmetric(
@@ -217,15 +257,18 @@ class _TechnicalPlanExportScreenState
                               d.shortLabelEs,
                               style: TextStyle(
                                 fontSize: 11,
-                                fontWeight: _options.discipline == d
+                                fontWeight: !_options.includeFullDisciplinePackage &&
+                                        _options.discipline == d
                                     ? FontWeight.w800
                                     : FontWeight.w500,
-                                color: _options.discipline == d
+                                color: !_options.includeFullDisciplinePackage &&
+                                        _options.discipline == d
                                     ? const Color(0xFF0A192F)
                                     : Colors.white70,
                               ),
                             ),
-                            selected: _options.discipline == d,
+                            selected: !_options.includeFullDisciplinePackage &&
+                                _options.discipline == d,
                             selectedColor: const Color(0xFF00E5FF),
                             backgroundColor: const Color(0xFF0A192F),
                             visualDensity: VisualDensity.compact,
@@ -233,6 +276,7 @@ class _TechnicalPlanExportScreenState
                               _sheetCodeCtrl.text = d.defaultSheetCode;
                               setState(() {
                                 _options = _options.copyWith(
+                                  includeFullDisciplinePackage: false,
                                   discipline: d,
                                   sheetCode: d.defaultSheetCode,
                                   sheetTitle: d.defaultSheetTitle,
@@ -461,6 +505,22 @@ class _TechnicalPlanExportScreenState
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
               () => _options = _options.copyWith(includeMillworkPage: val)),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Dossier Ejecutivo Completo (Todas las Especialidades)',
+            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+          ),
+          value: _options.includeFullDisciplinePackage,
+          activeThumbColor: const Color(0xFF00E5FF),
+          onChanged: (val) => setState(
+            () => _options = _options.copyWith(
+              includeFullDisciplinePackage: val,
+              includeMillworkPage: val ? true : _options.includeMillworkPage,
+            ),
+          ),
         ),
 
         const Divider(color: Color(0xFF233554), height: 28),
