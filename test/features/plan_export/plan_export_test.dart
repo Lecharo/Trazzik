@@ -5,6 +5,8 @@ import 'package:pdf/pdf.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart';
+import 'package:trazzik/features/ai_advisor/presentation/services/renovation_plan_pdf_service.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -15,6 +17,8 @@ import 'package:trazzik/features/plan_export/presentation/services/technical_pla
 import 'package:trazzik/features/walls/domain/wall.dart';
 
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+
   group('Exportación de Láminas Técnicas Arquitectónicas en PDF', () {
     late Floor testFloor;
     late Lot testLot;
@@ -109,6 +113,25 @@ void main() {
       // Verificar encabezado de archivo PDF (%PDF-)
       final header = String.fromCharCodes(pdfBytes.sublist(0, 5));
       expect(header, equals('%PDF-'));
+    });
+
+    test('RenovationPlanPdfService genera PDF con fuente TTF Unicode embebida sin fallos de glifos', () async {
+      final plan = RenovationPlannerEngine.generatePlan(
+        allRooms: testFloor.modules,
+        renovateFloors: true,
+        renovateBathrooms: true,
+        renovateKitchen: true,
+      );
+
+      final pdfBytes = await RenovationPlanPdfService.generatePlanPdf(
+        plan: plan,
+        projectName: 'Mansión Ñandú — Fase 2 (38.0 m² • ±5°)',
+        scopeName: 'Planta Baja — Intervención Integral',
+        isParallelMode: true,
+      );
+
+      expect(pdfBytes.length, greaterThan(1500));
+      expect(String.fromCharCodes(pdfBytes.sublist(0, 5)), equals('%PDF-'));
     });
 
     testWidgets('TechnicalPlanExportScreen monta sin errores y muestra AppBar y visor', (tester) async {

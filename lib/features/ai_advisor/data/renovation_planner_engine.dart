@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
-import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
 /// Motor técnico de cómputo métrico, compras y planificación de cuadrillas para remodelación.
@@ -188,10 +187,7 @@ class RenovationPlannerEngine {
     final targetHalfBathIds = config?.forcedHalfBathroomIds ?? forcedHalfBathroomIds ?? const {};
 
     // 1. Filtrar los recintos seleccionados (excluyendo aberturas y muros)
-    final candidateRooms = allRooms.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') && !t.contains('WINDOW') && !t.contains('GATE');
-    }).toList();
+    final candidateRooms = allRooms.where((m) => !m.isOpening).toList();
 
     final activeRooms = selectedModuleIds == null || selectedModuleIds.isEmpty
         ? candidateRooms

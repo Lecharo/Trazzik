@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' show BuildContext;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:printing/printing.dart';
+import 'package:trazzik/core/pdf/pdf_theme_loader.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 
 /// Servicio generador de reportes PDF técnicos para el Plan de Remodelación,
@@ -39,7 +40,9 @@ class RenovationPlanPdfService {
     required String scopeName,
     required bool isParallelMode,
   }) async {
+    final theme = await PdfThemeLoader.loadTheme();
     final pdf = pw.Document(
+      theme: theme,
       title: 'Plan de Remodelación y Compras - $projectName',
       author: 'Trazzik AI Engine',
       creator: 'Trazzik Architectural Editor',
@@ -398,8 +401,7 @@ class RenovationPlanPdfService {
                     ),
                     pw.SizedBox(height: 1),
                     pw.Text(
-                      'Especialistas: ${phase.specialists.join(" + ")}' +
-                          (phase.canParallelize ? ' | Estrategia: ${phase.parallelTip}' : ''),
+                      'Especialistas: ${phase.specialists.join(" + ")}${phase.canParallelize ? ' | Estrategia: ${phase.parallelTip}' : ''}',
                       style: pw.TextStyle(
                         fontSize: 6.8,
                         color: phase.canParallelize ? PdfColors.teal900 : PdfColors.blueGrey700,

@@ -1,9 +1,7 @@
-import 'dart:math' as math;
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/features/ai_advisor/domain/architectural_audit_result.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
-import 'package:trazzik/features/modules/domain/module.dart';
 
 /// Motor analítico local de auditoría y asesoramiento arquitectónico.
 /// Evalúa con rigor técnico: iluminación, circulaciones, núcleos húmedos y viabilidad de remodelación.
@@ -18,15 +16,8 @@ class ArchitecturalAuditEngine {
     int scoreDeductions = 0;
 
     final boundary = floor.boundary.boundingBox;
-    final modules = floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') && !t.contains('WINDOW') && !t.contains('GATE');
-    }).toList();
-
-    final openings = floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE');
-    }).toList();
+    final modules = floor.modules.where((m) => !m.isOpening).toList();
+    final openings = floor.modules.where((m) => m.isOpening).toList();
 
     final isRemodeling = floor.modules.any((m) =>
         m.status == ElementStatus.toDemolish ||
@@ -38,14 +29,7 @@ class ArchitecturalAuditEngine {
 
     for (final m in modules) {
       totalUsable += m.area;
-      final t = m.moduleType.toUpperCase();
-      final name = m.name.toUpperCase();
-      if (t == 'CORRIDOR' ||
-          t == 'HALLWAY' ||
-          name.contains('PASILLO') ||
-          name.contains('HALL') ||
-          name.contains('DISTRIBUIDOR') ||
-          name.contains('CIRCULACION')) {
+      if (m.isCirculation) {
         circulationArea += m.area;
       }
     }
@@ -86,15 +70,8 @@ class ArchitecturalAuditEngine {
     }).toList();
 
     for (final m in modules) {
+      if (!m.isHabitableRoom) continue;
       final t = m.moduleType.toUpperCase();
-      final isHabitable = t == 'BEDROOM' ||
-          t == 'LIVING_ROOM' ||
-          t == 'DINING_ROOM' ||
-          t == 'LIVING_DINING' ||
-          t == 'STUDY' ||
-          t == 'OFFICE';
-
-      if (!isHabitable) continue;
       totalHabitable++;
 
       final bb = m.geometry.boundingBox;

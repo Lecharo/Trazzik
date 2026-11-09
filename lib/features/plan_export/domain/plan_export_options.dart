@@ -68,4 +68,50 @@ class PlanExportOptions {
       includeAuditPage: includeAuditPage ?? this.includeAuditPage,
     );
   }
+
+  /// Whether two export configurations produce the exact same rasterized 2D plan image.
+  bool hasSameVisualPlanLayers(PlanExportOptions other) {
+    return scaleLabel == other.scaleLabel &&
+        includeFurniture == other.includeFurniture &&
+        includeWalls == other.includeWalls &&
+        includeDimensions == other.includeDimensions;
+  }
+
+  @override
+  bool operator ==(Object other) {
+    if (identical(this, other)) return true;
+    return other is PlanExportOptions &&
+        other.pageFormat == pageFormat &&
+        other.scaleLabel == scaleLabel &&
+        other.sheetCode == sheetCode &&
+        other.sheetTitle == sheetTitle &&
+        other.projectName == projectName &&
+        other.professionalName == professionalName &&
+        other.clientName == clientName &&
+        other.location == location &&
+        other.revision == revision &&
+        other.includeFurniture == includeFurniture &&
+        other.includeWalls == includeWalls &&
+        other.includeDimensions == includeDimensions &&
+        other.includeAreaSchedulePage == includeAreaSchedulePage &&
+        other.includeAuditPage == includeAuditPage;
+  }
+
+  @override
+  int get hashCode => Object.hash(
+        pageFormat,
+        scaleLabel,
+        sheetCode,
+        sheetTitle,
+        projectName,
+        professionalName,
+        clientName,
+        location,
+        revision,
+        includeFurniture,
+        includeWalls,
+        includeDimensions,
+        includeAreaSchedulePage,
+        includeAuditPage,
+      );
 }

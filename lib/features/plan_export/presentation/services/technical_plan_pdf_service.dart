@@ -4,6 +4,7 @@ import 'package:flutter/material.dart' show Size;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/pdf/pdf_theme_loader.dart';
 import 'package:trazzik/features/ai_advisor/data/architectural_audit_engine.dart';
 import 'package:trazzik/features/ai_advisor/domain/architectural_audit_result.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
@@ -14,6 +15,8 @@ import 'package:trazzik/features/projects/domain/project.dart';
 
 /// Servicio generador de Láminas Técnicas Arquitectónicas en formato PDF.
 class TechnicalPlanPdfService {
+  static _CachedPlanPng? _cachedPlanPng;
+
   /// Genera el archivo PDF completo con lámina de arquitectura y cuadro de superficies.
   static Future<Uint8List> generatePlanPdf({
     required Floor floor,
@@ -22,7 +25,9 @@ class TechnicalPlanPdfService {
     Lot? lot,
     required PlanExportOptions options,
   }) async {
+    final theme = await PdfThemeLoader.loadTheme();
     final pdf = pw.Document(
+      theme: theme,
       title: '${options.projectName} - ${floor.name}',
       author: options.professionalName,
       creator: 'Trazzik Architectural Engine',
@@ -185,12 +190,22 @@ class TechnicalPlanPdfService {
     return await pdf.save();
   }
 
-  /// Renderiza el plano a bytes PNG usando Flutter Canvas de alta resolución.
+  /// Renderiza el plano a bytes PNG usando Flutter Canvas de alta resolución,
+  /// reutilizando la imagen en caché cuando solo cambian metadatos del rótulo
+  /// y liberando recursos nativos GPU/CPU inmediatamente después de codificar.
   static Future<Uint8List> _renderPlanToPng(
     Floor floor,
     Lot? lot,
     PlanExportOptions options,
   ) async {
+    final cached = _cachedPlanPng;
+    if (cached != null &&
+        identical(cached.floor, floor) &&
+        identical(cached.lot, lot) &&
+        cached.options.hasSameVisualPlanLayers(options)) {
+      return cached.pngBytes;
+    }
+
     const width = 1600;
     const height = 1000;
     final recorder = ui.PictureRecorder();
@@ -204,10 +219,24 @@ class TechnicalPlanPdfService {
 
     painter.paint(canvas, const Size(1600.0, 1000.0));
     final picture = recorder.endRecording();
-    final img = await picture.toImage(width, height);
-    final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
-
-    return byteData!.buffer.asUint8List();
+    try {
+      final img = await picture.toImage(width, height);
+      try {
+        final byteData = await img.toByteData(format: ui.ImageByteFormat.png);
+        final pngBytes = byteData!.buffer.asUint8List();
+        _cachedPlanPng = _CachedPlanPng(
+          floor: floor,
+          lot: lot,
+          options: options,
+          pngBytes: pngBytes,
+        );
+        return pngBytes;
+      } finally {
+        img.dispose();
+      }
+    } finally {
+      picture.dispose();
+    }
   }
 
   static pw.Widget _buildSheetTopBanner(Floor floor, PlanExportOptions options) {
@@ -431,11 +460,7 @@ class TechnicalPlanPdfService {
       'ARTEFACTOS',
     ];
 
-    final allRooms = floor.modules
-        .where((m) =>
-            !m.moduleType.toUpperCase().contains('DOOR') &&
-            !m.moduleType.toUpperCase().contains('WINDOW'))
-        .toList();
+    final allRooms = floor.modules.where((m) => !m.isOpening).toList();
     final rooms = allRooms.length > 10 ? allRooms.sublist(0, 10) : allRooms;
 
     return pw.Column(
@@ -473,20 +498,26 @@ class TechnicalPlanPdfService {
               final area = m.area.toStringAsFixed(2);
               final furnCount = m.subModules.length;
 
-              String statusLabel;
+              final statusLabel = m.status.pdfBadgeLabelEs;
               PdfColor statusColor;
               switch (m.status) {
                 case ElementStatus.toDemolish:
-                  statusLabel = 'A DEMOLER';
                   statusColor = PdfColors.red800;
                   break;
                 case ElementStatus.preserved:
-                  statusLabel = 'EXIST. CONSERVADO';
+                case ElementStatus.existing:
                   statusColor = PdfColors.green800;
                   break;
-                default:
-                  statusLabel = 'NUEVO PROPUESTO';
+                case ElementStatus.toModify:
+                  statusColor = PdfColors.orange800;
+                  break;
+                case ElementStatus.future:
+                case ElementStatus.reference:
+                  statusColor = PdfColors.blueGrey700;
+                  break;
+                case ElementStatus.isNew:
                   statusColor = PdfColors.blue800;
+                  break;
               }
 
               final isEven = entry.key % 2 == 0;
@@ -1092,10 +1123,24 @@ class TechnicalPlanPdfService {
             padding: const pw.EdgeInsets.only(top: 3),
             child: pw.Text(
               '* Mostrando los 3 dictámenes prioritarios de un total de ${audit.findings.length}. Consultar el panel de auditoría interactivo en la App para el desglose completo.',
-              style: const pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
+              style: pw.TextStyle(fontSize: 6, color: PdfColors.grey700, fontStyle: pw.FontStyle.italic),
             ),
           ),
       ],
     );
   }
+}
+
+class _CachedPlanPng {
+  final Floor floor;
+  final Lot? lot;
+  final PlanExportOptions options;
+  final Uint8List pngBytes;
+
+  const _CachedPlanPng({
+    required this.floor,
+    required this.lot,
+    required this.options,
+    required this.pngBytes,
+  });
 }

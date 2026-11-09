@@ -1,9 +1,8 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/cad/cad_symbol_drawer.dart';
 import 'package:trazzik/core/geometry/bounding_box_2d.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
-import 'package:trazzik/core/geometry/point_2d.dart';
-import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -135,18 +134,11 @@ class TechnicalPlanPainter extends CustomPainter {
 
   void _drawLot(
       Canvas canvas, Lot lot, Offset Function(double, double) toCanvas, double scale) {
-    // Línea Municipal / Límite de Propiedad
-    final path = Path();
-    final pts = lot.boundary.vertices.map((p) => toCanvas(p.x, p.y)).toList();
-    if (pts.isEmpty) return;
-    path.moveTo(pts.first.dx, pts.first.dy);
-    for (int i = 1; i < pts.length; i++) {
-      path.lineTo(pts[i].dx, pts[i].dy);
-    }
-    path.close();
+    if (lot.boundary.vertices.isEmpty) return;
+    final path = CadSymbolDrawer.polygonToPathTransformed(lot.boundary, toCanvas);
 
     final lotFill = Paint()
-      ..color = const Color(0xFFF9FBE7).withOpacity(0.4)
+      ..color = const Color(0xFFF9FBE7).withValues(alpha: 0.4)
       ..style = PaintingStyle.fill;
     canvas.drawPath(path, lotFill);
 
@@ -158,14 +150,8 @@ class TechnicalPlanPainter extends CustomPainter {
 
     // Retiros / Zonas normativas
     for (final zone in lot.zones) {
-      final zPath = Path();
-      final zPts = zone.boundary.vertices.map((p) => toCanvas(p.x, p.y)).toList();
-      if (zPts.isEmpty) continue;
-      zPath.moveTo(zPts.first.dx, zPts.first.dy);
-      for (int i = 1; i < zPts.length; i++) {
-        zPath.lineTo(zPts[i].dx, zPts[i].dy);
-      }
-      zPath.close();
+      if (zone.boundary.vertices.isEmpty) continue;
+      final zPath = CadSymbolDrawer.polygonToPathTransformed(zone.boundary, toCanvas);
 
       final dashPaint = Paint()
         ..color = const Color(0xFF757575)
@@ -179,16 +165,7 @@ class TechnicalPlanPainter extends CustomPainter {
       Offset Function(double, double) toCanvas, double scale) {
     if (module.geometry.vertices.isEmpty) return;
 
-    final isDoor = module.moduleType.toUpperCase().contains('DOOR');
-    final isWindow = module.moduleType.toUpperCase().contains('WINDOW');
-    final isStairs = module.moduleType.toUpperCase().contains('STAIR');
-
-    final pts = module.geometry.vertices.map((p) => toCanvas(p.x, p.y)).toList();
-    final path = Path()..moveTo(pts.first.dx, pts.first.dy);
-    for (int i = 1; i < pts.length; i++) {
-      path.lineTo(pts[i].dx, pts[i].dy);
-    }
-    path.close();
+    final path = CadSymbolDrawer.polygonToPathTransformed(module.geometry, toCanvas);
 
     final bbox = module.geometry.boundingBox;
     final pMin = toCanvas(bbox.minX, bbox.minY);
@@ -198,18 +175,77 @@ class TechnicalPlanPainter extends CustomPainter {
     final w = (pMax.dx - pMin.dx).abs();
     final h = (pMax.dy - pMin.dy).abs();
 
-    if (isDoor) {
-      _drawSwingDoor(canvas, left, top, w, h, scale, module.flipX, module.flipY);
+    if (module.isSlidingDoor) {
+      CadSymbolDrawer.drawSlidingDoor(
+        canvas,
+        left,
+        top,
+        w,
+        h,
+        scale,
+        const Color(0xFF263238),
+      );
       return;
     }
 
-    if (isWindow) {
-      _drawWindow(canvas, left, top, w, h, scale);
+    if (module.isGate) {
+      CadSymbolDrawer.drawGate(
+        canvas,
+        left,
+        top,
+        w,
+        h,
+        scale,
+        const Color(0xFF263238),
+      );
       return;
     }
 
-    if (isStairs) {
-      _drawStairs(canvas, left, top, w, h, scale, module.flipX, module.flipY);
+    if (module.isSwingDoor) {
+      CadSymbolDrawer.drawSwingDoor(
+        canvas,
+        left,
+        top,
+        w,
+        h,
+        scale,
+        const Color(0xFF263238),
+        flipX: module.flipX,
+        flipY: module.flipY,
+        arcColor: const Color(0xFF455A64),
+      );
+      return;
+    }
+
+    if (module.isWindow) {
+      CadSymbolDrawer.drawWindow(
+        canvas,
+        left,
+        top,
+        w,
+        h,
+        scale,
+        const Color(0xFF263238),
+        glassColor: const Color(0xFF0288D1),
+        drawOuterFrame: true,
+      );
+      return;
+    }
+
+    if (module.isStairs) {
+      CadSymbolDrawer.drawStairs(
+        canvas,
+        left,
+        top,
+        w,
+        h,
+        scale,
+        const Color(0xFF37474F),
+        flipX: module.flipX,
+        flipY: module.flipY,
+        backgroundColor: const Color(0xFFF5F5F5),
+        arrowColor: const Color(0xFF00838F),
+      );
       return;
     }
 
@@ -294,7 +330,7 @@ class TechnicalPlanPainter extends CustomPainter {
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
-      Paint()..color = Colors.white.withOpacity(0.92),
+      Paint()..color = Colors.white.withValues(alpha: 0.92),
     );
     canvas.drawRRect(
       RRect.fromRectAndRadius(bgRect, const Radius.circular(3)),
@@ -309,22 +345,7 @@ class TechnicalPlanPainter extends CustomPainter {
 
   void _drawWall(Canvas canvas, Wall wall,
       Offset Function(double, double) toCanvas, double scale) {
-    final p1 = toCanvas(wall.startPoint.x, wall.startPoint.y);
-    final p2 = toCanvas(wall.endPoint.x, wall.endPoint.y);
-
-    final angle = math.atan2(p2.dy - p1.dy, p2.dx - p1.dx);
-    final perpAngle = angle + math.pi / 2;
-    final halfThickness = (wall.thickness * scale) / 2;
-
-    final dx = math.cos(perpAngle) * halfThickness;
-    final dy = math.sin(perpAngle) * halfThickness;
-
-    final wallPath = Path()
-      ..moveTo(p1.dx + dx, p1.dy + dy)
-      ..lineTo(p2.dx + dx, p2.dy + dy)
-      ..lineTo(p2.dx - dx, p2.dy - dy)
-      ..lineTo(p1.dx - dx, p1.dy - dy)
-      ..close();
+    final wallPath = CadSymbolDrawer.polygonToPathTransformed(wall.footprint, toCanvas);
 
     Color wallColor;
     if (wall.status == ElementStatus.toDemolish) {
@@ -345,209 +366,6 @@ class TechnicalPlanPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     canvas.drawPath(wallPath, strokePaint);
-  }
-
-  void _drawSwingDoor(Canvas canvas, double left, double top, double w,
-      double h, double scale, bool flipX, bool flipY) {
-    final isHorizontal = w >= h;
-    final arcPaint = Paint()
-      ..color = const Color(0xFF455A64)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-
-    final leafPaint = Paint()
-      ..color = const Color(0xFF263238)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = math.max(1.8, 0.04 * scale);
-
-    final jambPaint = Paint()
-      ..color = const Color(0xFF263238)
-      ..style = PaintingStyle.fill;
-
-    if (isHorizontal) {
-      final jambW = math.min(w * 0.08, math.max(2.5, 0.05 * scale));
-      canvas.drawRect(Rect.fromLTWH(left, top, jambW, h), jambPaint);
-      canvas.drawRect(Rect.fromLTWH(left + w - jambW, top, jambW, h), jambPaint);
-
-      final hingeX = flipX ? (left + w - jambW) : (left + jambW);
-      final hingeY = flipY ? top : (top + h);
-      final doorLength = w - 2 * jambW;
-      final targetY = flipY ? (hingeY + doorLength) : (hingeY - doorLength);
-
-      canvas.drawLine(Offset(hingeX, hingeY), Offset(hingeX, targetY), leafPaint);
-
-      final arcRect = Rect.fromCircle(
-        center: Offset(hingeX, hingeY),
-        radius: doorLength,
-      );
-
-      double startAngle;
-      double sweepAngle;
-      if (!flipY) {
-        if (!flipX) {
-          startAngle = 0.0;
-          sweepAngle = -math.pi / 2;
-        } else {
-          startAngle = -math.pi;
-          sweepAngle = math.pi / 2;
-        }
-      } else {
-        if (!flipX) {
-          startAngle = 0.0;
-          sweepAngle = math.pi / 2;
-        } else {
-          startAngle = math.pi;
-          sweepAngle = -math.pi / 2;
-        }
-      }
-      canvas.drawArc(arcRect, startAngle, sweepAngle, false, arcPaint);
-    } else {
-      final jambH = math.min(h * 0.08, math.max(2.5, 0.05 * scale));
-      canvas.drawRect(Rect.fromLTWH(left, top, w, jambH), jambPaint);
-      canvas.drawRect(Rect.fromLTWH(left, top + h - jambH, w, jambH), jambPaint);
-
-      final hingeX = flipX ? left : (left + w);
-      final hingeY = flipY ? (top + h - jambH) : (top + jambH);
-      final doorLength = h - 2 * jambH;
-      final targetX = flipX ? (hingeX + doorLength) : (hingeX - doorLength);
-
-      canvas.drawLine(Offset(hingeX, hingeY), Offset(targetX, hingeY), leafPaint);
-
-      final arcRect = Rect.fromCircle(
-        center: Offset(hingeX, hingeY),
-        radius: doorLength,
-      );
-
-      double startAngle;
-      double sweepAngle;
-      if (!flipX) {
-        if (!flipY) {
-          startAngle = math.pi / 2;
-          sweepAngle = math.pi / 2;
-        } else {
-          startAngle = -math.pi / 2;
-          sweepAngle = -math.pi / 2;
-        }
-      } else {
-        if (!flipY) {
-          startAngle = math.pi / 2;
-          sweepAngle = -math.pi / 2;
-        } else {
-          startAngle = -math.pi / 2;
-          sweepAngle = math.pi / 2;
-        }
-      }
-      canvas.drawArc(arcRect, startAngle, sweepAngle, false, arcPaint);
-    }
-  }
-
-  void _drawWindow(Canvas canvas, double left, double top, double w, double h,
-      double scale) {
-    final isHorizontal = w >= h;
-    final wallCapPaint = Paint()
-      ..color = const Color(0xFF263238)
-      ..style = PaintingStyle.fill;
-    final glassPaint = Paint()
-      ..color = const Color(0xFF0288D1)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
-    final framePaint = Paint()
-      ..color = const Color(0xFF37474F)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-
-    if (isHorizontal) {
-      final capW = math.max(3.0, 0.05 * scale);
-      canvas.drawRect(Rect.fromLTWH(left, top, capW, h), wallCapPaint);
-      canvas.drawRect(Rect.fromLTWH(left + w - capW, top, capW, h), wallCapPaint);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), framePaint);
-
-      final midY1 = top + h * 0.35;
-      final midY2 = top + h * 0.65;
-      canvas.drawLine(Offset(left + capW, midY1), Offset(left + w - capW, midY1), glassPaint);
-      canvas.drawLine(Offset(left + capW, midY2), Offset(left + w - capW, midY2), glassPaint);
-    } else {
-      final capH = math.max(3.0, 0.05 * scale);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, capH), wallCapPaint);
-      canvas.drawRect(Rect.fromLTWH(left, top + h - capH, w, capH), wallCapPaint);
-      canvas.drawRect(Rect.fromLTWH(left, top, w, h), framePaint);
-
-      final midX1 = left + w * 0.35;
-      final midX2 = left + w * 0.65;
-      canvas.drawLine(Offset(midX1, top + capH), Offset(midX1, top + h - capH), glassPaint);
-      canvas.drawLine(Offset(midX2, top + capH), Offset(midX2, top + h - capH), glassPaint);
-    }
-  }
-
-  void _drawStairs(Canvas canvas, double left, double top, double w, double h,
-      double scale, bool flipX, bool flipY) {
-    final bgPaint = Paint()..color = const Color(0xFFF5F5F5);
-    final borderPaint = Paint()
-      ..color = const Color(0xFF37474F)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.5;
-    final treadPaint = Paint()
-      ..color = const Color(0xFF78909C)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 0.8;
-    final arrowPaint = Paint()
-      ..color = const Color(0xFF00838F)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.6;
-
-    canvas.drawRect(Rect.fromLTWH(left, top, w, h), bgPaint);
-    canvas.drawRect(Rect.fromLTWH(left, top, w, h), borderPaint);
-
-    final isHorizontal = w >= h;
-    const numSteps = 10;
-
-    if (isHorizontal) {
-      final stepW = w / numSteps;
-      for (int i = 1; i < numSteps; i++) {
-        final x = left + i * stepW;
-        canvas.drawLine(Offset(x, top), Offset(x, top + h), treadPaint);
-      }
-      final midY = top + h / 2;
-      final startX = flipX ? (left + w * 0.85) : (left + w * 0.15);
-      final endX = flipX ? (left + w * 0.15) : (left + w * 0.85);
-
-      canvas.drawLine(Offset(startX, midY), Offset(endX, midY), arrowPaint);
-      final arrowHeadSize = math.min(10.0, stepW * 0.8);
-      final headDir = flipX ? 1.0 : -1.0;
-      canvas.drawLine(
-        Offset(endX, midY),
-        Offset(endX + headDir * arrowHeadSize, midY - arrowHeadSize * 0.6),
-        arrowPaint,
-      );
-      canvas.drawLine(
-        Offset(endX, midY),
-        Offset(endX + headDir * arrowHeadSize, midY + arrowHeadSize * 0.6),
-        arrowPaint,
-      );
-    } else {
-      final stepH = h / numSteps;
-      for (int i = 1; i < numSteps; i++) {
-        final y = top + i * stepH;
-        canvas.drawLine(Offset(left, y), Offset(left + w, y), treadPaint);
-      }
-      final midX = left + w / 2;
-      final startY = flipY ? (top + h * 0.15) : (top + h * 0.85);
-      final endY = flipY ? (top + h * 0.85) : (top + h * 0.15);
-
-      canvas.drawLine(Offset(midX, startY), Offset(midX, endY), arrowPaint);
-      final arrowHeadSize = math.min(10.0, stepH * 0.8);
-      final headDir = flipY ? -1.0 : 1.0;
-      canvas.drawLine(
-        Offset(midX, endY),
-        Offset(midX - arrowHeadSize * 0.6, endY + headDir * arrowHeadSize),
-        arrowPaint,
-      );
-      canvas.drawLine(
-        Offset(midX, endY),
-        Offset(midX + arrowHeadSize * 0.6, endY + headDir * arrowHeadSize),
-        arrowPaint,
-      );
-    }
   }
 
   void _drawFurniture(Canvas canvas, Module module, SubModule sub,
@@ -652,7 +470,14 @@ class TechnicalPlanPainter extends CustomPainter {
         Rect.fromLTWH(left + w * 0.1, top + tankH, w * 0.8, h - tankH),
         linePaint,
       );
-    } else if (type.contains('SINK') || type.contains('WASH')) {
+    } else if (type.contains('WASHING_MACHINE')) {
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
+      final drumRadius = math.min(w, h) * 0.32;
+      final center = Offset(left + w / 2, top + h / 2);
+      canvas.drawCircle(center, drumRadius, linePaint);
+      canvas.drawCircle(center, drumRadius * 0.6, linePaint);
+    } else if (type.contains('SINK') || type.contains('VANITY') || type.contains('WASH')) {
       canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
       canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
       // Bacha interior
@@ -660,6 +485,30 @@ class TechnicalPlanPainter extends CustomPainter {
         Rect.fromLTWH(left + w * 0.15, top + h * 0.15, w * 0.7, h * 0.7),
         linePaint,
       );
+    } else if (type.contains('REFRIGERATOR') || type.contains('FRIDGE')) {
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
+      final doorY = top + h * 0.35;
+      canvas.drawLine(Offset(left, doorY), Offset(left + w, doorY), linePaint);
+    } else if (type.contains('BATHTUB')) {
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromLTWH(left + 2, top + 2, math.max(1.0, w - 4), math.max(1.0, h - 4)),
+          const Radius.circular(6),
+        ),
+        linePaint,
+      );
+    } else if (type.contains('WARDROBE') || type.contains('CLOSET')) {
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
+      canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
+      canvas.drawLine(Offset(left, top), Offset(left + w, top + h), linePaint);
+      canvas.drawLine(Offset(left, top + h / 2), Offset(left + w, top + h / 2), linePaint);
+    } else if (type == 'CAR') {
+      final rrect = RRect.fromRectAndRadius(Rect.fromLTWH(left, top, w, h), const Radius.circular(5));
+      canvas.drawRRect(rrect, fillPaint);
+      canvas.drawRRect(rrect, linePaint);
     } else if (type.contains('STOVE')) {
       canvas.drawRect(Rect.fromLTWH(left, top, w, h), fillPaint);
       canvas.drawRect(Rect.fromLTWH(left, top, w, h), linePaint);
@@ -764,17 +613,9 @@ class TechnicalPlanPainter extends CustomPainter {
       northCenter.dx + arrowRadius * 0.9 * math.sin(rot),
       northCenter.dy - arrowRadius * 0.9 * math.cos(rot),
     );
-    final botPt = Offset(
-      northCenter.dx - arrowRadius * 0.9 * math.sin(rot),
-      northCenter.dy + arrowRadius * 0.9 * math.cos(rot),
-    );
     final leftPt = Offset(
       northCenter.dx - (arrowRadius * 0.35) * math.cos(rot),
       northCenter.dy - (arrowRadius * 0.35) * math.sin(rot),
-    );
-    final rightPt = Offset(
-      northCenter.dx + (arrowRadius * 0.35) * math.cos(rot),
-      northCenter.dy + (arrowRadius * 0.35) * math.sin(rot),
     );
 
     // Triángulo negro apuntando al norte

@@ -65,15 +65,12 @@ class ValidationEngine {
         final modA = modules[i];
         final modB = modules[j];
 
-        if (!GeometryEngine.doPolygonsCollide(modA.geometry, modB.geometry)) {
-          continue;
-        }
-
-        final overlap = GeometryEngine.calculateOverlapArea(modA.geometry, modB.geometry);
+        final overlap =
+            GeometryEngine.calculateOverlapArea(modA.geometry, modB.geometry);
         if (overlap <= epsilon) continue;
 
-        final isOpA = _isOpening(modA);
-        final isOpB = _isOpening(modB);
+        final isOpA = modA.isOpening;
+        final isOpB = modB.isOpening;
 
         // Caso: Aberturas (puertas, ventanas, portones)
         // Se instalan en muros/umbrales y comunican recintos (ej. Puerta de Baño con Baño o Escalera).
@@ -162,9 +159,10 @@ class ValidationEngine {
               ),
             );
 
-            // Validar ampliación del nuevo módulo respecto al demolido
-            final expansionArea =
-                GeometryEngine.calculateExpansionArea(newMod.geometry, otherMod.geometry);
+            // Validar ampliación del nuevo módulo respecto al demolido (reutilizando overlap ya calculado)
+            final expansionArea = (newMod.geometry.area - overlap) > epsilon
+                ? (newMod.geometry.area - overlap)
+                : 0.0;
 
             if (expansionArea > epsilon) {
               // Validar si la ampliación invade otro módulo conservado
@@ -172,7 +170,8 @@ class ValidationEngine {
                 if (other.id == newMod.id || other.id == otherMod.id) continue;
                 if ((other.status == ElementStatus.preserved ||
                         other.status == ElementStatus.existing) &&
-                    GeometryEngine.doPolygonsCollide(newMod.geometry, other.geometry)) {
+                    GeometryEngine.doPolygonsCollide(
+                        newMod.geometry, other.geometry)) {
                   issues.add(
                     ValidationIssue(
                       code: 'EXPANSION_OVERLAPS_PRESERVED',
@@ -249,8 +248,5 @@ class ValidationEngine {
     return issues;
   }
 
-  static bool _isOpening(Module m) {
-    final t = m.moduleType.toUpperCase();
-    return t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE');
-  }
+  static bool _isOpening(Module m) => m.isOpening;
 }

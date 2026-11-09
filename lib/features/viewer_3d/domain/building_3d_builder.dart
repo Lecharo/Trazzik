@@ -6,6 +6,7 @@ import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
+import 'package:trazzik/features/walls/domain/wall_generation_engine.dart';
 
 /// Constructor paramétrico de volumetría 3D a partir del modelo BIM de pisos y muros
 class Building3DBuilder {
@@ -50,10 +51,9 @@ class Building3DBuilder {
 
       // 3. Pavimentos y acabados por recinto
       for (final mod in floor.modules) {
-        final t = mod.moduleType.toUpperCase();
-        if (t.contains('DOOR') || t.contains('WINDOW') || t.contains('GATE')) {
+        if (mod.isOpening) {
           _buildOpening3D(faces, mod, elevationZ, floorHeight);
-        } else if (t.contains('STAIR')) {
+        } else if (mod.isStairs) {
           _buildStairs3D(faces, mod, elevationZ, floorHeight);
         } else {
           _buildRoomFloor(faces, mod, elevationZ);
@@ -65,15 +65,25 @@ class Building3DBuilder {
         }
       }
 
-      // 4. Muros y tabiques
-      if (floor.walls.isNotEmpty) {
-        // Muros explícitos definidos en el piso
-        for (final wall in floor.walls) {
-          _buildWall3D(faces, wall, elevationZ, overrideHeight: math.min(wall.height, wallHeight));
-        }
-      } else {
-        // Generación paramétrica automática de muros y tabiques a partir de los recintos
-        _buildAutoWallsFromModules(faces, floor, elevationZ, wallHeight);
+      // 3.2 Garajes semicubiertos / pérgolas
+      for (final garage in floor.modules.where(WallGenerationEngine.isPergolaCarport)) {
+        _buildPergolaCarport3D(faces, garage, elevationZ);
+      }
+
+      // 4. Muros y tabiques (explícitos o generados con el motor unificado)
+      final hasExplicitWalls = floor.walls.isNotEmpty;
+      final effectiveWalls = hasExplicitWalls
+          ? floor.walls
+          : WallGenerationEngine.generateWallsForFloor(floor);
+      final wallLabel = hasExplicitWalls ? 'Muro' : 'Muro Exterior';
+      for (final wall in effectiveWalls) {
+        _buildWall3D(
+          faces,
+          wall,
+          elevationZ,
+          overrideHeight: math.min(wall.height, wallHeight),
+          label: wallLabel,
+        );
       }
     }
 
@@ -177,6 +187,7 @@ class Building3DBuilder {
     Wall wall,
     double elevationZ, {
     double? overrideHeight,
+    String label = 'Muro',
   }) {
     _buildWallSegment3D(
       faces,
@@ -185,159 +196,8 @@ class Building3DBuilder {
       elevationZ: elevationZ,
       height: overrideHeight ?? wall.height,
       thickness: wall.thickness,
-      label: 'Muro',
+      label: label,
     );
-  }
-
-  /// Genera automáticamente muros y tabiques 3D a partir de los límites de los recintos
-  static void _buildAutoWallsFromModules(
-    List<Face3D> faces,
-    Floor floor,
-    double elevationZ,
-    double wallHeight,
-  ) {
-    final roomModules = floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') &&
-          !t.contains('WINDOW') &&
-          !t.contains('GATE') &&
-          !t.contains('STAIR') &&
-          !t.contains('GARDEN') &&
-          !t.contains('PATIO') &&
-          !t.contains('TERRACE');
-    }).toList();
-
-    if (roomModules.isEmpty) return;
-
-    // A. Garajes semicubiertos (Pérgola con columnas y vigas)
-    final pergolaGarages = roomModules.where((m) =>
-        m.moduleType.toUpperCase().contains('GARAGE') &&
-        (m.name.toLowerCase().contains('semicubierto') ||
-            m.name.toLowerCase().contains('pérgola'))).toList();
-
-    for (final garage in pergolaGarages) {
-      _buildPergolaCarport3D(faces, garage, elevationZ);
-    }
-
-    // B. Recintos estándar
-    final standardRooms = roomModules.where((m) => !pergolaGarages.contains(m)).toList();
-    if (standardRooms.isEmpty) return;
-
-    // Recolectar intervalos horizontales (por Y) y verticales (por X)
-    final horizSegments = <double, List<math.Point<double>>>{};
-    final vertSegments = <double, List<math.Point<double>>>{};
-
-    for (final mod in standardRooms) {
-      final bb = mod.geometry.boundingBox;
-      final x1 = (bb.minX * 100).round() / 100.0;
-      final x2 = (bb.maxX * 100).round() / 100.0;
-      final y1 = (bb.minY * 100).round() / 100.0;
-      final y2 = (bb.maxY * 100).round() / 100.0;
-
-      horizSegments.putIfAbsent(y1, () => []).add(math.Point(x1, x2));
-      horizSegments.putIfAbsent(y2, () => []).add(math.Point(x1, x2));
-
-      vertSegments.putIfAbsent(x1, () => []).add(math.Point(y1, y2));
-      vertSegments.putIfAbsent(x2, () => []).add(math.Point(y1, y2));
-    }
-
-    // Muros Horizontales
-    horizSegments.forEach((y, intervals) {
-      final points = <double>{};
-      for (final inv in intervals) {
-        points.add(inv.x);
-        points.add(inv.y);
-      }
-      final sortedPts = points.toList()..sort();
-      for (int i = 0; i < sortedPts.length - 1; i++) {
-        final sx = sortedPts[i];
-        final ex = sortedPts[i + 1];
-        if (ex - sx < 0.20) continue;
-
-        final mid = (sx + ex) / 2.0;
-        int count = 0;
-        for (final inv in intervals) {
-          if (inv.x <= mid && mid <= inv.y) count++;
-        }
-
-        if (count == 0) continue;
-        final isExterior = count == 1;
-        final thickness = isExterior ? 0.18 : 0.12;
-        final wallLen = ex - sx;
-
-        if (!isExterior && wallLen >= 2.40) {
-          final solidLen = wallLen - 0.85;
-          _buildWallSegment3D(
-            faces,
-            p1: Point2D(sx, y),
-            p2: Point2D(sx + solidLen, y),
-            elevationZ: elevationZ,
-            height: wallHeight,
-            thickness: thickness,
-            label: 'Tabique',
-          );
-        } else {
-          _buildWallSegment3D(
-            faces,
-            p1: Point2D(sx, y),
-            p2: Point2D(ex, y),
-            elevationZ: elevationZ,
-            height: wallHeight,
-            thickness: thickness,
-            label: isExterior ? 'Muro Exterior' : 'Tabique',
-          );
-        }
-      }
-    });
-
-    // Muros Verticales
-    vertSegments.forEach((x, intervals) {
-      final points = <double>{};
-      for (final inv in intervals) {
-        points.add(inv.x);
-        points.add(inv.y);
-      }
-      final sortedPts = points.toList()..sort();
-      for (int i = 0; i < sortedPts.length - 1; i++) {
-        final sy = sortedPts[i];
-        final ey = sortedPts[i + 1];
-        if (ey - sy < 0.20) continue;
-
-        final mid = (sy + ey) / 2.0;
-        int count = 0;
-        for (final inv in intervals) {
-          if (inv.x <= mid && mid <= inv.y) count++;
-        }
-
-        if (count == 0) continue;
-        final isExterior = count == 1;
-        final thickness = isExterior ? 0.18 : 0.12;
-        final wallLen = ey - sy;
-
-        if (!isExterior && wallLen >= 2.40) {
-          final solidLen = wallLen - 0.85;
-          _buildWallSegment3D(
-            faces,
-            p1: Point2D(x, sy),
-            p2: Point2D(x, sy + solidLen),
-            elevationZ: elevationZ,
-            height: wallHeight,
-            thickness: thickness,
-            label: 'Tabique',
-          );
-        } else {
-          _buildWallSegment3D(
-            faces,
-            p1: Point2D(x, sy),
-            p2: Point2D(x, ey),
-            elevationZ: elevationZ,
-            height: wallHeight,
-            thickness: thickness,
-            label: isExterior ? 'Muro Exterior' : 'Tabique',
-          );
-        }
-      }
-    });
   }
 
   /// Construye paramétricamente una pérgola / cochera semicubierta en 3D
@@ -593,7 +453,7 @@ class Building3DBuilder {
     // 3. Hoja de carpintería (panel de madera o vidrio de ventana)
     final panelColor = isDoor
         ? const Color(0xFF8D6E63) // Madera cálida
-        : const Color(0xFF4FC3F7).withOpacity(0.65); // Vidrio traslúcido
+        : const Color(0xFF4FC3F7).withValues(alpha: 0.65); // Vidrio traslúcido
 
     if (isHoriz) {
       final x0 = cx - openLen / 2;
@@ -707,26 +567,35 @@ class Building3DBuilder {
   static Color _getColorForModuleType(String type) {
     switch (type.toUpperCase()) {
       case 'LIVING_ROOM':
-        return const Color(0xFF37474F).withOpacity(0.8);
+      case 'LIVING_DINING':
+        return const Color(0xFF37474F).withValues(alpha: 0.8);
       case 'DINING_ROOM':
-        return const Color(0xFF455A64).withOpacity(0.8);
+        return const Color(0xFF455A64).withValues(alpha: 0.8);
       case 'KITCHEN':
-        return const Color(0xFF00695C).withOpacity(0.7);
+      case 'PANTRY':
+        return const Color(0xFF00695C).withValues(alpha: 0.7);
       case 'BEDROOM':
-        return const Color(0xFF283593).withOpacity(0.65);
+      case 'DRESSING_ROOM':
+        return const Color(0xFF283593).withValues(alpha: 0.65);
       case 'BATHROOM':
-        return const Color(0xFF0277BD).withOpacity(0.7);
+        return const Color(0xFF0277BD).withValues(alpha: 0.7);
       case 'OFFICE':
-        return const Color(0xFF4E342E).withOpacity(0.7);
+      case 'STUDIO':
+        return const Color(0xFF4E342E).withValues(alpha: 0.7);
       case 'LAUNDRY':
-        return const Color(0xFF546E7A).withOpacity(0.7);
+      case 'STORAGE':
+        return const Color(0xFF546E7A).withValues(alpha: 0.7);
+      case 'CORRIDOR':
+      case 'FOYER':
+        return const Color(0xFF607D8B).withValues(alpha: 0.75);
       case 'GARAGE':
-        return const Color(0xFF424242).withOpacity(0.85);
+        return const Color(0xFF424242).withValues(alpha: 0.85);
       case 'TERRACE':
       case 'GARDEN':
-        return const Color(0xFF2E7D32).withOpacity(0.7);
+      case 'PATIO':
+        return const Color(0xFF2E7D32).withValues(alpha: 0.7);
       default:
-        return const Color(0xFF37474F).withOpacity(0.6);
+        return const Color(0xFF37474F).withValues(alpha: 0.6);
     }
   }
 

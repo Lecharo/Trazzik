@@ -1,10 +1,10 @@
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
-import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/services/technical_plan_pdf_service.dart';
 
@@ -26,6 +26,7 @@ class _TechnicalPlanExportScreenState
   late TextEditingController _locCtrl;
   late TextEditingController _sheetCodeCtrl;
   late TextEditingController _revCtrl;
+  Timer? _debounceTimer;
 
   bool _isDrawerOpen = false;
 
@@ -51,6 +52,7 @@ class _TechnicalPlanExportScreenState
 
   @override
   void dispose() {
+    _debounceTimer?.cancel();
     _projectCtrl.dispose();
     _profCtrl.dispose();
     _clientCtrl.dispose();
@@ -60,29 +62,38 @@ class _TechnicalPlanExportScreenState
     super.dispose();
   }
 
-  void _updateOptions() {
-    setState(() {
-      _options = _options.copyWith(
-        projectName: _projectCtrl.text.trim().isNotEmpty
-            ? _projectCtrl.text.trim()
-            : 'Vivienda Unifamiliar',
-        professionalName: _profCtrl.text.trim().isNotEmpty
-            ? _profCtrl.text.trim()
-            : 'Arq. Consultor Principal',
-        clientName: _clientCtrl.text.trim().isNotEmpty
-            ? _clientCtrl.text.trim()
-            : 'Propietario',
-        location: _locCtrl.text.trim().isNotEmpty
-            ? _locCtrl.text.trim()
-            : 'Urb. Residencial',
-        sheetCode: _sheetCodeCtrl.text.trim().isNotEmpty
-            ? _sheetCodeCtrl.text.trim()
-            : 'PL-01',
-        revision: _revCtrl.text.trim().isNotEmpty
-            ? _revCtrl.text.trim()
-            : 'Rev. 1.0',
-      );
+  void _scheduleOptionsUpdate() {
+    _debounceTimer?.cancel();
+    _debounceTimer = Timer(const Duration(milliseconds: 350), () {
+      if (!mounted) return;
+      _applyOptionsUpdate();
     });
+  }
+
+  void _applyOptionsUpdate() {
+    final next = _options.copyWith(
+      projectName: _projectCtrl.text.trim().isNotEmpty
+          ? _projectCtrl.text.trim()
+          : 'Vivienda Unifamiliar',
+      professionalName: _profCtrl.text.trim().isNotEmpty
+          ? _profCtrl.text.trim()
+          : 'Arq. Consultor Principal',
+      clientName: _clientCtrl.text.trim().isNotEmpty
+          ? _clientCtrl.text.trim()
+          : 'Propietario',
+      location: _locCtrl.text.trim().isNotEmpty
+          ? _locCtrl.text.trim()
+          : 'Urb. Residencial',
+      sheetCode: _sheetCodeCtrl.text.trim().isNotEmpty
+          ? _sheetCodeCtrl.text.trim()
+          : 'PL-01',
+      revision: _revCtrl.text.trim().isNotEmpty
+          ? _revCtrl.text.trim()
+          : 'Rev. 1.0',
+    );
+    if (next != _options) {
+      setState(() => _options = next);
+    }
   }
 
   Future<Uint8List> _generatePdf(PdfPageFormat format) async {
@@ -98,7 +109,9 @@ class _TechnicalPlanExportScreenState
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(floorEditorProvider);
+    final floorName = ref.watch(
+      floorEditorProvider.select((s) => s.floor.name),
+    );
     final isMobile = MediaQuery.of(context).size.width < 720;
 
     return Scaffold(
@@ -110,7 +123,7 @@ class _TechnicalPlanExportScreenState
             const SizedBox(width: 8),
             Expanded(
               child: Text(
-                isMobile ? 'Lámina Técnica — ${state.floor.name}' : 'Exportar Lámina Técnica — ${state.floor.name}',
+                isMobile ? 'Lámina Técnica — $floorName' : 'Exportar Lámina Técnica — $floorName',
                 style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
                 overflow: TextOverflow.ellipsis,
               ),
@@ -174,7 +187,7 @@ class _TechnicalPlanExportScreenState
               canChangePageFormat: false,
               canChangeOrientation: false,
               pdfFileName:
-                  '${_options.projectName.replaceAll(' ', '_')}_${state.floor.name}_${_options.sheetCode}.pdf',
+                  '${_options.projectName.replaceAll(' ', '_')}_${floorName}_${_options.sheetCode}.pdf',
               loadingWidget: const Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -224,7 +237,7 @@ class _TechnicalPlanExportScreenState
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<PdfPageFormat>(
-          value: _options.pageFormat,
+          initialValue: _options.pageFormat,
           dropdownColor: const Color(0xFF112240),
           decoration: const InputDecoration(
             isDense: true,
@@ -256,7 +269,7 @@ class _TechnicalPlanExportScreenState
         ),
         const SizedBox(height: 4),
         DropdownButtonFormField<String>(
-          value: _options.scaleLabel,
+          initialValue: _options.scaleLabel,
           dropdownColor: const Color(0xFF112240),
           decoration: const InputDecoration(
             isDense: true,
@@ -290,7 +303,7 @@ class _TechnicalPlanExportScreenState
           contentPadding: EdgeInsets.zero,
           title: const Text('Mobiliario y Equipamiento', style: TextStyle(fontSize: 12)),
           value: _options.includeFurniture,
-          activeColor: const Color(0xFF00E5FF),
+          activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
               setState(() => _options = _options.copyWith(includeFurniture: val)),
         ),
@@ -299,7 +312,7 @@ class _TechnicalPlanExportScreenState
           contentPadding: EdgeInsets.zero,
           title: const Text('Muros con Espesor Real', style: TextStyle(fontSize: 12)),
           value: _options.includeWalls,
-          activeColor: const Color(0xFF00E5FF),
+          activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
               setState(() => _options = _options.copyWith(includeWalls: val)),
         ),
@@ -308,7 +321,7 @@ class _TechnicalPlanExportScreenState
           contentPadding: EdgeInsets.zero,
           title: const Text('Líneas de Cotas Métricas', style: TextStyle(fontSize: 12)),
           value: _options.includeDimensions,
-          activeColor: const Color(0xFF00E5FF),
+          activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) =>
               setState(() => _options = _options.copyWith(includeDimensions: val)),
         ),
@@ -317,7 +330,7 @@ class _TechnicalPlanExportScreenState
           contentPadding: EdgeInsets.zero,
           title: const Text('Página: Cuadro de Áreas (PL-02)', style: TextStyle(fontSize: 12)),
           value: _options.includeAreaSchedulePage,
-          activeColor: const Color(0xFF00E5FF),
+          activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
               () => _options = _options.copyWith(includeAreaSchedulePage: val)),
         ),
@@ -326,7 +339,7 @@ class _TechnicalPlanExportScreenState
           contentPadding: EdgeInsets.zero,
           title: const Text('Página: Diagnóstico IA (PL-03)', style: TextStyle(fontSize: 12)),
           value: _options.includeAuditPage,
-          activeColor: const Color(0xFF00E5FF),
+          activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
               () => _options = _options.copyWith(includeAuditPage: val)),
         ),
@@ -351,7 +364,7 @@ class _TechnicalPlanExportScreenState
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          onChanged: (_) => _updateOptions(),
+          onChanged: (_) => _scheduleOptionsUpdate(),
         ),
         const SizedBox(height: 8),
 
@@ -362,7 +375,7 @@ class _TechnicalPlanExportScreenState
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          onChanged: (_) => _updateOptions(),
+          onChanged: (_) => _scheduleOptionsUpdate(),
         ),
         const SizedBox(height: 8),
 
@@ -373,7 +386,7 @@ class _TechnicalPlanExportScreenState
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          onChanged: (_) => _updateOptions(),
+          onChanged: (_) => _scheduleOptionsUpdate(),
         ),
         const SizedBox(height: 8),
 
@@ -384,7 +397,7 @@ class _TechnicalPlanExportScreenState
             isDense: true,
             border: OutlineInputBorder(),
           ),
-          onChanged: (_) => _updateOptions(),
+          onChanged: (_) => _scheduleOptionsUpdate(),
         ),
         const SizedBox(height: 8),
 
@@ -398,7 +411,7 @@ class _TechnicalPlanExportScreenState
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (_) => _updateOptions(),
+                onChanged: (_) => _scheduleOptionsUpdate(),
               ),
             ),
             const SizedBox(width: 8),
@@ -410,7 +423,7 @@ class _TechnicalPlanExportScreenState
                   isDense: true,
                   border: OutlineInputBorder(),
                 ),
-                onChanged: (_) => _updateOptions(),
+                onChanged: (_) => _scheduleOptionsUpdate(),
               ),
             ),
           ],

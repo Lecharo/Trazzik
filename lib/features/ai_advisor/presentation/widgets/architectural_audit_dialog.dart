@@ -79,7 +79,7 @@ class _ArchitecturalAuditDialogState
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withOpacity(0.15),
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
                       border: Border.all(color: const Color(0xFF00E5FF)),
                     ),
@@ -129,7 +129,7 @@ class _ArchitecturalAuditDialogState
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E293B),
                   borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: scoreColor.withOpacity(0.4)),
+                  border: Border.all(color: scoreColor.withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   children: [
@@ -139,7 +139,7 @@ class _ArchitecturalAuditDialogState
                       height: isMobile ? 54 : 64,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: scoreColor.withOpacity(0.12),
+                        color: scoreColor.withValues(alpha: 0.12),
                         border: Border.all(color: scoreColor, width: 2.5),
                       ),
                       alignment: Alignment.center,
@@ -187,7 +187,7 @@ class _ArchitecturalAuditDialogState
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   margin: const EdgeInsets.only(right: 6),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFEF5350).withOpacity(0.2),
+                                    color: const Color(0xFFEF5350).withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(color: const Color(0xFFEF5350)),
                                   ),
@@ -200,7 +200,7 @@ class _ArchitecturalAuditDialogState
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFFB74D).withOpacity(0.2),
+                                    color: const Color(0xFFFFB74D).withValues(alpha: 0.2),
                                     borderRadius: BorderRadius.circular(4),
                                     border: Border.all(color: const Color(0xFFFFB74D)),
                                   ),
@@ -298,9 +298,9 @@ class _ArchitecturalAuditDialogState
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withOpacity(0.06),
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                          border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
@@ -384,7 +384,7 @@ class _ArchitecturalAuditDialogState
       decoration: BoxDecoration(
         color: const Color(0xFF1E293B),
         borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: color.withOpacity(0.4)),
+        border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
@@ -411,7 +411,7 @@ class _ArchitecturalAuditDialogState
         decoration: BoxDecoration(
           color: const Color(0xFF0F172A),
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.4)),
+          border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
         ),
         child: chip,
       );
@@ -424,9 +424,9 @@ class _ArchitecturalAuditDialogState
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
       decoration: BoxDecoration(
-        color: finding.color.withOpacity(0.08),
+        color: finding.color.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: finding.color.withOpacity(0.35)),
+        border: Border.all(color: finding.color.withValues(alpha: 0.35)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -456,7 +456,7 @@ class _ArchitecturalAuditDialogState
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A).withOpacity(0.6),
+              color: const Color(0xFF0F172A).withValues(alpha: 0.6),
               borderRadius: BorderRadius.circular(6),
               border: Border.all(color: Colors.white12),
             ),
