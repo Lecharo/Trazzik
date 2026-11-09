@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -173,7 +174,11 @@ class RenovationPlannerEngine {
     Set<String>? forcedHalfBathroomIds,
     double floorTileWastePercent = 10.0,
     double boxTileCoverageM2 = 1.80,
+    double floorHeightMeters = 2.60,
   }) {
+    final safeBoxCoverage = math.max(0.1, boxTileCoverageM2);
+    final safeFloorHeight = math.max(1.80, floorHeightMeters);
+
     // Si viene config, sus valores tienen prioridad
     final doFloors = config?.renovateFloors ?? renovateFloors;
     final doBaths = config?.renovateBathrooms ?? renovateBathrooms;
@@ -187,8 +192,16 @@ class RenovationPlannerEngine {
     final targetBathIds = config?.selectedBathroomIds ?? selectedBathroomIds ?? const {};
     final targetHalfBathIds = config?.forcedHalfBathroomIds ?? forcedHalfBathroomIds ?? const {};
 
-    // 1. Filtrar los recintos seleccionados (excluyendo aberturas y muros)
-    final candidateRooms = allRooms.where((m) => !m.isOpening).toList();
+    // 1. Filtrar los recintos seleccionados (excluyendo aberturas, demoliciones, escaleras y áreas exteriores sin piso)
+    final candidateRooms = allRooms
+        .where(
+          (m) =>
+              m.status != ElementStatus.toDemolish &&
+              !m.isOpening &&
+              !m.isStairs &&
+              !m.isOutdoorUnpaved,
+        )
+        .toList();
 
     final activeRooms = selectedModuleIds == null || selectedModuleIds.isEmpty
         ? candidateRooms
@@ -198,11 +211,7 @@ class RenovationPlannerEngine {
     final totalArea = activeRooms.fold(0.0, (sum, r) => sum + r.area);
 
     // Filtrar baños activos
-    var candidateBathrooms = activeRooms.where((r) =>
-        r.moduleType.toUpperCase() == 'BATHROOM' ||
-        r.name.toUpperCase().contains('BAÑO') ||
-        r.name.toUpperCase().contains('BANO') ||
-        r.name.toUpperCase().contains('TOILETTE')).toList();
+    var candidateBathrooms = activeRooms.where((r) => r.isBathroom).toList();
 
     if (targetBathIds.isNotEmpty) {
       final filtered = candidateBathrooms.where((b) => targetBathIds.contains(b.id)).toList();
@@ -214,9 +223,7 @@ class RenovationPlannerEngine {
     final fullBathrooms = candidateBathrooms.where((b) => !isHalfBathroom(b, forcedHalfBathroomIds: targetHalfBathIds)).toList();
 
     // Cocinas
-    final kitchens = activeRooms.where((r) =>
-        r.moduleType.toUpperCase() == 'KITCHEN' ||
-        r.name.toUpperCase().contains('COCINA')).toList();
+    final kitchens = activeRooms.where((r) => r.isKitchen).toList();
 
     // Recintos para pisos
     final floorRooms = targetFloorRoomIds.isNotEmpty
@@ -243,21 +250,69 @@ class RenovationPlannerEngine {
     // 2. CÓMPUTO DE PISOS Y ENCHAPES
     if (doFloors && floorRooms.isNotEmpty) {
       final wasteMult = 1.0 + (floorTileWastePercent / 100.0);
-      final purchaseTileM2 = (floorArea * wasteMult * 100).round() / 100.0;
-      final boxesCount = (purchaseTileM2 / boxTileCoverageM2).ceil();
 
-      materials.add(MaterialItem(
-        id: 'mat_floor_tiles',
-        name: 'Piso Cerámico / Porcelanato Comercial',
-        category: MaterialCategory.flooring,
-        quantity: purchaseTileM2,
-        unit: 'm²',
-        packagingDetail: '$boxesCount cajas de ${boxTileCoverageM2.toStringAsFixed(2)} m²',
-        wastePercentage: floorTileWastePercent,
-        yieldFormula: 'Área útil: ${floorArea.toStringAsFixed(2)}m² + ${floorTileWastePercent.toStringAsFixed(0)}% desperdicio por recortes y zócalos',
-        targetRoomNames: floorRoomNames,
-        purchaseTip: 'Asegurate de que todas las cajas tengan el mismo número de lote y tono (tono y calibre idénticos).',
-      ));
+      // Separar recintos con acabado personalizado de los que usan porcelanato comercial genérico
+      final genericFloorRooms = <Module>[];
+      final customFloorGroups = <String, List<Module>>{};
+      for (final room in floorRooms) {
+        final customMat = FinishMaterialCatalog.byId(room.floorMaterialId);
+        if (customMat != null) {
+          customFloorGroups.putIfAbsent(customMat.id, () => []).add(room);
+        } else {
+          genericFloorRooms.add(room);
+        }
+      }
+
+      if (genericFloorRooms.isNotEmpty) {
+        final genericFloorArea =
+            genericFloorRooms.fold(0.0, (sum, r) => sum + r.area);
+        final genericRoomNames =
+            genericFloorRooms.map((r) => r.name).toList();
+        final purchaseTileM2 =
+            (genericFloorArea * wasteMult * 100).round() / 100.0;
+        final boxesCount = (purchaseTileM2 / safeBoxCoverage).ceil();
+
+        materials.add(MaterialItem(
+          id: 'mat_floor_tiles',
+          name: 'Piso Cerámico / Porcelanato Comercial',
+          category: MaterialCategory.flooring,
+          quantity: purchaseTileM2,
+          unit: 'm²',
+          packagingDetail:
+              '$boxesCount cajas de ${safeBoxCoverage.toStringAsFixed(2)} m²',
+          wastePercentage: floorTileWastePercent,
+          yieldFormula:
+              'Área útil: ${genericFloorArea.toStringAsFixed(2)}m² + ${floorTileWastePercent.toStringAsFixed(0)}% desperdicio por recortes y zócalos',
+          targetRoomNames: genericRoomNames,
+          purchaseTip:
+              'Asegurate de que todas las cajas tengan el mismo número de lote y tono (tono y calibre idénticos).',
+        ));
+      }
+
+      for (final entry in customFloorGroups.entries) {
+        final mat = FinishMaterialCatalog.byId(entry.key);
+        if (mat == null) continue;
+        final groupArea = entry.value.fold(0.0, (s, r) => s + r.area);
+        final groupM2WithWaste = (groupArea * wasteMult * 100).round() / 100.0;
+        final safeMatBox = math.max(0.1, mat.boxCoverageM2);
+        final groupBoxes = (groupM2WithWaste / safeMatBox).ceil();
+        final totalCop = groupM2WithWaste * mat.pricePerM2Cop;
+        materials.add(MaterialItem(
+          id: 'mat_custom_floor_${mat.id}',
+          name: 'Acabado Elegido: ${mat.nameEs}',
+          category: MaterialCategory.flooring,
+          quantity: groupM2WithWaste,
+          unit: 'm²',
+          packagingDetail:
+              '$groupBoxes cajas (${safeMatBox.toStringAsFixed(2)} m²/caja) • Est. \$${totalCop.toStringAsFixed(0)} COP',
+          wastePercentage: floorTileWastePercent,
+          yieldFormula:
+              '${mat.specDescriptionEs} (${groupArea.toStringAsFixed(2)} m² + ${floorTileWastePercent.toStringAsFixed(0)}% desp.)',
+          targetRoomNames: entry.value.map((r) => r.name).toList(),
+          estimatedUnitCostCop: mat.pricePerM2Cop,
+          estimatedTotalCostCop: totalCop,
+        ));
+      }
 
       final adhesiveBags = math.max(1, (floorArea / 5.0).ceil());
       materials.add(MaterialItem(
@@ -298,35 +353,6 @@ class RenovationPlannerEngine {
         targetRoomNames: floorRoomNames,
         purchaseTip: 'Se corta del mismo lote de piso o se compran piezas prefabricadas con canto boleado.',
       ));
-
-      // Desglose específico por acabado configurado en 3D / 2D
-      final customFloorGroups = <String, List<Module>>{};
-      for (final room in floorRooms) {
-        if (room.floorMaterialId != null) {
-          customFloorGroups.putIfAbsent(room.floorMaterialId!, () => []).add(room);
-        }
-      }
-      for (final entry in customFloorGroups.entries) {
-        final mat = FinishMaterialCatalog.byId(entry.key);
-        if (mat == null) continue;
-        final groupArea = entry.value.fold(0.0, (s, r) => s + r.area);
-        final groupM2WithWaste = (groupArea * wasteMult * 100).round() / 100.0;
-        final groupBoxes = (groupM2WithWaste / mat.boxCoverageM2).ceil();
-        final totalCop = groupM2WithWaste * mat.pricePerM2Cop;
-        materials.add(MaterialItem(
-          id: 'mat_custom_floor_${mat.id}',
-          name: 'Acabado Elegido: ${mat.nameEs}',
-          category: MaterialCategory.flooring,
-          quantity: groupM2WithWaste,
-          unit: 'm²',
-          packagingDetail: '$groupBoxes cajas (${mat.boxCoverageM2.toStringAsFixed(2)} m²/caja) • Est. \$${totalCop.toStringAsFixed(0)} COP',
-          wastePercentage: floorTileWastePercent,
-          yieldFormula: '${mat.specDescriptionEs} (${groupArea.toStringAsFixed(2)} m² + ${floorTileWastePercent.toStringAsFixed(0)}% desp.)',
-          targetRoomNames: entry.value.map((r) => r.name).toList(),
-          estimatedUnitCostCop: mat.pricePerM2Cop,
-          estimatedTotalCostCop: totalCop,
-        ));
-      }
     }
 
     // 3. CÓMPUTO DE BAÑOS (DIFERENCIANDO COMPLETOS Y MEDIO BAÑOS)
@@ -411,7 +437,7 @@ class RenovationPlannerEngine {
           purchaseTip: 'Aplicar a dos manos cruzadas con tela de refuerzo en los vértices piso-muro.',
         ));
 
-        final wallTilesM2 = fullBCount * 9.5;
+        final wallTilesM2 = (fullBCount * 9.5 * 1.10 * 100).round() / 100.0;
         materials.add(MaterialItem(
           id: 'mat_wall_tiles_bath',
           name: 'Enchape Cerámico para Muros de Ducha',
@@ -420,7 +446,7 @@ class RenovationPlannerEngine {
           unit: 'm²',
           packagingDetail: '${(wallTilesM2 / 1.5).ceil()} cajas de enchape para $fullBCount ducha(s)',
           wastePercentage: 10.0,
-          yieldFormula: 'Aprox. 9.5 m² de superficie vertical por ducha completa (+10% desperdicio)',
+          yieldFormula: 'Aprox. 9.5 m² de superficie vertical por ducha completa + 10% desperdicio',
           targetRoomNames: fullBathNames,
           purchaseTip: 'En muros se recomienda cerámica de pasta blanca o azulejos rectificados para juntas mínimas.',
         ));
@@ -468,26 +494,75 @@ class RenovationPlannerEngine {
       ));
     }
 
-    // 5. CÓMPUTO DE PINTURA DE MUROS
-    if (doPaint && paintRooms.isNotEmpty) {
-      final wallPerimeter = paintRooms.fold(0.0, (sum, r) => sum + r.geometry.perimeter);
-      final grossWallM2 = wallPerimeter * 2.20;
-      final netWallM2 = (grossWallM2 * 0.85);
-      final paintGallons = math.max(1, (netWallM2 * 2 / 25.0).ceil());
+    // 5. CÓMPUTO DE PINTURA Y ACABADOS VERTICALES DE MUROS
+    final customWallGroups = <String, List<Module>>{};
+    for (final room in (doPaint ? paintRooms : activeRooms)) {
+      final customWallMat = FinishMaterialCatalog.byId(room.wallFinishId);
+      if (customWallMat != null) {
+        customWallGroups.putIfAbsent(customWallMat.id, () => []).add(room);
+      }
+    }
 
+    for (final entry in customWallGroups.entries) {
+      final mat = FinishMaterialCatalog.byId(entry.key);
+      if (mat == null) continue;
+      final groupPerimeter =
+          entry.value.fold(0.0, (s, r) => s + r.geometry.perimeter);
+      final netWallM2 =
+          ((groupPerimeter * safeFloorHeight * 0.85) * 100).round() / 100.0;
+      final totalCop = netWallM2 * mat.pricePerM2Cop;
       materials.add(MaterialItem(
-        id: 'mat_paint_walls',
-        name: 'Pintura Vinilo Tipo 1 Lavable (Superficie Muros)',
+        id: 'mat_custom_wall_${mat.id}',
+        name: 'Acabado Vertical Elegido: ${mat.nameEs}',
         category: MaterialCategory.paint,
-        quantity: paintGallons.toDouble(),
-        unit: 'galones',
-        packagingDetail: '${(paintGallons / 5.0).ceil()} cuñete(s) de 5 galones',
-        yieldFormula: 'Superficie neta de muros: ${netWallM2.toStringAsFixed(1)}m² a 2 manos (25 m²/galón)',
-        targetRoomNames: paintRoomNames,
-        purchaseTip: 'Usa pintura antimanchas con bajo olor y VOC para habitar rápido los espacios.',
+        quantity: netWallM2,
+        unit: 'm²',
+        packagingDetail:
+            '${netWallM2.toStringAsFixed(1)} m² netos de muro • Est. \$${totalCop.toStringAsFixed(0)} COP',
+        yieldFormula:
+            '${mat.specDescriptionEs} (Perímetro ${groupPerimeter.toStringAsFixed(1)} m × ${safeFloorHeight.toStringAsFixed(2)} m × 85% área neta)',
+        targetRoomNames: entry.value.map((r) => r.name).toList(),
+        estimatedUnitCostCop: mat.pricePerM2Cop,
+        estimatedTotalCostCop: totalCop,
       ));
+    }
 
-      final stuccoBags = math.max(1, (netWallM2 / 35.0).ceil());
+    if (doPaint && paintRooms.isNotEmpty) {
+      final genericPaintRooms = paintRooms
+          .where((r) => FinishMaterialCatalog.byId(r.wallFinishId) == null)
+          .toList();
+      final totalWallPerimeter =
+          paintRooms.fold(0.0, (sum, r) => sum + r.geometry.perimeter);
+      final totalNetWallM2 = totalWallPerimeter * safeFloorHeight * 0.85;
+
+      if (genericPaintRooms.isNotEmpty) {
+        final genericPerimeter = genericPaintRooms.fold(
+          0.0,
+          (sum, r) => sum + r.geometry.perimeter,
+        );
+        final grossWallM2 = genericPerimeter * safeFloorHeight;
+        final netWallM2 = grossWallM2 * 0.85;
+        final paintGallons = math.max(1, (netWallM2 * 2 / 25.0).ceil());
+        final genericPaintNames =
+            genericPaintRooms.map((r) => r.name).toList();
+
+        materials.add(MaterialItem(
+          id: 'mat_paint_walls',
+          name: 'Pintura Vinilo Tipo 1 Lavable (Superficie Muros)',
+          category: MaterialCategory.paint,
+          quantity: paintGallons.toDouble(),
+          unit: 'galones',
+          packagingDetail: '${(paintGallons / 5.0).ceil()} cuñete(s) de 5 galones',
+          yieldFormula:
+              'Superficie neta de muros: ${netWallM2.toStringAsFixed(1)}m² (h=${safeFloorHeight.toStringAsFixed(2)}m) a 2 manos (25 m²/galón)',
+          targetRoomNames: genericPaintNames,
+          purchaseTip:
+              'Usa pintura antimanchas con bajo olor y VOC para habitar rápido los espacios.',
+        ));
+      }
+
+      // 25 kg bag of stucco covers ~20 m² at 1.25 kg/m²
+      final stuccoBags = math.max(1, (totalNetWallM2 / 20.0).ceil());
       materials.add(MaterialItem(
         id: 'mat_stucco_walls',
         name: 'Estuco Plástico para Resane y Preparación',
@@ -495,7 +570,8 @@ class RenovationPlannerEngine {
         quantity: stuccoBags.toDouble(),
         unit: 'bultos (25 kg)',
         packagingDetail: 'Bultos de estuco en polvo de 25 kg',
-        yieldFormula: 'Rendimiento: 1.2 a 1.5 kg/m² para alistamiento de muros antes de pintar',
+        yieldFormula:
+            'Rendimiento: 1.25 kg/m² (20 m²/bulto de 25 kg) para alistamiento de muros antes de pintar',
         targetRoomNames: paintRoomNames,
       ));
     }
@@ -544,31 +620,64 @@ class RenovationPlannerEngine {
     // 7. PLANIFICACIÓN DE CUADRILLAS (SECUENCIAL VS PARALELO)
     final bNum = candidateBathrooms.length;
     final kNum = kitchens.length;
-    final fArea = floorArea;
+    final effectiveBathCount = doBaths ? bNum : 0;
+    final effectiveFullBathCount = doBaths ? fullBathrooms.length : 0;
+    final effectiveKitchenCount = doKitchen ? kNum : 0;
+    final fArea = doFloors ? floorArea : 0.0;
 
-    final tilerDaysTotal = doFloors ? math.max(2, (fArea / 6.0).ceil() + (fullBathrooms.length * 3) + (kNum * 1)) : (fullBathrooms.length * 3);
-    final plumberDaysTotal = doBaths || doKitchen ? math.max(1, (bNum * 2) + (kNum * 1)) : 0;
-    final painterDaysTotal = doPaint ? math.max(2, (paintRooms.fold(0.0, (s, r) => s + r.area) / 12.0).ceil()) : 0;
-    final electricianDaysTotal = doLighting ? math.max(1, (lightingArea / 25.0).ceil()) : 0;
-    final demolitionDaysTotal = math.max(1, (fArea / 20.0).ceil() + bNum);
+    final tilerDaysTotal = doFloors
+        ? math.max(
+            2,
+            (fArea / 6.0).ceil() +
+                (effectiveFullBathCount * 3) +
+                (effectiveKitchenCount * 1),
+          )
+        : (effectiveFullBathCount * 3) + (effectiveKitchenCount * 1);
+    final plumberDaysTotal =
+        (effectiveBathCount > 0 || effectiveKitchenCount > 0)
+            ? math.max(1, (effectiveBathCount * 2) + (effectiveKitchenCount * 1))
+            : 0;
+    final hasPaintOrWallWork = doPaint || customWallGroups.isNotEmpty;
+    final painterDaysTotal = hasPaintOrWallWork
+        ? math.max(
+            2,
+            (paintRooms.fold(0.0, (s, r) => s + r.area) / 12.0).ceil(),
+          )
+        : 0;
+    final electricianDaysTotal =
+        doLighting ? math.max(1, (lightingArea / 25.0).ceil()) : 0;
+    final demolitionDaysTotal =
+        math.max(1, (fArea / 20.0).ceil() + effectiveBathCount);
 
     final sequentialCrews = <SpecialistCrew>[
-      if (doFloors || fullBathrooms.isNotEmpty)
+      if (tilerDaysTotal > 0)
         SpecialistCrew(
           roleName: 'Oficial Enchapador / Solador',
           headcount: 1,
           estimatedDays: tilerDaysTotal,
-          scopeDescription: 'Nivelación de piso, colocación de cerámica, fraguado de juntas y pegado de zócalos.',
-          equipmentNeeded: ['Cortadora de cerámica manual y eléctrica', 'Llanas dentadas de 8 y 10 mm', 'Nivel láser o de burbuja', 'Mazo de goma'],
+          scopeDescription:
+              'Nivelación de piso, colocación de cerámica, fraguado de juntas y pegado de zócalos.',
+          equipmentNeeded: [
+            'Cortadora de cerámica manual y eléctrica',
+            'Llanas dentadas de 8 y 10 mm',
+            'Nivel láser o de burbuja',
+            'Mazo de goma',
+          ],
           icon: Icons.square_foot,
         ),
-      if (bNum > 0 || kNum > 0)
+      if (plumberDaysTotal > 0)
         SpecialistCrew(
           roleName: 'Técnico Plomero / Fontanero',
           headcount: 1,
           estimatedDays: plumberDaysTotal,
-          scopeDescription: 'Adecuación de redes de agua fría/caliente, desagües, montaje de sanitarios y lavamanos ($bNum baños, ${fullBathrooms.length} con ducha).',
-          equipmentNeeded: ['Termofusora o pegante PVC', 'Llaves Stillson y perico', 'Soplete/expansor', 'Manómetro de prueba de presión'],
+          scopeDescription:
+              'Adecuación de redes de agua fría/caliente, desagües, montaje de sanitarios y lavamanos ($effectiveBathCount baños, $effectiveFullBathCount con ducha).',
+          equipmentNeeded: [
+            'Termofusora o pegante PVC',
+            'Llaves Stillson y perico',
+            'Soplete/expansor',
+            'Manómetro de prueba de presión',
+          ],
           icon: Icons.plumbing,
         ),
       if (doLighting)
@@ -576,52 +685,79 @@ class RenovationPlannerEngine {
           roleName: 'Técnico Electricista / Iluminación LED',
           headcount: 1,
           estimatedDays: electricianDaysTotal,
-          scopeDescription: 'Trazado de circuitos, alambrado en tubería conduit, conexión de drivers y montaje de luminarias LED.',
-          equipmentNeeded: ['Multímetro digital', 'Guía pasacables de nylon', 'Pinzas pelacables', 'Broca de copa para cielo raso'],
+          scopeDescription:
+              'Trazado de circuitos, alambrado en tubería conduit, conexión de drivers y montaje de luminarias LED.',
+          equipmentNeeded: [
+            'Multímetro digital',
+            'Guía pasacables de nylon',
+            'Pinzas pelacables',
+            'Broca de copa para cielo raso',
+          ],
           icon: Icons.lightbulb,
         ),
-      if (doPaint)
+      if (hasPaintOrWallWork)
         SpecialistCrew(
           roleName: 'Oficial Pintor',
           headcount: 1,
           estimatedDays: painterDaysTotal,
-          scopeDescription: 'Resane de grietas, aplicación de estuco plástico y 2 manos de pintura vinilo en muros y techos.',
-          equipmentNeeded: ['Espátulas y llanas de estuco', 'Lijadora orbital o tacos de lija', 'Rodillos antigota y brochas de corte'],
+          scopeDescription:
+              'Resane de grietas, aplicación de estuco plástico y acabado vertical en muros y techos.',
+          equipmentNeeded: [
+            'Espátulas y llanas de estuco',
+            'Lijadora orbital o tacos de lija',
+            'Rodillos antigota y brochas de corte',
+          ],
           icon: Icons.brush,
         ),
       SpecialistCrew(
         roleName: 'Ayudante de Obra General',
         headcount: 1,
         estimatedDays: math.max(demolitionDaysTotal, (tilerDaysTotal * 0.8).ceil()),
-        scopeDescription: 'Demolición, cargue y desalojo de escombros, preparación de mezclas y limpieza general continua.',
-        equipmentNeeded: ['Carretilla', 'Pica y pala', 'Costales para escombros', 'Barretón'],
+        scopeDescription:
+            'Demolición, cargue y desalojo de escombros, preparación de mezclas y limpieza general continua.',
+        equipmentNeeded: [
+          'Carretilla',
+          'Pica y pala',
+          'Costales para escombros',
+          'Barretón',
+        ],
         icon: Icons.handyman,
       ),
     ];
 
     // Cuadrilla Paralela
-    final parallelTilerCount = bNum >= 2 ? math.min(3, bNum) : 2;
-    final parallelPlumberCount = bNum >= 2 ? 2 : 1;
-    final parallelTilerDays = (tilerDaysTotal / parallelTilerCount).ceil();
-    final parallelPlumberDays = (plumberDaysTotal / parallelPlumberCount).ceil();
-    final parallelAyudantes = 2;
+    final parallelTilerCount =
+        effectiveBathCount >= 2 ? math.min(3, effectiveBathCount) : 2;
+    final parallelPlumberCount = effectiveBathCount >= 2 ? 2 : 1;
+    final parallelTilerDays = tilerDaysTotal > 0
+        ? math.max(1, (tilerDaysTotal / parallelTilerCount).ceil())
+        : 0;
+    final parallelPlumberDays = plumberDaysTotal > 0
+        ? math.max(1, (plumberDaysTotal / parallelPlumberCount).ceil())
+        : 0;
+    const parallelAyudantes = 2;
 
     final parallelCrews = <SpecialistCrew>[
-      if (doFloors || fullBathrooms.isNotEmpty)
+      if (tilerDaysTotal > 0)
         SpecialistCrew(
           roleName: 'Oficiales Enchapadores (Frente Dividido)',
           headcount: parallelTilerCount,
           estimatedDays: parallelTilerDays,
-          scopeDescription: '$parallelTilerCount enchapadores en simultáneo (uno en baños y otro avanzando en pisos de zonas sociales y dormitorios).',
-          equipmentNeeded: ['Doble dotación de cortadoras y llanas dentadas', 'Nivel láser 360 grados'],
+          scopeDescription:
+              '$parallelTilerCount enchapadores en simultáneo (uno en baños y otro avanzando en pisos de zonas sociales y dormitorios).',
+          equipmentNeeded: [
+            'Doble dotación de cortadoras y llanas dentadas',
+            'Nivel láser 360 grados',
+          ],
           icon: Icons.groups,
         ),
-      if (bNum > 0 || kNum > 0)
+      if (plumberDaysTotal > 0)
         SpecialistCrew(
           roleName: 'Técnicos Plomeros en Paralelo',
           headcount: parallelPlumberCount,
           estimatedDays: parallelPlumberDays,
-          scopeDescription: '$parallelPlumberCount plomeros interviniendo puntos húmedos a la vez para acortar tiempos de corte de agua.',
+          scopeDescription:
+              '$parallelPlumberCount plomeros interviniendo puntos húmedos a la vez para acortar tiempos de corte de agua.',
           equipmentNeeded: ['Herramientas dobles de fontanería'],
           icon: Icons.plumbing,
         ),
@@ -630,10 +766,11 @@ class RenovationPlannerEngine {
           roleName: 'Técnico Electricista (Frente Ágil)',
           headcount: 1,
           estimatedDays: electricianDaysTotal,
-          scopeDescription: 'Acompaña la obra canalizando ductos antes del estuco e instalando lámparas al finalizar.',
+          scopeDescription:
+              'Acompaña la obra canalizando ductos antes del estuco e instalando lámparas al finalizar.',
           icon: Icons.lightbulb,
         ),
-      if (doPaint)
+      if (hasPaintOrWallWork)
         SpecialistCrew(
           roleName: 'Oficiales Pintores (2 operarios)',
           headcount: 2,
@@ -644,8 +781,9 @@ class RenovationPlannerEngine {
       SpecialistCrew(
         roleName: 'Ayudantes de Obra (2 operarios)',
         headcount: parallelAyudantes,
-        estimatedDays: parallelTilerDays,
-        scopeDescription: 'Evitan que los oficiales paren por falta de mezcla o acumulación de escombros.',
+        estimatedDays: math.max(1, parallelTilerDays),
+        scopeDescription:
+            'Evitan que los oficiales paren por falta de mezcla o acumulación de escombros.',
         icon: Icons.handyman,
       ),
     ];
@@ -656,78 +794,93 @@ class RenovationPlannerEngine {
       RenovationPhase(
         phaseNumber: phaseIdx++,
         title: 'Desmonte, Demolición y Desalojo de Escombros',
-        description: 'Retiro de pisos anteriores, remoción de sanitarios viejos, picado de revoques sueltos y extracción de escombros en costales.',
+        description:
+            'Retiro de pisos anteriores, remoción de sanitarios viejos, picado de revoques sueltos y extracción de escombros en costales.',
         specialists: ['Ayudantes de obra', 'Oficial de demolición'],
         canParallelize: true,
         estimatedDaysSequential: demolitionDaysTotal,
         estimatedDaysParallel: math.max(1, (demolitionDaysTotal / 2).ceil()),
-        parallelTip: 'Si se dispone de 2 ayudantes, se demuele un baño mientras en el otro se retiran los escombros al volquete.',
+        parallelTip:
+            'Si se dispone de 2 ayudantes, se demuele un frente mientras en el otro se retiran los escombros al volquete.',
       ),
-      if (bNum > 0 || kNum > 0)
+      if (plumberDaysTotal > 0)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Adecuación de Redes Hidrosanitarias y Gas',
-          description: 'Regateo en muro, reubicación de puntos de agua fría y caliente, desagües de 2" y 4", y prueba hidráulica con manómetro.',
+          description:
+              'Regateo en muro, reubicación de puntos de agua fría y caliente, desagües de 2" y 4", y prueba hidráulica con manómetro.',
           specialists: ['Plomero / Fontanero certificado'],
-          canParallelize: bNum >= 2,
+          canParallelize: effectiveBathCount >= 2,
           estimatedDaysSequential: plumberDaysTotal,
           estimatedDaysParallel: parallelPlumberDays,
-          parallelTip: 'Con 2 plomeros se intervienen los baños en simultáneo sin dejar la casa sin suministro más de 4 horas por día.',
+          parallelTip:
+              'Con 2 plomeros se intervienen los baños en simultáneo sin dejar la casa sin suministro más de 4 horas por día.',
         ),
       if (doLighting)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Canalizaciones y Circuitos de Iluminación LED',
-          description: 'Ranurado en muros y cielo raso, tendido de tubería conduit corrugada, paso de cable THHN y fijación de cajas de paso.',
+          description:
+              'Ranurado en muros y cielo raso, tendido de tubería conduit corrugada, paso de cable THHN y fijación de cajas de paso.',
           specialists: ['Técnico Electricista'],
           canParallelize: true,
           estimatedDaysSequential: electricianDaysTotal,
           estimatedDaysParallel: math.max(1, (electricianDaysTotal / 2).ceil()),
-          parallelTip: 'Se ejecuta en paralelo con el secado de resanes hidrosanitarios antes de iniciar estuco y pintura.',
+          parallelTip:
+              'Se ejecuta en paralelo con el secado de resanes hidrosanitarios antes de iniciar estuco y pintura.',
         ),
-      if (fullBathrooms.isNotEmpty)
+      if (effectiveFullBathCount > 0)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Impermeabilización de Duchas y Frisos',
-          description: 'Aplicación de membrana acrílica o mortero elastomérico en zona de ducha hasta 1.80 m de altura y prueba de estanqueidad (24 horas).',
+          description:
+              'Aplicación de membrana acrílica o mortero elastomérico en zona de ducha hasta 1.80 m de altura y prueba de estanqueidad (24 horas).',
           specialists: ['Plomero / Enchapador'],
           canParallelize: true,
-          estimatedDaysSequential: math.max(1, fullBathrooms.length),
+          estimatedDaysSequential: math.max(1, effectiveFullBathCount),
           estimatedDaysParallel: 1,
-          parallelTip: 'La impermeabilización debe secar 24h antes del enchape. Mientras seca, el personal puede alistar pisos en las habitaciones.',
+          parallelTip:
+              'La impermeabilización debe secar 24h antes del enchape. Mientras seca, el personal puede alistar pisos en las habitaciones.',
         ),
-      if (doFloors || fullBathrooms.isNotEmpty)
+      if (tilerDaysTotal > 0)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Instalación de Enchapes, Pisos y Zócalos',
-          description: 'Nivelación con mortero, tendido de pegamento con llana dentada, colocación de porcelanato/cerámica con crucetas niveladoras y fraguado.',
+          description:
+              'Nivelación con mortero, tendido de pegamento con llana dentada, colocación de porcelanato/cerámica con crucetas niveladoras y fraguado.',
           specialists: ['Oficial Enchapador', 'Ayudante'],
           canParallelize: true,
           estimatedDaysSequential: tilerDaysTotal,
           estimatedDaysParallel: parallelTilerDays,
-          parallelTip: 'CRÍTICO: Un enchapador arranca por el piso general desde el fondo hacia la salida, mientras el segundo enchapador enchapa las paredes del baño.',
+          parallelTip:
+              'CRÍTICO: Un enchapador arranca por el piso general desde el fondo hacia la salida, mientras el segundo enchapador enchapa las paredes del baño.',
         ),
-      if (bNum > 0 || kNum > 0)
+      if (plumberDaysTotal > 0)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Instalación de Aparatos Sanitarios, Griferías y Silicona',
-          description: 'Montaje de inodoros con brida sanitaria, fijación de muebles de baño, conexión de griferías, kit de ducha y sellado con silicona antihongos.',
+          description:
+              'Montaje de inodoros con brida sanitaria, fijación de muebles de baño, conexión de griferías, kit de ducha y sellado con silicona antihongos.',
           specialists: ['Plomero / Fontanero'],
           canParallelize: true,
-          estimatedDaysSequential: math.max(1, (bNum * 0.8).ceil()),
+          estimatedDaysSequential:
+              math.max(1, ((effectiveBathCount + effectiveKitchenCount) * 0.8).ceil()),
           estimatedDaysParallel: 1,
-          parallelTip: 'Se hace una vez que el fragüe de las juntas esté 100% seco para no manchar ni pisar baldosas frescas.',
+          parallelTip:
+              'Se hace una vez que el fragüe de las juntas esté 100% seco para no manchar ni pisar baldosas frescas.',
         ),
-      if (doPaint || doLighting)
+      if (hasPaintOrWallWork || doLighting)
         RenovationPhase(
           phaseNumber: phaseIdx++,
           title: 'Pintura Final, Montaje de Paneles LED y Limpieza',
-          description: 'Lijado suave, aplicación de 2 manos de pintura vinilo en muros, conexión de paneles LED embebidos y limpieza química de residuos.',
+          description:
+              'Lijado suave, aplicación de 2 manos de pintura vinilo en muros, conexión de paneles LED embebidos y limpieza química de residuos.',
           specialists: ['Pintor', 'Electricista', 'Ayudante'],
           canParallelize: true,
           estimatedDaysSequential: painterDaysTotal + (doLighting ? 1 : 0),
           estimatedDaysParallel: math.max(1, (painterDaysTotal / 2).ceil()),
-          parallelTip: 'Montar las luminarias LED con guantes limpios inmediatamente después de la segunda mano de pintura.',
+          parallelTip:
+              'Montar las luminarias LED con guantes limpios inmediatamente después de la segunda mano de pintura.',
         ),
     ];
 

@@ -121,5 +121,60 @@ void main() {
       expect(plan.daysSaved, greaterThan(0));
       expect(plan.timeReductionPercent, greaterThan(25.0));
     });
+
+    test('No duplica pisos con acabado 3D/2D personalizado y computa wallFinishId y exclusión de demolición', () {
+      final roomsWithCustomFinishes = [
+        sampleRooms[0].copyWith(
+          floorMaterialId: 'floor_oak_wood',
+          wallFinishId: 'wall_japandi_sand',
+        ), // 20.0 m² custom floor + custom wall
+        sampleRooms[1], // 7.5 m² generic floor
+        Module(
+          id: 'mod_demolished',
+          floorId: 'fl1',
+          name: 'Muro / Cuarto a Demoler',
+          moduleType: 'BEDROOM',
+          geometry: Polygon2D.fromRect(0, 0, 4.0, 4.0), // 16.0 m²
+          status: ElementStatus.toDemolish,
+        ),
+        Module(
+          id: 'mod_garden',
+          floorId: 'fl1',
+          name: 'Jardín Exterior',
+          moduleType: 'GARDEN',
+          geometry: Polygon2D.fromRect(0, 0, 5.0, 5.0), // 25.0 m²
+          status: ElementStatus.isNew,
+        ),
+      ];
+
+      final plan = RenovationPlannerEngine.generatePlan(
+        allRooms: roomsWithCustomFinishes,
+        renovateFloors: true,
+        renovateBathrooms: false,
+        renovateKitchen: false,
+        renovateWallsPaint: true,
+      );
+
+      // Demolished (16m²) and unpaved garden (25m²) must be excluded: only 20.0 + 7.5 = 27.5 m²
+      expect(plan.totalRenovatedArea, closeTo(27.5, 0.01));
+
+      // Generic floor tile only covers sampleRooms[1] (7.5 m² * 1.10 = 8.25 m²), NOT the 20m² oak room
+      final genericTile = plan.materials.firstWhere((m) => m.id == 'mat_floor_tiles');
+      expect(genericTile.quantity, closeTo(8.25, 0.05));
+
+      // Custom oak floor covers sampleRooms[0] (20.0 m² * 1.10 = 22.0 m²)
+      final customFloor = plan.materials.firstWhere((m) => m.id == 'mat_custom_floor_floor_oak_wood');
+      expect(customFloor.quantity, closeTo(22.0, 0.05));
+
+      // Custom wall finish is emitted for wall_japandi_sand
+      final customWall = plan.materials.firstWhere((m) => m.id == 'mat_custom_wall_wall_japandi_sand');
+      expect(customWall.quantity, greaterThan(30.0));
+
+      // Since renovateBathrooms & renovateKitchen are false, no plumber crew is scheduled
+      expect(
+        plan.sequentialCrews.any((c) => c.roleName.contains('Plomero')),
+        isFalse,
+      );
+    });
   });
 }

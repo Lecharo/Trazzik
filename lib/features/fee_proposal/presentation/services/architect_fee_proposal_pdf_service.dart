@@ -10,8 +10,9 @@ import 'package:trazzik/features/fee_proposal/domain/architect_fee_proposal.dart
 class ArchitectFeeProposalPdfService {
   static String formatCop(double value) {
     final rounded = value.round();
-    final str = rounded.toString();
-    final buffer = StringBuffer('\$');
+    final isNegative = rounded < 0;
+    final str = rounded.abs().toString();
+    final buffer = StringBuffer(isNegative ? '-\$' : '\$');
     for (int i = 0; i < str.length; i++) {
       if (i > 0 && (str.length - i) % 3 == 0) {
         buffer.write('.');
@@ -493,7 +494,11 @@ class ArchitectFeeProposalPdfService {
 
   static Future<void> shareOrPrintProposal(ArchitectFeeProposal proposal) async {
     final bytes = await generateProposalPdf(proposal);
-    final sanitized = proposal.projectName.replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_');
+    final rawSanitized = proposal.projectName
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    final sanitized = rawSanitized.isEmpty ? 'Proyecto' : rawSanitized;
     await Printing.layoutPdf(
       onLayout: (_) async => bytes,
       name: 'Cotizacion_Honorarios_$sanitized.pdf',

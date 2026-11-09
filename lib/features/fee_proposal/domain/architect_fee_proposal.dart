@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 
 /// Pricing formula used by the architect to calculate professional design fees.
@@ -109,15 +110,43 @@ class ArchitectFeeProposal {
     String architectName = 'Dirección de Proyectos Arquitectónicos',
     String clientName = 'Cliente Titular',
   }) {
-    final nonEmptyFloors = floors;
+    // Deduplicate by floorNumber (preferring base floors over design variants)
+    final uniqueByLevel = <int, Floor>{};
+    for (final f in floors) {
+      final isVariant = f.name.contains('(Opción') || f.name.contains('(Variant');
+      if (!uniqueByLevel.containsKey(f.floorNumber) || !isVariant) {
+        uniqueByLevel[f.floorNumber] = f;
+      }
+    }
+    final nonEmptyFloors =
+        uniqueByLevel.isNotEmpty ? uniqueByLevel.values.toList() : floors;
+
     double builtArea = 0.0;
     int roomsCount = 0;
     for (final f in nonEmptyFloors) {
       builtArea += f.calculatedBuiltArea > 0 ? f.calculatedBuiltArea : f.floorGeometricArea;
-      roomsCount += f.modules.where((m) => !m.isOpening && !m.isStairs).length;
+      roomsCount += f.modules
+          .where(
+            (m) =>
+                m.status != ElementStatus.toDemolish &&
+                !m.isOpening &&
+                !m.isStairs,
+          )
+          .length;
     }
     if (builtArea <= 0) builtArea = 97.0;
     final levels = math.max(1, nonEmptyFloors.length);
+
+    final significantWords = studioName
+        .trim()
+        .split(RegExp(r'\s+'))
+        .where((w) => w.length > 2)
+        .toList();
+    final derivedInitials = significantWords.length >= 2
+        ? '${significantWords[0][0]}${significantWords[1][0]}'.toUpperCase()
+        : (significantWords.isNotEmpty
+              ? significantWords[0].substring(0, math.min(2, significantWords[0].length)).toUpperCase()
+              : 'TZ');
 
     // Scale business days realistically by area and levels (baseline ~36 business days = 7-8 weeks for ~97m²)
     final scaleFactor = (builtArea / 95.0).clamp(0.75, 2.2);
@@ -125,7 +154,7 @@ class ArchitectFeeProposal {
 
     return ArchitectFeeProposal(
       studioName: studioName,
-      studioInitials: 'VB',
+      studioInitials: derivedInitials,
       architectName: architectName,
       architectContact: 'proyectos@trazzik.studio',
       clientName: clientName,
@@ -234,6 +263,9 @@ class ArchitectFeeProposal {
       includedPhases.fold(0, (sum, p) => sum + p.businessDays);
 
   String get estimatedWeeksLabel {
+    if (totalBusinessDays <= 0) {
+      return '0 semanas (0 días hábiles)';
+    }
     final minWeeks = math.max(1, (totalBusinessDays / 5.0).floor());
     final maxWeeks = math.max(minWeeks + 1, (totalBusinessDays / 5.0).ceil() + 1);
     return '$minWeeks – $maxWeeks semanas ($totalBusinessDays días hábiles)';

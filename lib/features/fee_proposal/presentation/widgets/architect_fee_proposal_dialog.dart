@@ -113,6 +113,20 @@ class _ArchitectFeeProposalDialogState
     setState(() => _isExporting = true);
     try {
       await ArchitectFeeProposalPdfService.shareOrPrintProposal(_proposal);
+    } catch (e) {
+      if (mounted) {
+        final lang = ref.read(appLocaleProvider);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              lang == 'es'
+                  ? 'No se pudo generar el PDF de cotización: $e'
+                  : 'Failed to generate fee proposal PDF: $e',
+            ),
+            backgroundColor: Colors.redAccent,
+          ),
+        );
+      }
     } finally {
       if (mounted) setState(() => _isExporting = false);
     }
@@ -260,8 +274,8 @@ class _ArchitectFeeProposalDialogState
                                 ),
                                 selected: _proposal.pricingMode ==
                                     FeePricingMode.perSquareMeter,
-                                onSelected: (_) => setState(
-                                  () => _proposal = _proposal.copyWith(
+                                onSelected: (_) => _updateProposal(
+                                  _proposal.copyWith(
                                     pricingMode: FeePricingMode.perSquareMeter,
                                   ),
                                 ),
@@ -274,8 +288,8 @@ class _ArchitectFeeProposalDialogState
                                 ),
                                 selected: _proposal.pricingMode ==
                                     FeePricingMode.percentageOfConstruction,
-                                onSelected: (_) => setState(
-                                  () => _proposal = _proposal.copyWith(
+                                onSelected: (_) => _updateProposal(
+                                  _proposal.copyWith(
                                     pricingMode:
                                         FeePricingMode.percentageOfConstruction,
                                   ),
@@ -289,8 +303,8 @@ class _ArchitectFeeProposalDialogState
                                 ),
                                 selected:
                                     _proposal.pricingMode == FeePricingMode.fixedFee,
-                                onSelected: (_) => setState(
-                                  () => _proposal = _proposal.copyWith(
+                                onSelected: (_) => _updateProposal(
+                                  _proposal.copyWith(
                                     pricingMode: FeePricingMode.fixedFee,
                                   ),
                                 ),
@@ -306,15 +320,17 @@ class _ArchitectFeeProposalDialogState
                                   width: 220,
                                   child: _buildTextField(
                                     controller: _rateM2Ctrl,
-                                    label: 'Tarifa COP / m²',
+                                    label: lang == 'es'
+                                        ? 'Tarifa COP / m²'
+                                        : 'Rate COP / m²',
                                     onChanged: (v) {
                                       final parsed = double.tryParse(v);
                                       if (parsed != null && parsed > 0) {
-                                        setState(() {
-                                          _proposal = _proposal.copyWith(
+                                        _updateProposal(
+                                          _proposal.copyWith(
                                             ratePerM2Cop: parsed,
-                                          );
-                                        });
+                                          ),
+                                        );
                                       }
                                     },
                                   ),
@@ -322,7 +338,9 @@ class _ArchitectFeeProposalDialogState
                                 const SizedBox(width: 14),
                                 Expanded(
                                   child: Text(
-                                    '${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m² × ${ArchitectFeeProposalPdfService.formatCop(_proposal.ratePerM2Cop)}/m² × ${(_proposal.scopeRatio * 100).round()}% alcance',
+                                    lang == 'es'
+                                        ? '${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m² × ${ArchitectFeeProposalPdfService.formatCop(_proposal.ratePerM2Cop)}/m² × ${(_proposal.scopeRatio * 100).round()}% alcance'
+                                        : '${_proposal.totalBuiltAreaM2.toStringAsFixed(1)} m² × ${ArchitectFeeProposalPdfService.formatCop(_proposal.ratePerM2Cop)}/m² × ${(_proposal.scopeRatio * 100).round()}% scope',
                                     style: const TextStyle(
                                       fontSize: 11.5,
                                       color: Colors.white70,
@@ -343,15 +361,17 @@ class _ArchitectFeeProposalDialogState
                                     divisions: 22,
                                     label:
                                         '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}%',
-                                    onChanged: (v) => setState(
-                                      () => _proposal = _proposal.copyWith(
+                                    onChanged: (v) => _updateProposal(
+                                      _proposal.copyWith(
                                         feePercentageOfConstruction: v,
                                       ),
                                     ),
                                   ),
                                 ),
                                 Text(
-                                  '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}% de Obra',
+                                  lang == 'es'
+                                      ? '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}% de Obra'
+                                      : '${_proposal.feePercentageOfConstruction.toStringAsFixed(1)}% of Build Cost',
                                   style: const TextStyle(
                                     fontSize: 12,
                                     fontWeight: FontWeight.bold,
@@ -365,15 +385,17 @@ class _ArchitectFeeProposalDialogState
                               width: 240,
                               child: _buildTextField(
                                 controller: _fixedFeeCtrl,
-                                label: 'Valor Total Fijo (COP)',
+                                label: lang == 'es'
+                                    ? 'Valor Total Fijo (COP)'
+                                    : 'Total Fixed Fee (COP)',
                                 onChanged: (v) {
                                   final parsed = double.tryParse(v);
                                   if (parsed != null && parsed > 0) {
-                                    setState(() {
-                                      _proposal = _proposal.copyWith(
+                                    _updateProposal(
+                                      _proposal.copyWith(
                                         customFixedFeeCop: parsed,
-                                      );
-                                    });
+                                      ),
+                                    );
                                   }
                                 },
                               ),
@@ -420,96 +442,95 @@ class _ArchitectFeeProposalDialogState
                             Checkbox(
                               value: phase.included,
                               activeColor: const Color(0xFF00E5FF),
-                              onChanged: (val) {
-                                if (val == null) return;
-                                final updated = List<DesignScopePhase>.from(
-                                  _proposal.phases,
-                                );
-                                updated[idx] = phase.copyWith(included: val);
-                                setState(() {
-                                  _proposal = _proposal.copyWith(phases: updated);
-                                });
-                              },
-                            ),
-                            Text(
-                              phase.code,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.bold,
-                                color: Color(0xFF00E5FF),
+                                onChanged: (val) {
+                                  if (val == null) return;
+                                  final updated = List<DesignScopePhase>.from(
+                                    _proposal.phases,
+                                  );
+                                  updated[idx] = phase.copyWith(included: val);
+                                  _updateProposal(
+                                    _proposal.copyWith(phases: updated),
+                                  );
+                                },
                               ),
-                            ),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    phase.title,
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.bold,
-                                      color: phase.included
-                                          ? Colors.white
-                                          : Colors.white38,
+                              Text(
+                                phase.code,
+                                style: const TextStyle(
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.bold,
+                                  color: Color(0xFF00E5FF),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      phase.title,
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                        color: phase.included
+                                            ? Colors.white
+                                            : Colors.white38,
+                                      ),
                                     ),
-                                  ),
-                                  Text(
-                                    phase.description,
-                                    maxLines: 2,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(
-                                      fontSize: 10.5,
-                                      color: Color(0xFF94A3B8),
+                                    Text(
+                                      phase.description,
+                                      maxLines: 2,
+                                      overflow: TextOverflow.ellipsis,
+                                      style: const TextStyle(
+                                        fontSize: 10.5,
+                                        color: Color(0xFF94A3B8),
+                                      ),
                                     ),
-                                  ),
-                                ],
+                                  ],
+                                ),
                               ),
-                            ),
-                            const SizedBox(width: 8),
-                            IconButton(
-                              icon: const Icon(Icons.remove_circle_outline, size: 18),
-                              color: Colors.white54,
-                              visualDensity: VisualDensity.compact,
-                              onPressed: phase.businessDays > 1
-                                  ? () {
-                                      final updated = List<DesignScopePhase>.from(
-                                        _proposal.phases,
-                                      );
-                                      updated[idx] = phase.copyWith(
-                                        businessDays: phase.businessDays - 1,
-                                      );
-                                      setState(() {
-                                        _proposal =
-                                            _proposal.copyWith(phases: updated);
-                                      });
-                                    }
-                                  : null,
-                            ),
-                            Text(
-                              '${phase.businessDays} d',
-                              style: const TextStyle(
-                                fontSize: 11.5,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
+                              const SizedBox(width: 8),
+                              IconButton(
+                                icon: const Icon(Icons.remove_circle_outline, size: 18),
+                                color: Colors.white54,
+                                visualDensity: VisualDensity.compact,
+                                onPressed: phase.businessDays > 1
+                                    ? () {
+                                        final updated = List<DesignScopePhase>.from(
+                                          _proposal.phases,
+                                        );
+                                        updated[idx] = phase.copyWith(
+                                          businessDays: phase.businessDays - 1,
+                                        );
+                                        _updateProposal(
+                                          _proposal.copyWith(phases: updated),
+                                        );
+                                      }
+                                    : null,
                               ),
-                            ),
-                            IconButton(
-                              icon: const Icon(Icons.add_circle_outline, size: 18),
-                              color: const Color(0xFF00E5FF),
-                              visualDensity: VisualDensity.compact,
-                              onPressed: () {
-                                final updated = List<DesignScopePhase>.from(
-                                  _proposal.phases,
-                                );
-                                updated[idx] = phase.copyWith(
-                                  businessDays: phase.businessDays + 1,
-                                );
-                                setState(() {
-                                  _proposal = _proposal.copyWith(phases: updated);
-                                });
-                              },
-                            ),
+                              Text(
+                                '${phase.businessDays} d',
+                                style: const TextStyle(
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.add_circle_outline, size: 18),
+                                color: const Color(0xFF00E5FF),
+                                visualDensity: VisualDensity.compact,
+                                onPressed: () {
+                                  final updated = List<DesignScopePhase>.from(
+                                    _proposal.phases,
+                                  );
+                                  updated[idx] = phase.copyWith(
+                                    businessDays: phase.businessDays + 1,
+                                  );
+                                  _updateProposal(
+                                    _proposal.copyWith(phases: updated),
+                                  );
+                                },
+                              ),
                           ],
                         ),
                       );
