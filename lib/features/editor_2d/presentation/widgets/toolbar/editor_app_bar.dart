@@ -10,6 +10,7 @@ import 'package:trazzik/features/editor_2d/presentation/widgets/project_area_sch
 import 'package:trazzik/features/editor_2d/presentation/widgets/space_catalog_dialog.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_dialogs.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_zoom_controls.dart';
+import 'package:trazzik/features/fee_proposal/presentation/widgets/architect_fee_proposal_dialog.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/plan_export/presentation/screens/technical_plan_export_screen.dart';
 import 'package:trazzik/features/projects/presentation/screens/lot_setup_screen.dart';
@@ -885,6 +886,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         Icons.cottage_outlined,
         lang == 'es' ? 'Programa Vivienda 2 Pisos' : '2-Story Brief Wizard',
       ),
+      _menuItem(
+        'fee_proposal',
+        Icons.request_quote_outlined,
+        lang == 'es'
+            ? 'Cotizar Honorarios Profesionales (PDF)'
+            : 'Architect Fee Proposal (PDF)',
+      ),
       const PopupMenuDivider(),
       ..._buildSharedTransformAndResetItems(lang, verboseLabels: true),
     ];
@@ -914,6 +922,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         lang == 'es'
             ? 'Plan de Obra y Materiales IA'
             : 'AI Renovation & Materials',
+      ),
+      _menuItem(
+        'fee_proposal',
+        Icons.request_quote_outlined,
+        lang == 'es'
+            ? 'Cotizar Honorarios Profesionales (PDF)'
+            : 'Architect Fee Proposal (PDF)',
       ),
       _menuItem(
         'cinematic_tour',
@@ -1042,6 +1057,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         break;
       case 'renovation_planner':
         RenovationPlannerDialog.show(context);
+        break;
+      case 'fee_proposal':
+        ArchitectFeeProposalDialog.show(context);
         break;
       case 'cinematic_tour':
         onStartTour();

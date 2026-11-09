@@ -177,30 +177,99 @@ class _TechnicalPlanExportScreenState
               child: _buildSettingsSidebar(),
             ),
 
-          // Visor y Generador de PDF
+          // Visor y Generador de PDF + Barra rápida de Especialidad Técnica
           Expanded(
-            child: PdfPreview(
-              build: _generatePdf,
-              initialPageFormat: _options.pageFormat.landscape,
-              allowPrinting: true,
-              allowSharing: true,
-              canChangePageFormat: false,
-              canChangeOrientation: false,
-              pdfFileName:
-                  '${_options.projectName.replaceAll(' ', '_')}_${floorName}_${_options.sheetCode}.pdf',
-              loadingWidget: const Center(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    CircularProgressIndicator(color: Color(0xFF00E5FF)),
-                    SizedBox(height: 12),
-                    Text(
-                      'Trazando lámina ejecutiva y cuadro de superficies...',
-                      style: TextStyle(color: Colors.white70, fontSize: 13),
+            child: Column(
+              children: [
+                Container(
+                  height: 46,
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  decoration: const BoxDecoration(
+                    color: Color(0xFF112240),
+                    border: Border(
+                      bottom: BorderSide(color: Color(0xFF233554)),
                     ),
-                  ],
+                  ),
+                  child: ListView(
+                    scrollDirection: Axis.horizontal,
+                    children: [
+                      const Center(
+                        child: Padding(
+                          padding: EdgeInsets.only(right: 10),
+                          child: Text(
+                            'Especialidad:',
+                            style: TextStyle(
+                              color: Colors.white70,
+                              fontSize: 11.5,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ),
+                      for (final d in PlanDiscipline.values)
+                        Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 3,
+                            vertical: 7,
+                          ),
+                          child: ChoiceChip(
+                            label: Text(
+                              d.shortLabelEs,
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: _options.discipline == d
+                                    ? FontWeight.w800
+                                    : FontWeight.w500,
+                                color: _options.discipline == d
+                                    ? const Color(0xFF0A192F)
+                                    : Colors.white70,
+                              ),
+                            ),
+                            selected: _options.discipline == d,
+                            selectedColor: const Color(0xFF00E5FF),
+                            backgroundColor: const Color(0xFF0A192F),
+                            visualDensity: VisualDensity.compact,
+                            onSelected: (_) {
+                              _sheetCodeCtrl.text = d.defaultSheetCode;
+                              setState(() {
+                                _options = _options.copyWith(
+                                  discipline: d,
+                                  sheetCode: d.defaultSheetCode,
+                                  sheetTitle: d.defaultSheetTitle,
+                                );
+                              });
+                            },
+                          ),
+                        ),
+                    ],
+                  ),
                 ),
-              ),
+                Expanded(
+                  child: PdfPreview(
+                    build: _generatePdf,
+                    initialPageFormat: _options.pageFormat.landscape,
+                    allowPrinting: true,
+                    allowSharing: true,
+                    canChangePageFormat: false,
+                    canChangeOrientation: false,
+                    pdfFileName:
+                        '${_options.projectName.replaceAll(' ', '_')}_${floorName}_${_options.sheetCode}.pdf',
+                    loadingWidget: const Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          CircularProgressIndicator(color: Color(0xFF00E5FF)),
+                          SizedBox(height: 12),
+                          Text(
+                            'Trazando lámina ejecutiva y cuadro de superficies...',
+                            style: TextStyle(color: Colors.white70, fontSize: 13),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ],
@@ -229,6 +298,44 @@ class _TechnicalPlanExportScreenState
           ],
         ),
         const SizedBox(height: 14),
+
+        // Especialidad Técnica del Plano
+        const Text(
+          'Especialidad del Plano:',
+          style: TextStyle(color: Colors.white70, fontSize: 12),
+        ),
+        const SizedBox(height: 4),
+        DropdownButtonFormField<PlanDiscipline>(
+          initialValue: _options.discipline,
+          dropdownColor: const Color(0xFF112240),
+          decoration: const InputDecoration(
+            isDense: true,
+            border: OutlineInputBorder(),
+          ),
+          items: [
+            for (final d in PlanDiscipline.values)
+              DropdownMenuItem(
+                value: d,
+                child: Text(
+                  d.shortLabelEs,
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+          ],
+          onChanged: (val) {
+            if (val != null) {
+              _sheetCodeCtrl.text = val.defaultSheetCode;
+              setState(() {
+                _options = _options.copyWith(
+                  discipline: val,
+                  sheetCode: val.defaultSheetCode,
+                  sheetTitle: val.defaultSheetTitle,
+                );
+              });
+            }
+          },
+        ),
+        const SizedBox(height: 12),
 
         // Tamaño de Hoja
         const Text(
@@ -342,6 +449,18 @@ class _TechnicalPlanExportScreenState
           activeThumbColor: const Color(0xFF00E5FF),
           onChanged: (val) => setState(
               () => _options = _options.copyWith(includeAuditPage: val)),
+        ),
+        SwitchListTile(
+          dense: true,
+          contentPadding: EdgeInsets.zero,
+          title: const Text(
+            'Página: Despiece de Carpintería (PL-CARP)',
+            style: TextStyle(fontSize: 12),
+          ),
+          value: _options.includeMillworkPage,
+          activeThumbColor: const Color(0xFF00E5FF),
+          onChanged: (val) => setState(
+              () => _options = _options.copyWith(includeMillworkPage: val)),
         ),
 
         const Divider(color: Color(0xFF233554), height: 28),

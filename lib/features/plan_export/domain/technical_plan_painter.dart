@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:trazzik/core/cad/cad_symbol_drawer.dart';
 import 'package:trazzik/core/geometry/bounding_box_2d.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -61,6 +62,22 @@ class TechnicalPlanPainter extends CustomPainter {
     final rangeX = math.max(1.0, maxX - minX);
     final rangeY = math.max(1.0, maxY - minY);
 
+    // Si es Comparativa Levantamiento vs Propuesta, dividir lámina en 2 columnas
+    if (options.discipline == PlanDiscipline.comparativeBeforeAfter) {
+      _paintComparativeSplit(
+        canvas,
+        size,
+        minX,
+        maxX,
+        minY,
+        maxY,
+        rangeX,
+        rangeY,
+        marginMeters,
+      );
+      return;
+    }
+
     // Margen perimetral en la lámina (px)
     final paddingPx = 36.0;
     final availWidth = size.width - 2 * paddingPx;
@@ -107,6 +124,9 @@ class TechnicalPlanPainter extends CustomPainter {
       }
     }
 
+    // 6b. Capas técnicas por especialidad (Eléctrico, Hidrosanitario, Demolición, Acabados)
+    _drawDisciplineLayer(canvas, toCanvas, scale, size);
+
     // 7. Dibujar Cotas Generales de Arquitectura
     if (options.includeDimensions) {
       _drawDimensions(canvas, toCanvas, scale, minX + marginMeters,
@@ -114,6 +134,124 @@ class TechnicalPlanPainter extends CustomPainter {
     }
 
     // 8. Dibujar Rosa de los Vientos (North Arrow) y Barra de Escala Gráfica
+    _drawNorthArrowAndScaleBar(canvas, size, scale);
+  }
+
+  /// Renderiza la lámina comparativa lado a lado: Levantamiento (Izquierda) vs Propuesta (Derecha).
+  void _paintComparativeSplit(
+    Canvas canvas,
+    Size size,
+    double minX,
+    double maxX,
+    double minY,
+    double maxY,
+    double rangeX,
+    double rangeY,
+    double marginMeters,
+  ) {
+    final halfW = size.width / 2;
+    final topBannerH = 32.0;
+    final paddingPx = 24.0;
+    final availW = halfW - 2 * paddingPx;
+    final availH = size.height - topBannerH - 2 * paddingPx;
+
+    final scale = math.min(availW / rangeX, availH / rangeY);
+
+    // Línea divisoria central
+    final dividerPaint = Paint()
+      ..color = const Color(0xFFB0BEC5)
+      ..strokeWidth = 1.2;
+    canvas.drawLine(
+      Offset(halfW, 12),
+      Offset(halfW, size.height - 12),
+      dividerPaint,
+    );
+
+    void renderHalf({
+      required double panelLeft,
+      required String title,
+      required Color badgeColor,
+      required bool isBeforeState,
+    }) {
+      // Encabezado de columna
+      final headerRect = Rect.fromLTWH(panelLeft + 24, 12, halfW - 48, 22);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(headerRect, const Radius.circular(4)),
+        Paint()..color = badgeColor.withValues(alpha: 0.12),
+      );
+      final tp = TextPainter(
+        text: TextSpan(
+          text: title,
+          style: TextStyle(
+            color: badgeColor,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.8,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(
+        canvas,
+        Offset(
+          headerRect.center.dx - tp.width / 2,
+          headerRect.center.dy - tp.height / 2,
+        ),
+      );
+
+      final offsetX = panelLeft + paddingPx + (availW - (rangeX * scale)) / 2;
+      final offsetY = topBannerH + paddingPx + (availH - (rangeY * scale)) / 2;
+
+      Offset toCanvas(double x, double y) => Offset(
+            offsetX + (x - minX) * scale,
+            offsetY + (y - minY) * scale,
+          );
+
+      if (lot != null && lot!.boundary.vertices.isNotEmpty) {
+        _drawLot(canvas, lot!, toCanvas, scale);
+      }
+
+      for (final module in floor.modules) {
+        if (isBeforeState && module.status == ElementStatus.isNew) {
+          continue; // En estado actual no existen los recintos nuevos
+        }
+        if (!isBeforeState && module.status == ElementStatus.toDemolish) {
+          continue; // En propuesta ya se demolieron
+        }
+        _drawModule(canvas, module, toCanvas, scale);
+      }
+
+      if (options.includeWalls) {
+        for (final wall in floor.walls) {
+          if (isBeforeState && wall.status == ElementStatus.isNew) continue;
+          if (!isBeforeState && wall.status == ElementStatus.toDemolish) continue;
+          _drawWall(canvas, wall, toCanvas, scale);
+        }
+      }
+
+      if (options.includeFurniture && !isBeforeState) {
+        for (final module in floor.modules) {
+          if (module.status == ElementStatus.toDemolish) continue;
+          for (final sub in module.subModules) {
+            _drawFurniture(canvas, module, sub, toCanvas, scale);
+          }
+        }
+      }
+    }
+
+    renderHalf(
+      panelLeft: 0,
+      title: '1. LEVANTAMIENTO ESTADO ACTUAL (EXISTENTE)',
+      badgeColor: const Color(0xFF455A64),
+      isBeforeState: true,
+    );
+    renderHalf(
+      panelLeft: halfW,
+      title: '2. PROPUESTA ARQUITECTÓNICA DE REMODELACIÓN',
+      badgeColor: const Color(0xFF1A237E),
+      isBeforeState: false,
+    );
+
     _drawNorthArrowAndScaleBar(canvas, size, scale);
   }
 
@@ -249,27 +387,87 @@ class TechnicalPlanPainter extends CustomPainter {
       return;
     }
 
-    // Color de relleno según estado arquitectónico
+    // Color de relleno según estado arquitectónico y disciplina
     Color fillColor;
     Color strokeColor;
-    switch (module.status) {
-      case ElementStatus.toDemolish:
-        fillColor = const Color(0xFFFFEBEE); // Rojo tenue demolición
-        strokeColor = const Color(0xFFC62828);
-        break;
-      case ElementStatus.preserved:
-        fillColor = const Color(0xFFE8F5E9); // Verde tenue existente conservado
-        strokeColor = const Color(0xFF2E7D32);
-        break;
-      default:
-        fillColor = const Color(0xFFF5F7FA); // Blanco neutro técnico
-        strokeColor = const Color(0xFF263238);
+    if (options.discipline == PlanDiscipline.finishesSchedule) {
+      final floorMat = FinishMaterialCatalog.resolveFloorForModule(module);
+      fillColor = floorMat.baseColor.withValues(alpha: 0.35);
+      strokeColor = const Color(0xFF263238);
+    } else if (options.discipline == PlanDiscipline.demolitionMasonry) {
+      switch (module.status) {
+        case ElementStatus.toDemolish:
+          fillColor = const Color(0xFFFFCDD2); // Rojo vivo demolición
+          strokeColor = const Color(0xFFB71C1C);
+          break;
+        case ElementStatus.isNew:
+          fillColor = const Color(0xFFE3F2FD); // Azul obra nueva
+          strokeColor = const Color(0xFF0D47A1);
+          break;
+        default:
+          fillColor = const Color(0xFFF5F5F5); // Gris neutro existente
+          strokeColor = const Color(0xFF616161);
+      }
+    } else {
+      switch (module.status) {
+        case ElementStatus.toDemolish:
+          fillColor = const Color(0xFFFFEBEE); // Rojo tenue demolición
+          strokeColor = const Color(0xFFC62828);
+          break;
+        case ElementStatus.preserved:
+          fillColor = const Color(0xFFE8F5E9); // Verde tenue existente conservado
+          strokeColor = const Color(0xFF2E7D32);
+          break;
+        default:
+          fillColor = const Color(0xFFF5F7FA); // Blanco neutro técnico
+          strokeColor = const Color(0xFF263238);
+      }
     }
 
     final fillPaint = Paint()
       ..color = fillColor
       ..style = PaintingStyle.fill;
     canvas.drawPath(path, fillPaint);
+
+    // En modo Acabados, dibujar achurado técnico del piso (madera/porcelanato/hidráulico)
+    if (options.discipline == PlanDiscipline.finishesSchedule) {
+      final floorMat = FinishMaterialCatalog.resolveFloorForModule(module);
+      canvas.save();
+      canvas.clipPath(path);
+      final hatchPaint = Paint()
+        ..color = floorMat.accentColor.withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.6;
+      final step = math.max(8.0, scale * 0.45);
+      for (double x = left; x <= left + w; x += step) {
+        canvas.drawLine(Offset(x, top), Offset(x, top + h), hatchPaint);
+      }
+      if (floorMat.pattern != FinishPatternType.woodPlanks) {
+        for (double y = top; y <= top + h; y += step) {
+          canvas.drawLine(Offset(left, y), Offset(left + w, y), hatchPaint);
+        }
+      }
+      canvas.restore();
+    }
+
+    // En modo Demolición, achurado diagonal rojo sobre áreas a demoler
+    if (options.discipline == PlanDiscipline.demolitionMasonry &&
+        module.status == ElementStatus.toDemolish) {
+      canvas.save();
+      canvas.clipPath(path);
+      final hatchPaint = Paint()
+        ..color = const Color(0xFFD32F2F).withValues(alpha: 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9;
+      for (double d = -h; d <= w + h; d += 10.0) {
+        canvas.drawLine(
+          Offset(left + d, top),
+          Offset(left + d - h, top + h),
+          hatchPaint,
+        );
+      }
+      canvas.restore();
+    }
 
     final strokePaint = Paint()
       ..color = strokeColor
@@ -286,6 +484,19 @@ class TechnicalPlanPainter extends CustomPainter {
     final name = module.name.toUpperCase();
     final areaText = '${module.area.toStringAsFixed(2)} m²';
     final nptText = 'N.P.T. +${floor.levelMeters.toStringAsFixed(2)}';
+
+    String extraLine = nptText;
+    if (options.discipline == PlanDiscipline.finishesSchedule) {
+      final floorMat = FinishMaterialCatalog.resolveFloorForModule(module);
+      final wallMat = FinishMaterialCatalog.resolveWallForModule(module);
+      extraLine = 'Piso: ${floorMat.nameEs}\nMuro: ${wallMat.nameEs}';
+    } else if (options.discipline == PlanDiscipline.demolitionMasonry) {
+      extraLine = module.status == ElementStatus.toDemolish
+          ? 'ESTADO: A DEMOLER'
+          : (module.status == ElementStatus.isNew
+              ? 'ESTADO: OBRA NUEVA'
+              : 'ESTADO: CONSERVADO');
+    }
 
     final textSpan = TextSpan(
       children: [
@@ -307,7 +518,7 @@ class TechnicalPlanPainter extends CustomPainter {
           ),
         ),
         TextSpan(
-          text: nptText,
+          text: extraLine,
           style: const TextStyle(
             color: Color(0xFF546E7A),
             fontSize: 7.5,
@@ -350,8 +561,11 @@ class TechnicalPlanPainter extends CustomPainter {
     Color wallColor;
     if (wall.status == ElementStatus.toDemolish) {
       wallColor = const Color(0xFFD32F2F);
+    } else if (options.discipline == PlanDiscipline.demolitionMasonry &&
+        wall.status == ElementStatus.isNew) {
+      wallColor = const Color(0xFF1565C0); // Azul intenso mampostería nueva
     } else if (wall.status == ElementStatus.preserved) {
-      wallColor = const Color(0xFF37474F);
+      wallColor = const Color(0xFF546E7A);
     } else {
       wallColor = const Color(0xFF1A1A1A); // Negro puro muro cortado CAD
     }
@@ -366,6 +580,301 @@ class TechnicalPlanPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.8;
     canvas.drawPath(wallPath, strokePaint);
+  }
+
+  /// Dibuja la simbología específica según la especialidad seleccionada (Eléctrico, Hidrosanitario, Demolición, Acabados).
+  void _drawDisciplineLayer(
+    Canvas canvas,
+    Offset Function(double, double) toCanvas,
+    double scale,
+    Size size,
+  ) {
+    switch (options.discipline) {
+      case PlanDiscipline.electricalLighting:
+        _drawElectricalLayer(canvas, toCanvas, scale, size);
+        break;
+      case PlanDiscipline.plumbingHydro:
+        _drawPlumbingLayer(canvas, toCanvas, scale, size);
+        break;
+      case PlanDiscipline.demolitionMasonry:
+        _drawDisciplineLegend(
+          canvas,
+          size,
+          title: 'CONVENCIONES DEMOLICIÓN Y MAMPOSTERÍA',
+          items: const [
+            (Color(0xFFD32F2F), 'Muro / Elemento a Demoler'),
+            (Color(0xFF1565C0), 'Mampostería Nueva a Construir'),
+            (Color(0xFF546E7A), 'Estructura / Muro Existente Conservado'),
+          ],
+        );
+        break;
+      case PlanDiscipline.finishesSchedule:
+        _drawDisciplineLegend(
+          canvas,
+          size,
+          title: 'CUADRO TÉCNICO DE ACABADOS',
+          items: const [
+            (Color(0xFF1A237E), 'Piso y Muro especificados por recinto'),
+            (Color(0xFF546E7A), 'Cantidades sincronizadas con Presupuesto BOQ'),
+          ],
+        );
+        break;
+      default:
+        break;
+    }
+  }
+
+  void _drawElectricalLayer(
+    Canvas canvas,
+    Offset Function(double, double) toCanvas,
+    double scale,
+    Size size,
+  ) {
+    final circuitPaint = Paint()
+      ..color = const Color(0xFFE65100)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.1;
+    final fixturePaint = Paint()
+      ..color = const Color(0xFFD84315)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4;
+    final outletPaint = Paint()
+      ..color = const Color(0xFF1565C0)
+      ..style = PaintingStyle.fill;
+
+    for (final module in floor.modules) {
+      if (module.isOpening ||
+          module.isStairs ||
+          module.geometry.vertices.isEmpty ||
+          module.status == ElementStatus.toDemolish) {
+        continue;
+      }
+      final bbox = module.geometry.boundingBox;
+      final center = toCanvas(
+        (bbox.minX + bbox.maxX) / 2,
+        (bbox.minY + bbox.maxY) / 2,
+      );
+      final pMin = toCanvas(bbox.minX, bbox.minY);
+      final pMax = toCanvas(bbox.maxX, bbox.maxY);
+      final left = math.min(pMin.dx, pMax.dx);
+      final top = math.min(pMin.dy, pMax.dy);
+      final right = math.max(pMin.dx, pMax.dx);
+      final bottom = math.max(pMin.dy, pMax.dy);
+
+      // 1. Luminaria LED central (Símbolo CAD ⊕)
+      final lumOffset = Offset(center.dx, center.dy - 24);
+      canvas.drawCircle(
+        lumOffset,
+        7.0,
+        Paint()..color = const Color(0xFFFFF3E0),
+      );
+      canvas.drawCircle(lumOffset, 7.0, fixturePaint);
+      canvas.drawLine(
+        Offset(lumOffset.dx - 5, lumOffset.dy),
+        Offset(lumOffset.dx + 5, lumOffset.dy),
+        fixturePaint,
+      );
+      canvas.drawLine(
+        Offset(lumOffset.dx, lumOffset.dy - 5),
+        Offset(lumOffset.dx, lumOffset.dy + 5),
+        fixturePaint,
+      );
+
+      // 2. Interruptor (S) en acceso del recinto y arco de circuito
+      final switchPt = Offset(left + 12, bottom - 12);
+      final arcPath = Path()
+        ..moveTo(switchPt.dx, switchPt.dy)
+        ..quadraticBezierTo(
+          left + 14,
+          lumOffset.dy,
+          lumOffset.dx - 7,
+          lumOffset.dy,
+        );
+      canvas.drawPath(arcPath, circuitPaint);
+
+      final sPainter = TextPainter(
+        text: const TextSpan(
+          text: 'S',
+          style: TextStyle(
+            color: Color(0xFFE65100),
+            fontWeight: FontWeight.w900,
+            fontSize: 9,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      sPainter.paint(canvas, Offset(switchPt.dx - 4, switchPt.dy - 5));
+
+      // 3. Tomacorrientes dobles 110V (GFCI en zonas húmedas)
+      final isWet = module.moduleType.toUpperCase().contains('BATH') ||
+          module.moduleType.toUpperCase().contains('KITCHEN') ||
+          module.moduleType.toUpperCase().contains('LAUNDRY');
+      final outletPts = [
+        Offset(right - 8, (top + bottom) / 2),
+        Offset((left + right) / 2, top + 8),
+      ];
+      for (final pt in outletPts) {
+        canvas.drawCircle(pt, 4.0, outletPaint);
+        final label = TextPainter(
+          text: TextSpan(
+            text: isWet ? '110V GFCI' : '110V',
+            style: const TextStyle(
+              color: Color(0xFF0D47A1),
+              fontSize: 6.5,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        label.paint(canvas, Offset(pt.dx - label.width / 2, pt.dy + 5));
+      }
+    }
+
+    _drawDisciplineLegend(
+      canvas,
+      size,
+      title: 'CONVENCIONES CABLEADO E ILUMINACIÓN',
+      items: const [
+        (Color(0xFFD84315), '⊕ Luminaria Plafón / Bala LED Techo'),
+        (Color(0xFFE65100), 'S Interruptor Simple + Circuito Conmutado'),
+        (Color(0xFF1565C0), '● Tomacorriente Doble 110V / GFCI'),
+      ],
+    );
+  }
+
+  void _drawPlumbingLayer(
+    Canvas canvas,
+    Offset Function(double, double) toCanvas,
+    double scale,
+    Size size,
+  ) {
+    final coldPaint = Paint()
+      ..color = const Color(0xFF0288D1)
+      ..style = PaintingStyle.fill;
+    final hotPaint = Paint()
+      ..color = const Color(0xFFD32F2F)
+      ..style = PaintingStyle.fill;
+    final drainPaint = Paint()
+      ..color = const Color(0xFF2E7D32)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.6;
+
+    for (final module in floor.modules) {
+      if (module.status == ElementStatus.toDemolish) continue;
+      for (final sub in module.subModules) {
+        final t = sub.type.toUpperCase();
+        final isPlumbing = t.contains('TOILET') ||
+            t.contains('SINK') ||
+            t.contains('VANITY') ||
+            t.contains('WASH') ||
+            t.contains('SHOWER') ||
+            t.contains('BATHTUB');
+        if (!isPlumbing) continue;
+
+        final bbox = sub.geometry.boundingBox;
+        final center = toCanvas(
+          (bbox.minX + bbox.maxX) / 2,
+          (bbox.minY + bbox.maxY) / 2,
+        );
+
+        // Punto Agua Fría (AF Ø1/2")
+        final afPt = Offset(center.dx - 7, center.dy - 7);
+        canvas.drawCircle(afPt, 4.0, coldPaint);
+
+        // Punto Agua Caliente (AC Ø1/2") excepto en inodoro
+        if (!t.contains('TOILET')) {
+          final acPt = Offset(center.dx + 7, center.dy - 7);
+          canvas.drawCircle(acPt, 4.0, hotPaint);
+        }
+
+        // Desagüe Sanitario (DS Ø4" inodoro / Ø2" resto)
+        final dsPt = Offset(center.dx, center.dy + 6);
+        canvas.drawCircle(dsPt, 5.0, drainPaint);
+
+        final pipeLabel = TextPainter(
+          text: TextSpan(
+            text: t.contains('TOILET') ? 'AF + DS Ø4"' : 'AF/AC + DS Ø2"',
+            style: const TextStyle(
+              color: Color(0xFF1B5E20),
+              fontSize: 6.5,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          textDirection: TextDirection.ltr,
+        )..layout();
+        pipeLabel.paint(
+          canvas,
+          Offset(center.dx - pipeLabel.width / 2, dsPt.dy + 6),
+        );
+      }
+    }
+
+    _drawDisciplineLegend(
+      canvas,
+      size,
+      title: 'CONVENCIONES RED HIDROSANITARIA',
+      items: const [
+        (Color(0xFF0288D1), '● Punto Agua Fría Presurizada (AF Ø1/2" PVC)'),
+        (Color(0xFFD32F2F), '● Punto Agua Caliente (AC Ø1/2" CPVC)'),
+        (Color(0xFF2E7D32), '○ Desagüe Sanitario (DS Ø2" / Ø4" PVC)'),
+      ],
+    );
+  }
+
+  void _drawDisciplineLegend(
+    Canvas canvas,
+    Size size, {
+    required String title,
+    required List<(Color, String)> items,
+  }) {
+    const boxW = 240.0;
+    final boxH = 24.0 + items.length * 15.0;
+    final rect = Rect.fromLTWH(size.width - boxW - 20, size.height - boxH - 18, boxW, boxH);
+
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+      Paint()..color = Colors.white.withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(rect, const Radius.circular(4)),
+      Paint()
+        ..color = const Color(0xFF90A4AE)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.9,
+    );
+
+    final titleTp = TextPainter(
+      text: TextSpan(
+        text: title,
+        style: const TextStyle(
+          color: Color(0xFF1A237E),
+          fontSize: 7.5,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+      textDirection: TextDirection.ltr,
+    )..layout();
+    titleTp.paint(canvas, Offset(rect.left + 8, rect.top + 6));
+
+    for (var i = 0; i < items.length; i++) {
+      final y = rect.top + 21 + i * 14.0;
+      canvas.drawRect(
+        Rect.fromLTWH(rect.left + 8, y + 1, 8, 8),
+        Paint()..color = items[i].$1,
+      );
+      final itemTp = TextPainter(
+        text: TextSpan(
+          text: items[i].$2,
+          style: const TextStyle(
+            color: Color(0xFF263238),
+            fontSize: 7.0,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      itemTp.paint(canvas, Offset(rect.left + 20, y));
+    }
   }
 
   void _drawFurniture(Canvas canvas, Module module, SubModule sub,

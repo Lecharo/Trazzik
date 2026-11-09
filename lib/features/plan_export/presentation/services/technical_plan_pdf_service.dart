@@ -187,6 +187,45 @@ class TechnicalPlanPdfService {
       );
     }
 
+    // 5. Página 4: Lámina de Despiece de Carpintería y Producción (Lámina PL-CARP)
+    if (options.includeMillworkPage) {
+      pdf.addPage(
+        pw.Page(
+          pageFormat: options.pageFormat.landscape,
+          margin: const pw.EdgeInsets.all(16),
+          build: (pwContext) {
+            return pw.Container(
+              decoration: pw.BoxDecoration(
+                border: pw.Border.all(color: PdfColors.black, width: 1.5),
+              ),
+              padding: const pw.EdgeInsets.all(12),
+              child: pw.Column(
+                crossAxisAlignment: pw.CrossAxisAlignment.start,
+                children: [
+                  _buildMillworkHeader(floor, options),
+                  pw.SizedBox(height: 8),
+                  pw.Expanded(
+                    child: _buildMillworkBody(floor),
+                  ),
+                  pw.SizedBox(height: 6),
+                  _buildTitleBlock(
+                    floor,
+                    project,
+                    lot,
+                    options.copyWith(
+                      sheetCode: 'PL-CARP',
+                      sheetTitle:
+                          'DESPIECE EJECUTIVO DE CARPINTERÍA Y MOBILIARIO FIJO',
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+      );
+    }
+
     return await pdf.save();
   }
 
@@ -247,7 +286,7 @@ class TechnicalPlanPdfService {
         mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
         children: [
           pw.Text(
-            'TRAZZIK  |  PLANO EJECUTIVO DE ARQUITECTURA',
+            'TRAZZIK  |  ${options.discipline.shortLabelEs.toUpperCase()} (${options.discipline.defaultSheetCode})',
             style: pw.TextStyle(
               color: PdfColors.white,
               fontWeight: pw.FontWeight.bold,
@@ -1127,6 +1166,446 @@ class TechnicalPlanPdfService {
             ),
           ),
       ],
+    );
+  }
+
+  static pw.Widget _buildMillworkHeader(Floor floor, PlanExportOptions options) {
+    return pw.Container(
+      padding: const pw.EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      color: PdfColors.blueGrey900,
+      child: pw.Row(
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          pw.Text(
+            'DESPIECE TÉCNICO DE CARPINTERÍA Y MOBILIARIO FIJO (PLANTA + ALZADO CERRADO + ALZADO INTERIOR)',
+            style: pw.TextStyle(
+              color: PdfColors.white,
+              fontWeight: pw.FontWeight.bold,
+              fontSize: 9.5,
+              letterSpacing: 0.7,
+            ),
+          ),
+          pw.Text(
+            'ESPECIFICACIÓN: MELAMINA RH 18MM + HERRAJES CIERRE LENTO',
+            style: const pw.TextStyle(color: PdfColors.cyan200, fontSize: 8),
+          ),
+        ],
+      ),
+    );
+  }
+
+  static pw.Widget _buildMillworkBody(Floor floor) {
+    // Extraer ítems de carpintería fija del piso o generar los 3 módulos estándar de obra
+    final items = <({
+      String code,
+      String title,
+      String roomName,
+      double widthM,
+      double heightM,
+      double depthM,
+      String bodyFinish,
+      String frontFinish,
+      String hardwareSpec,
+    })>[];
+
+    for (final m in floor.modules) {
+      if (m.status == ElementStatus.toDemolish) continue;
+      for (final sub in m.subModules) {
+        final t = sub.type.toUpperCase();
+        final bbox = sub.geometry.boundingBox;
+        final spanW = (bbox.maxX - bbox.minX).abs();
+        final spanH = (bbox.maxY - bbox.minY).abs();
+        final widthM = spanW >= spanH ? spanW : spanH;
+        final depthM = spanW >= spanH ? spanH : spanW;
+
+        if (t.contains('CLOSET') || t.contains('WARDROBE')) {
+          items.add((
+            code: 'CARP-0${items.length + 1}',
+            title: 'Clóset / Vestier de Piso a Techo',
+            roomName: m.name,
+            widthM: widthM.clamp(1.20, 3.60),
+            heightM: (floor.heightMeters - 0.10).clamp(2.20, 2.60),
+            depthM: depthM.clamp(0.55, 0.65),
+            bodyFinish: 'Melamina RH 18mm Blanco Texturado (Interior)',
+            frontFinish: 'Melamina RH 18mm Roble Natural Poro Abierto',
+            hardwareSpec:
+                'Bisagras cierre lento 110°, rieles telescópicos Full-Extension y tubo oval cromado',
+          ));
+        } else if (t.contains('VANITY') ||
+            (t.contains('SINK') && m.moduleType.toUpperCase().contains('BATH'))) {
+          items.add((
+            code: 'CARP-0${items.length + 1}',
+            title: 'Mueble Flotante de Lavamanos (Vanity)',
+            roomName: m.name,
+            widthM: widthM.clamp(0.80, 1.60),
+            heightM: 0.65,
+            depthM: depthM.clamp(0.48, 0.55),
+            bodyFinish: 'MDP Hidrófugo RH 18mm Gris Grafito',
+            frontFinish: 'Frentes listonados Roble Miel + Mesón Sinterizado',
+            hardwareSpec:
+                'Cajón superior con sifonero en U + correderas ocultas Push-to-Open',
+          ));
+        }
+      }
+      if (m.moduleType.toUpperCase().contains('KITCHEN') && items.length < 3) {
+        items.add((
+          code: 'CARP-0${items.length + 1}',
+          title: 'Mueble Integral de Cocina (Bajo + Alacena Superior)',
+          roomName: m.name,
+          widthM: 2.40,
+          heightM: 2.35,
+          depthM: 0.60,
+          bodyFinish: 'MDP Hidrófugo RH 18mm Blanco Nieve + Canto rígido PVC 2mm',
+          frontFinish: 'Frentes Supermate Antihuella Gris Piedra + Gola Aluminio',
+          hardwareSpec:
+              'Herrajes Blum/Hafele cierre suave, zócalo impermeable en aluminio H=10cm',
+        ));
+      }
+    }
+
+    if (items.isEmpty) {
+      items.addAll([
+        (
+          code: 'CARP-01',
+          title: 'Clóset Principal de Piso a Techo con Maletero',
+          roomName: 'Alcoba Principal',
+          widthM: 2.10,
+          heightM: 2.40,
+          depthM: 0.60,
+          bodyFinish: 'Melamina RH 18mm Lino Cancún (Estructura interna)',
+          frontFinish: 'Melamina RH 18mm Roble Natural + Manija Perfil Negro',
+          hardwareSpec:
+              '4 Cajones riel telescópico pesado, doble colgadéro y maletero superior H=45cm',
+        ),
+        (
+          code: 'CARP-02',
+          title: 'Mobiliario Integral de Cocina Línea Contemporánea',
+          roomName: 'Cocina',
+          widthM: 2.60,
+          heightM: 2.35,
+          depthM: 0.60,
+          bodyFinish: 'Melamina Hidrófuga RH 18mm Blanco + Canto Termofundido 2mm',
+          frontFinish: 'Poliuretano Semimate / Acrílico Gris Taupe + Perfil Gola',
+          hardwareSpec:
+              'Canasta botellero extraíble, cubiertero, bisagras cierre lento y mesón Cuarzo',
+        ),
+        (
+          code: 'CARP-03',
+          title: 'Mueble Flotante de Baño y Nicho Iluminado',
+          roomName: 'Baño Principal',
+          widthM: 1.10,
+          heightM: 0.60,
+          depthM: 0.50,
+          bodyFinish: 'Melamina Hidrófuga RH 18mm resistente a humedad',
+          frontFinish: 'Frente alistonado Madera Teca + Cinta LED cálida 3000K',
+          hardwareSpec:
+              'Doble gaveta con salvasifón y soportes ocultos de alta carga a muro',
+        ),
+      ]);
+    }
+
+    final displayItems = items.take(3).toList();
+
+    return pw.Row(
+      crossAxisAlignment: pw.CrossAxisAlignment.stretch,
+      children: [
+        for (var i = 0; i < displayItems.length; i++) ...[
+          if (i > 0) pw.SizedBox(width: 10),
+          pw.Expanded(
+            child: _buildMillworkCard(displayItems[i]),
+          ),
+        ],
+      ],
+    );
+  }
+
+  static pw.Widget _buildMillworkCard(({
+    String code,
+    String title,
+    String roomName,
+    double widthM,
+    double heightM,
+    double depthM,
+    String bodyFinish,
+    String frontFinish,
+    String hardwareSpec,
+  }) item) {
+    final bays = item.widthM >= 1.8 ? 3 : 2;
+    return pw.Container(
+      padding: const pw.EdgeInsets.all(8),
+      decoration: pw.BoxDecoration(
+        border: pw.Border.all(color: PdfColors.blueGrey300, width: 0.9),
+        borderRadius: pw.BorderRadius.circular(4),
+      ),
+      child: pw.Column(
+        crossAxisAlignment: pw.CrossAxisAlignment.start,
+        mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+        children: [
+          // Encabezado del mueble
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+            color: PdfColors.blueGrey50,
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Expanded(
+                  child: pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        '${item.code}  •  ${item.title}',
+                        style: pw.TextStyle(
+                          fontSize: 7.5,
+                          fontWeight: pw.FontWeight.bold,
+                          color: PdfColors.blueGrey900,
+                        ),
+                      ),
+                      pw.Text(
+                        'Ubicación: ${item.roomName}  |  Dimensión: ${item.widthM.toStringAsFixed(2)}m (Ancho) x ${item.heightM.toStringAsFixed(2)}m (Alto) x ${item.depthM.toStringAsFixed(2)}m (Prof.)',
+                        style: const pw.TextStyle(
+                          fontSize: 6.2,
+                          color: PdfColors.blueGrey700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          // Diagramas Técnicos: Alzado Cerrado vs Alzado Abierto (Despiece Interno)
+          pw.Row(
+            mainAxisAlignment: pw.MainAxisAlignment.spaceEvenly,
+            children: [
+              // 1. Alzado Frontal Cerrado (Puertas y Frentes)
+              pw.Column(
+                children: [
+                  pw.Text(
+                    '1. ALZADO CERRADO (FRENTES)',
+                    style: pw.TextStyle(
+                      fontSize: 6,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.blueGrey800,
+                    ),
+                  ),
+                  pw.SizedBox(height: 3),
+                  pw.Container(
+                    width: 96,
+                    height: 92,
+                    decoration: pw.BoxDecoration(
+                      color: const PdfColor.fromInt(0xFFEFEBE9),
+                      border: pw.Border.all(color: PdfColors.blueGrey800, width: 1.0),
+                    ),
+                    child: pw.Row(
+                      children: List.generate(
+                        bays,
+                        (idx) => pw.Expanded(
+                          child: pw.Container(
+                            decoration: pw.BoxDecoration(
+                              border: pw.Border(
+                                right: idx < bays - 1
+                                    ? const pw.BorderSide(
+                                        color: PdfColors.blueGrey700, width: 0.7)
+                                    : pw.BorderSide.none,
+                              ),
+                            ),
+                            child: pw.Center(
+                              child: pw.Container(
+                                width: 2,
+                                height: 18,
+                                color: PdfColors.blueGrey900,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    '|<--- ${item.widthM.toStringAsFixed(2)} m --->|',
+                    style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+                  ),
+                ],
+              ),
+
+              // 2. Alzado Interior sin Puertas (Entrepaños, Cajoneras y Colgaderos)
+              pw.Column(
+                children: [
+                  pw.Text(
+                    '2. DESPIECE INTERNO (SIN PUERTAS)',
+                    style: pw.TextStyle(
+                      fontSize: 6,
+                      fontWeight: pw.FontWeight.bold,
+                      color: PdfColors.blue900,
+                    ),
+                  ),
+                  pw.SizedBox(height: 3),
+                  pw.Container(
+                    width: 96,
+                    height: 92,
+                    decoration: pw.BoxDecoration(
+                      color: PdfColors.white,
+                      border: pw.Border.all(color: PdfColors.blueGrey900, width: 1.2),
+                    ),
+                    child: pw.Column(
+                      children: [
+                        // Maletero superior (H = 0.42m)
+                        pw.Container(
+                          height: 18,
+                          decoration: const pw.BoxDecoration(
+                            border: pw.Border(
+                              bottom: pw.BorderSide(color: PdfColors.blueGrey800, width: 0.9),
+                            ),
+                          ),
+                          child: pw.Center(
+                            child: pw.Text(
+                              'MALETERO H=0.42m',
+                              style: const pw.TextStyle(fontSize: 5, color: PdfColors.blueGrey700),
+                            ),
+                          ),
+                        ),
+                        // Cuerpo central dividido en módulos
+                        pw.Expanded(
+                          child: pw.Row(
+                            children: List.generate(
+                              bays,
+                              (idx) => pw.Expanded(
+                                child: pw.Container(
+                                  decoration: pw.BoxDecoration(
+                                    border: pw.Border(
+                                      right: idx < bays - 1
+                                          ? const pw.BorderSide(
+                                              color: PdfColors.blueGrey800,
+                                              width: 0.9)
+                                          : pw.BorderSide.none,
+                                    ),
+                                  ),
+                                  child: idx == 0
+                                      ? pw.Column(
+                                          mainAxisAlignment:
+                                              pw.MainAxisAlignment.spaceEvenly,
+                                          children: List.generate(
+                                            4,
+                                            (s) => pw.Container(
+                                              height: 0.8,
+                                              color: PdfColors.blueGrey600,
+                                            ),
+                                          ),
+                                        )
+                                      : pw.Column(
+                                          mainAxisAlignment:
+                                              pw.MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            pw.Container(
+                                              margin: const pw.EdgeInsets.only(top: 5),
+                                              height: 2,
+                                              color: PdfColors.cyan800,
+                                            ),
+                                            pw.Container(
+                                              height: 28,
+                                              decoration: const pw.BoxDecoration(
+                                                border: pw.Border(
+                                                  top: pw.BorderSide(
+                                                    color: PdfColors.blueGrey700,
+                                                    width: 0.8,
+                                                  ),
+                                                ),
+                                              ),
+                                              child: pw.Column(
+                                                mainAxisAlignment:
+                                                    pw.MainAxisAlignment.spaceEvenly,
+                                                children: [
+                                                  pw.Container(
+                                                    height: 0.6,
+                                                    color: PdfColors.blueGrey500,
+                                                  ),
+                                                  pw.Container(
+                                                    height: 0.6,
+                                                    color: PdfColors.blueGrey500,
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
+                                        ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  pw.SizedBox(height: 2),
+                  pw.Text(
+                    'H Total: ${item.heightM.toStringAsFixed(2)} m',
+                    style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+                  ),
+                ],
+              ),
+            ],
+          ),
+
+          // 3. Planta acotada de profundidad
+          pw.Container(
+            padding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+            decoration: pw.BoxDecoration(
+              color: PdfColors.grey100,
+              border: pw.Border.all(color: PdfColors.blueGrey300, width: 0.6),
+            ),
+            child: pw.Row(
+              mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+              children: [
+                pw.Text(
+                  '3. PLANTA TÉCNICA:',
+                  style: pw.TextStyle(fontSize: 6, fontWeight: pw.FontWeight.bold),
+                ),
+                pw.Text(
+                  'Ancho Libre: ${item.widthM.toStringAsFixed(2)}m  •  Profundidad Útil: ${item.depthM.toStringAsFixed(2)}m  •  Módulos: $bays cuerpos',
+                  style: const pw.TextStyle(fontSize: 6),
+                ),
+              ],
+            ),
+          ),
+
+          // 4. Cuadro de Especificaciones de Producción en Taller
+          pw.Container(
+            padding: const pw.EdgeInsets.all(5),
+            decoration: pw.BoxDecoration(
+              border: pw.Border.all(color: PdfColors.blueGrey200, width: 0.6),
+              borderRadius: pw.BorderRadius.circular(3),
+            ),
+            child: pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text(
+                  'ESPECIFICACIÓN DE TALLER Y MATERIALIDAD:',
+                  style: pw.TextStyle(
+                    fontSize: 6.2,
+                    fontWeight: pw.FontWeight.bold,
+                    color: PdfColors.blue900,
+                  ),
+                ),
+                pw.SizedBox(height: 2),
+                pw.Text(
+                  '• Estructura / Carcasa: ${item.bodyFinish}',
+                  style: const pw.TextStyle(fontSize: 6),
+                ),
+                pw.Text(
+                  '• Frentes / Puertas: ${item.frontFinish}',
+                  style: const pw.TextStyle(fontSize: 6),
+                ),
+                pw.Text(
+                  '• Herrajes y Accesorios: ${item.hardwareSpec}',
+                  style: const pw.TextStyle(fontSize: 6),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
