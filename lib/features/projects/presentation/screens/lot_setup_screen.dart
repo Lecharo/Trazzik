@@ -4,7 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
-import 'package:trazzik/core/supabase/supabase_config.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/screens/editor_screen.dart';
@@ -26,8 +25,10 @@ class LotSetupScreen extends ConsumerStatefulWidget {
 }
 
 class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
-  final _projectRepo = SupabaseProjectRepository(SupabaseConfig.client);
-  final _floorRepo = SupabaseFloorRepository(SupabaseConfig.client);
+  SupabaseProjectRepository get _projectRepo =>
+      ref.read(projectRepositoryProvider);
+  SupabaseFloorRepository get _floorRepo =>
+      ref.read(floorRepositoryProvider);
 
   final _widthController = TextEditingController();
   final _depthController = TextEditingController();
@@ -46,22 +47,25 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
 
   String? _existingLotId;
   String? _existingBuildingId;
-  String? _existingFloorId;
+  List<Floor> _loadedFloors = const [];
   bool _isLoadingLot = true;
 
   bool _isSaving = false;
   String? _errorMessage;
 
+  late final Listenable _lotPreviewListenable = Listenable.merge([
+    _widthController,
+    _depthController,
+    _orientationController,
+    _frontSetbackController,
+    _rearSetbackController,
+    _leftSetbackController,
+    _rightSetbackController,
+  ]);
+
   @override
   void initState() {
     super.initState();
-    _widthController.addListener(() => setState(() {}));
-    _depthController.addListener(() => setState(() {}));
-    _orientationController.addListener(() => setState(() {}));
-    _frontSetbackController.addListener(() => setState(() {}));
-    _rearSetbackController.addListener(() => setState(() {}));
-    _leftSetbackController.addListener(() => setState(() {}));
-    _rightSetbackController.addListener(() => setState(() {}));
     _loadExistingLotData();
   }
 
@@ -75,42 +79,42 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
         _depthController.text = bbox.height.toStringAsFixed(2);
         _orientationController.text = lot.orientationDegrees.toStringAsFixed(0);
 
-        for (final z in lot.zones) {
-          final zName = z.name.toLowerCase();
-          if (zName.contains('frontal')) {
-            _frontSetbackController.text = z.boundary.boundingBox.height.toStringAsFixed(2);
-          } else if (zName.contains('posterior')) {
-            _rearSetbackController.text = z.boundary.boundingBox.height.toStringAsFixed(2);
-          } else if (zName.contains('izquierdo')) {
-            _leftSetbackController.text = z.boundary.boundingBox.width.toStringAsFixed(2);
-          } else if (zName.contains('derecho')) {
-            _rightSetbackController.text = z.boundary.boundingBox.width.toStringAsFixed(2);
-          }
+        final setbacks = lot.setbacks;
+        if (setbacks.front > 0) {
+          _frontSetbackController.text = setbacks.front.toStringAsFixed(2);
+        }
+        if (setbacks.rear > 0) {
+          _rearSetbackController.text = setbacks.rear.toStringAsFixed(2);
+        }
+        if (setbacks.left > 0) {
+          _leftSetbackController.text = setbacks.left.toStringAsFixed(2);
+        }
+        if (setbacks.right > 0) {
+          _rightSetbackController.text = setbacks.right.toStringAsFixed(2);
         }
 
-        final buildings = await SupabaseConfig.client
-            .from('buildings')
-            .select()
-            .eq('lot_id', lot.id)
-            .limit(1);
-        if (buildings.isNotEmpty) {
-          final bRow = buildings.first;
-          _existingBuildingId = bRow['id'] as String;
-          if (bRow['name'] != null) {
-            _buildingNameController.text = bRow['name'] as String;
-          }
-          if (bRow['floors_count'] != null) {
-            _floorsCountController.text = (bRow['floors_count'] as num).toInt().toString();
+        final primaryBuilding =
+            await _projectRepo.getPrimaryBuildingByLotId(lot.id);
+        if (primaryBuilding != null) {
+          _existingBuildingId = primaryBuilding.id;
+          _buildingNameController.text = primaryBuilding.name;
+          if (primaryBuilding.floorsCount != null) {
+            _floorsCountController.text =
+                primaryBuilding.floorsCount.toString();
           }
 
-          final floors = await _floorRepo.getFloorsByBuildingId(_existingBuildingId!);
+          final floors =
+              await _floorRepo.getFloorsByBuildingId(_existingBuildingId!);
+          _loadedFloors = floors;
           if (floors.isNotEmpty) {
             if (_floorsCountController.text.isEmpty || _floorsCountController.text == '0') {
               _floorsCountController.text = floors.length.toString();
             }
             final firstFloor = floors.first;
-            _existingFloorId = firstFloor.id;
             _heightController.text = firstFloor.heightMeters.toStringAsFixed(2);
+            _clearHeightController.text = (firstFloor.heightMeters - 0.20)
+                .clamp(2.0, firstFloor.heightMeters)
+                .toStringAsFixed(2);
             _maxAreaController.text = firstFloor.maxAllowedArea.toStringAsFixed(2);
           }
         }
@@ -179,13 +183,12 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
     try {
       const uuid = Uuid();
       final lotId = _existingLotId ?? uuid.v4();
-      final buildingId = _existingBuildingId ?? uuid.v4();
-      final floorId = _existingFloorId ?? uuid.v4();
 
       final orientation = double.tryParse(_orientationController.text.trim()) ?? 0.0;
       final maxArea = double.tryParse(_maxAreaController.text.trim()) ??
           (_buildableArea > 0 ? _buildableArea : _totalLotArea);
-      final height = double.tryParse(_heightController.text.trim()) ?? 2.60;
+      final clearHeight = double.tryParse(_clearHeightController.text.trim()) ?? 2.40;
+      final height = double.tryParse(_heightController.text.trim()) ?? (clearHeight + 0.20);
       final floorsCount = int.tryParse(_floorsCountController.text.trim()) ?? 1;
 
       // 1. Polígono del Lote
@@ -281,54 +284,23 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       final savedLot = await _projectRepo.saveLot(lot);
       final actualLotId = savedLot.id;
 
-      // 2. Buscar o crear Edificación en Supabase
-      final existingBuildings = await SupabaseConfig.client
-          .from('buildings')
-          .select('id')
-          .eq('lot_id', actualLotId)
-          .limit(1);
-
-      final actualBuildingId = existingBuildings.isNotEmpty
-          ? (existingBuildings.first['id'] as String)
-          : (_existingBuildingId ?? const Uuid().v4());
-
+      // 2. Buscar o crear Edificación en Supabase vía repositorio
       final buildingName = _buildingNameController.text.trim().isNotEmpty
           ? _buildingNameController.text.trim()
           : 'Edificación Principal';
 
-      if (existingBuildings.isNotEmpty) {
-        try {
-          await SupabaseConfig.client.from('buildings').update({
-            'name': buildingName,
-            'floors_count': floorsCount,
-          }).eq('id', actualBuildingId);
-        } catch (_) {
-          // Fallback por si la columna floors_count aún no está en la base de datos remota
-          await SupabaseConfig.client.from('buildings').update({
-            'name': buildingName,
-          }).eq('id', actualBuildingId);
-        }
-      } else {
-        try {
-          await SupabaseConfig.client.from('buildings').insert({
-            'id': actualBuildingId,
-            'lot_id': actualLotId,
-            'name': buildingName,
-            'floors_count': floorsCount,
-            'order_index': 1,
-          });
-        } catch (_) {
-          await SupabaseConfig.client.from('buildings').insert({
-            'id': actualBuildingId,
-            'lot_id': actualLotId,
-            'name': buildingName,
-            'order_index': 1,
-          });
-        }
-      }
+      final savedBuilding = await _projectRepo.savePrimaryBuilding(
+        lotId: actualLotId,
+        preferredBuildingId: _existingBuildingId,
+        name: buildingName,
+        floorsCount: floorsCount,
+      );
+      final actualBuildingId = savedBuilding.id;
 
-      // 3. Crear o actualizar todos los Pisos según floorsCount
-      final existingFloors = await _floorRepo.getFloorsByBuildingId(actualBuildingId);
+      // 3. Crear o actualizar todos los Pisos según floorsCount (reutilizando los pisos ya cargados si aplica)
+      final existingFloors = actualBuildingId == _existingBuildingId
+          ? _loadedFloors
+          : await _floorRepo.getFloorsByBuildingId(actualBuildingId);
       final existingFloorsByNumber = {for (final f in existingFloors) f.floorNumber: f};
 
       // Polígono del límite del piso dentro de los retiros
@@ -340,6 +312,10 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       );
 
       final allFloors = <Floor>[];
+      final removedFloorIds = existingFloors
+          .where((f) => f.floorNumber > floorsCount)
+          .map((f) => f.id)
+          .toSet();
 
       for (int i = 1; i <= floorsCount; i++) {
         final existingF = existingFloorsByNumber[i];
@@ -364,9 +340,13 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
               existingF?.replacementRelationships ?? const [],
         );
 
-        await _floorRepo.saveFloor(fFloor);
         allFloors.add(fFloor);
       }
+
+      await _floorRepo.saveProjectFloors(
+        dirtyFloors: allFloors,
+        deletedFloorIds: removedFloorIds,
+      );
 
       if (mounted) {
         ref.read(floorEditorProvider.notifier).loadProjectData(
@@ -512,7 +492,7 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFEF5350).withOpacity(0.15),
+                      color: const Color(0xFFEF5350).withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(6),
                       border: Border.all(color: const Color(0xFFEF5350)),
                     ),
@@ -525,9 +505,9 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withOpacity(0.08),
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.08),
                       borderRadius: BorderRadius.circular(6),
-                      border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                      border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                     ),
                     child: Row(
                       children: [
@@ -597,9 +577,9 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                 Container(
                   padding: const EdgeInsets.all(12),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.06),
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.06),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.25)),
+                    border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.25)),
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -704,50 +684,80 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
 
                 // Vista Previa Interactiva del Lote, Fachada Frontal y Rosa de los Vientos
                 _buildHeader(AppStrings.tr('lot_preview_title', lang)),
-                Container(
-                  height: 250,
-                  decoration: BoxDecoration(
-                    color: themeMode == ThemeMode.dark ? const Color(0xFF13161C) : const Color(0xFFF8FAFC),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: Theme.of(context).dividerColor),
-                  ),
-                  child: ClipRRect(
-                    borderRadius: BorderRadius.circular(8),
-                    child: CustomPaint(
-                      size: const Size(double.infinity, 250),
-                      painter: _LotPreviewPainter(
-                        width: _width,
-                        depth: _depth,
-                        frontSetback: _frontSetback,
-                        rearSetback: _rearSetback,
-                        leftSetback: _leftSetback,
-                        rightSetback: _rightSetback,
-                        orientation: _orientation,
-                        isDark: themeMode == ThemeMode.dark,
-                        lang: lang,
-                        country: widget.project.country,
-                      ),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
+                ListenableBuilder(
+                  listenable: _lotPreviewListenable,
+                  builder: (context, _) {
+                    return Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Container(
+                          height: 250,
+                          decoration: BoxDecoration(
+                            color: themeMode == ThemeMode.dark
+                                ? const Color(0xFF13161C)
+                                : const Color(0xFFF8FAFC),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: Theme.of(context).dividerColor,
+                            ),
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: RepaintBoundary(
+                              child: CustomPaint(
+                                size: const Size(double.infinity, 250),
+                                painter: _LotPreviewPainter(
+                                  width: _width,
+                                  depth: _depth,
+                                  frontSetback: _frontSetback,
+                                  rearSetback: _rearSetback,
+                                  leftSetback: _leftSetback,
+                                  rightSetback: _rightSetback,
+                                  orientation: _orientation,
+                                  isDark: themeMode == ThemeMode.dark,
+                                  lang: lang,
+                                  country: widget.project.country,
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                        const SizedBox(height: 20),
 
-                // 3. Resumen Dinámico en Tiempo Real
-                Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.08),
-                    borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceAround,
-                    children: [
-                      _buildMetric(AppStrings.tr('summary_lot_area', lang), '${_totalLotArea.toStringAsFixed(1)} m²'),
-                      _buildMetric(AppStrings.tr('summary_buildable_area', lang), '${_buildableArea.toStringAsFixed(1)} m²', highlight: true),
-                      _buildMetric(AppStrings.tr('summary_setbacks_area', lang), '${_setbacksArea.toStringAsFixed(1)} m²'),
-                    ],
-                  ),
+                        // 3. Resumen Dinámico en Tiempo Real
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color:
+                                const Color(0xFF00E5FF).withValues(alpha: 0.08),
+                            borderRadius: BorderRadius.circular(8),
+                            border: Border.all(
+                              color: const Color(0xFF00E5FF)
+                                  .withValues(alpha: 0.3),
+                            ),
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceAround,
+                            children: [
+                              _buildMetric(
+                                AppStrings.tr('summary_lot_area', lang),
+                                '${_totalLotArea.toStringAsFixed(1)} m²',
+                              ),
+                              _buildMetric(
+                                AppStrings.tr('summary_buildable_area', lang),
+                                '${_buildableArea.toStringAsFixed(1)} m²',
+                                highlight: true,
+                              ),
+                              _buildMetric(
+                                AppStrings.tr('summary_setbacks_area', lang),
+                                '${_setbacksArea.toStringAsFixed(1)} m²',
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    );
+                  },
                 ),
                 const SizedBox(height: 20),
 
@@ -790,6 +800,13 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                           suffixText: 'm',
                           border: const OutlineInputBorder(),
                         ),
+                        onChanged: (val) {
+                          final h = double.tryParse(val.trim());
+                          if (h != null && h > 0.25) {
+                            _clearHeightController.text =
+                                (h - 0.20).clamp(1.80, h).toStringAsFixed(2);
+                          }
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -802,6 +819,13 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
                           suffixText: 'm',
                           border: const OutlineInputBorder(),
                         ),
+                        onChanged: (val) {
+                          final ch = double.tryParse(val.trim());
+                          if (ch != null && ch >= 1.80) {
+                            _heightController.text =
+                                (ch + 0.20).toStringAsFixed(2);
+                          }
+                        },
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -963,26 +987,26 @@ class _LotPreviewPainter extends CustomPainter {
       ..strokeWidth = 1.5;
     canvas.drawRect(lotRect, lotBorderPaint);
 
-    // 2. Setbacks (Retiros)
+    // 2. Setbacks (Retiros) — aligned with 2D Editor (Front at top y=0, Rear at bottom y=depth)
     final sf = frontSetback * scale;
     final sr = rearSetback * scale;
     final sl = leftSetback * scale;
     final sq = rightSetback * scale;
 
-    // Front Setback (at bottom of lot - facing street)
+    // Front Setback (at top of lot - facing street, y = 0)
     if (sf > 0) {
-      final frontSetbackRect = Rect.fromLTWH(lotLeft, lotTop + lotH - sf, lotW, sf);
+      final frontSetbackRect = Rect.fromLTWH(lotLeft, lotTop, lotW, sf);
       final frontSetbackPaint = Paint()
-        ..color = const Color(0xFFFF9800).withOpacity(0.25)
+        ..color = const Color(0xFFFF9800).withValues(alpha: 0.25)
         ..style = PaintingStyle.fill;
       canvas.drawRect(frontSetbackRect, frontSetbackPaint);
     }
 
-    // Rear Setback (at top of lot)
+    // Rear Setback (at bottom of lot, y = depth - rearSetback)
     if (sr > 0) {
-      final rearSetbackRect = Rect.fromLTWH(lotLeft, lotTop, lotW, sr);
+      final rearSetbackRect = Rect.fromLTWH(lotLeft, lotTop + lotH - sr, lotW, sr);
       final rearSetbackPaint = Paint()
-        ..color = const Color(0xFFE53935).withOpacity(0.18)
+        ..color = const Color(0xFFE53935).withValues(alpha: 0.18)
         ..style = PaintingStyle.fill;
       canvas.drawRect(rearSetbackRect, rearSetbackPaint);
     }
@@ -990,9 +1014,9 @@ class _LotPreviewPainter extends CustomPainter {
     // Left Setback
     if (sl > 0) {
       final leftH = math.max(0.0, lotH - sf - sr);
-      final leftSetbackRect = Rect.fromLTWH(lotLeft, lotTop + sr, sl, leftH);
+      final leftSetbackRect = Rect.fromLTWH(lotLeft, lotTop + sf, sl, leftH);
       final leftSetbackPaint = Paint()
-        ..color = const Color(0xFFE53935).withOpacity(0.12)
+        ..color = const Color(0xFFE53935).withValues(alpha: 0.12)
         ..style = PaintingStyle.fill;
       canvas.drawRect(leftSetbackRect, leftSetbackPaint);
     }
@@ -1000,9 +1024,9 @@ class _LotPreviewPainter extends CustomPainter {
     // Right Setback
     if (sq > 0) {
       final rightH = math.max(0.0, lotH - sf - sr);
-      final rightSetbackRect = Rect.fromLTWH(lotLeft + lotW - sq, lotTop + sr, sq, rightH);
+      final rightSetbackRect = Rect.fromLTWH(lotLeft + lotW - sq, lotTop + sf, sq, rightH);
       final rightSetbackPaint = Paint()
-        ..color = const Color(0xFFE53935).withOpacity(0.12)
+        ..color = const Color(0xFFE53935).withValues(alpha: 0.12)
         ..style = PaintingStyle.fill;
       canvas.drawRect(rightSetbackRect, rightSetbackPaint);
     }
@@ -1011,9 +1035,9 @@ class _LotPreviewPainter extends CustomPainter {
     final buildW = math.max(0.0, lotW - sl - sq);
     final buildH = math.max(0.0, lotH - sf - sr);
     if (buildW > 0 && buildH > 0) {
-      final buildRect = Rect.fromLTWH(lotLeft + sl, lotTop + sr, buildW, buildH);
+      final buildRect = Rect.fromLTWH(lotLeft + sl, lotTop + sf, buildW, buildH);
       final buildPaint = Paint()
-        ..color = const Color(0xFF00E676).withOpacity(0.2)
+        ..color = const Color(0xFF00E676).withValues(alpha: 0.2)
         ..style = PaintingStyle.fill;
       canvas.drawRect(buildRect, buildPaint);
 
@@ -1035,33 +1059,33 @@ class _LotPreviewPainter extends CustomPainter {
       );
     }
 
-    // 4. Front Facade Highlight (Cyan 4.0 stroke + Arrow + Street Banner)
+    // 4. Front Facade Highlight at Top (matching 2D Editor '▲ FRENTE / CALLE / ACCESO ▲')
     final frontPaint = Paint()
       ..color = const Color(0xFF00E5FF)
       ..strokeWidth = 4.5
       ..strokeCap = StrokeCap.round;
     canvas.drawLine(
-      Offset(lotLeft, lotTop + lotH),
-      Offset(lotLeft + lotW, lotTop + lotH),
+      Offset(lotLeft, lotTop),
+      Offset(lotLeft + lotW, lotTop),
       frontPaint,
     );
 
-    // Front label
+    // Front label (top)
     _drawText(
       canvas,
       '▲ ${AppStrings.tr('front_facade', lang).toUpperCase()} ▲',
-      Offset(lotLeft + lotW / 2, lotTop + lotH + 12),
+      Offset(lotLeft + lotW / 2, lotTop - 12),
       fontSize: 9,
       fontWeight: FontWeight.bold,
       color: const Color(0xFF00E5FF),
       textAlign: TextAlign.center,
     );
 
-    // Rear label
+    // Rear label (bottom)
     _drawText(
       canvas,
       AppStrings.tr('rear_boundary', lang),
-      Offset(lotLeft + lotW / 2, lotTop - 12),
+      Offset(lotLeft + lotW / 2, lotTop + lotH + 12),
       fontSize: 8,
       fontWeight: FontWeight.w600,
       color: isDark ? Colors.grey[400]! : Colors.grey[600]!,
@@ -1106,7 +1130,7 @@ class _LotPreviewPainter extends CustomPainter {
     canvas.drawCircle(Offset(cx, cy), r, bgPaint);
 
     final borderPaint = Paint()
-      ..color = const Color(0xFF00E5FF).withOpacity(0.5)
+      ..color = const Color(0xFF00E5FF).withValues(alpha: 0.5)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.5;
     canvas.drawCircle(Offset(cx, cy), r, borderPaint);

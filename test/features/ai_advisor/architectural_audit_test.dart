@@ -681,15 +681,12 @@ void main() {
         tester.view.resetDevicePixelRatio();
       });
 
-      late BuildContext testContext;
-
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
             home: Scaffold(
               body: Builder(
                 builder: (context) {
-                  testContext = context;
                   return ElevatedButton(
                     onPressed: () => ArchitecturalAuditDialog.show(context),
                     child: const Text('Abrir'),

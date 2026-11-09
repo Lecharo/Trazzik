@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/modules/domain/furniture_template.dart';
-import 'package:trazzik/features/modules/domain/module.dart';
 
 class FurnitureCatalogDialog extends ConsumerStatefulWidget {
   final String moduleId;
@@ -67,7 +66,7 @@ class _FurnitureCatalogDialogState extends ConsumerState<FurnitureCatalogDialog>
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.15),
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.chair, color: Color(0xFF00E5FF), size: 22),
@@ -231,7 +230,7 @@ class _FurnitureCatalogDialogState extends ConsumerState<FurnitureCatalogDialog>
                 child: ListView.separated(
                   scrollDirection: Axis.horizontal,
                   itemCount: module.subModules.length,
-                  separatorBuilder: (_, __) => const SizedBox(width: 8),
+                  separatorBuilder: (_, _) => const SizedBox(width: 8),
                   itemBuilder: (context, idx) {
                     final sub = module.subModules[idx];
                     final bb = sub.geometry.boundingBox;
@@ -240,7 +239,7 @@ class _FurnitureCatalogDialogState extends ConsumerState<FurnitureCatalogDialog>
                       decoration: BoxDecoration(
                         color: const Color(0xFF0F172A),
                         borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,

@@ -67,10 +67,8 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
 
   void _initTour() {
     final state = ref.read(floorEditorProvider);
-    final candidateRooms = state.floor.modules.where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') && !t.contains('WINDOW') && !t.contains('GATE');
-    }).toList();
+    final candidateRooms =
+        state.floor.modules.where((m) => !m.isOpening).toList();
 
     if (candidateRooms.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -215,9 +213,9 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F172A).withOpacity(0.85),
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.85),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.4)),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
                 ),
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
@@ -231,7 +229,7 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
                         boxShadow: [
                           BoxShadow(
                             color: (_isPlaying ? const Color(0xFFEF5350) : const Color(0xFFFFB300))
-                                .withOpacity(0.7),
+                                .withValues(alpha: 0.7),
                             blurRadius: 6,
                           ),
                         ],
@@ -274,7 +272,7 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
                 child: Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF0F172A).withOpacity(0.85),
+                    color: const Color(0xFF0F172A).withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(20),
                     border: Border.all(color: Colors.white24),
                   ),
@@ -303,17 +301,17 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
                     colors: [
-                      const Color(0xFF0F172A).withOpacity(0.95),
-                      const Color(0xFF1E293B).withOpacity(0.95),
+                      const Color(0xFF0F172A).withValues(alpha: 0.95),
+                      const Color(0xFF1E293B).withValues(alpha: 0.95),
                     ],
                     begin: Alignment.topLeft,
                     end: Alignment.bottomRight,
                   ),
                   borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5), width: 1.2),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5), width: 1.2),
                   boxShadow: [
                     BoxShadow(
-                      color: Colors.black.withOpacity(0.6),
+                      color: Colors.black.withValues(alpha: 0.6),
                       blurRadius: 18,
                       offset: const Offset(0, 6),
                     ),
@@ -330,9 +328,9 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
                         Container(
                           padding: const EdgeInsets.all(8),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00E5FF).withOpacity(0.12),
+                            color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                             borderRadius: BorderRadius.circular(8),
-                            border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                            border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                           ),
                           child: const Icon(Icons.meeting_room_rounded, color: Color(0xFF00E5FF), size: 18),
                         ),
@@ -356,7 +354,7 @@ class _CinematicTourOverlayState extends ConsumerState<CinematicTourOverlay>
                                   Container(
                                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                     decoration: BoxDecoration(
-                                      color: const Color(0xFF00E5FF).withOpacity(0.2),
+                                      color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                                       borderRadius: BorderRadius.circular(4),
                                     ),
                                     child: Text(

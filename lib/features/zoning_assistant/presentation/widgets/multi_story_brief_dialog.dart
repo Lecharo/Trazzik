@@ -27,7 +27,6 @@ class _MultiStoryBriefDialogState extends ConsumerState<MultiStoryBriefDialog> {
 
   @override
   Widget build(BuildContext context) {
-    final state = ref.watch(floorEditorProvider);
     final notifier = ref.read(floorEditorProvider.notifier);
 
     return Dialog(
@@ -46,7 +45,7 @@ class _MultiStoryBriefDialogState extends ConsumerState<MultiStoryBriefDialog> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.15),
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.cottage, color: Color(0xFF00E5FF), size: 24),
@@ -281,7 +280,7 @@ class _MultiStoryBriefDialogState extends ConsumerState<MultiStoryBriefDialog> {
                         style: TextStyle(color: Colors.white54, fontSize: 11),
                       ),
                       value: _upperLivingOrStudy,
-                      activeColor: const Color(0xFF00E5FF),
+                      activeThumbColor: const Color(0xFF00E5FF),
                       onChanged: (val) => setState(() => _upperLivingOrStudy = val),
                     ),
 
@@ -289,9 +288,9 @@ class _MultiStoryBriefDialogState extends ConsumerState<MultiStoryBriefDialog> {
                     Container(
                       padding: const EdgeInsets.all(10),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF00E5FF).withOpacity(0.08),
+                        color: const Color(0xFF00E5FF).withValues(alpha: 0.08),
                         borderRadius: BorderRadius.circular(6),
-                        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                       ),
                       child: const Row(
                         children: [
@@ -392,7 +391,7 @@ class _MultiStoryBriefDialogState extends ConsumerState<MultiStoryBriefDialog> {
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
         decoration: BoxDecoration(
           color: isSelected
-              ? const Color(0xFF00E5FF).withOpacity(0.12)
+              ? const Color(0xFF00E5FF).withValues(alpha: 0.12)
               : const Color(0xFF1E2D4A),
           borderRadius: BorderRadius.circular(6),
           border: Border.all(

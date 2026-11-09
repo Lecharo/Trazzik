@@ -162,9 +162,9 @@ class _SpaceCatalogDialogState extends ConsumerState<SpaceCatalogDialog> {
               width: double.infinity,
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
               decoration: BoxDecoration(
-                color: const Color(0xFF00E5FF).withOpacity(0.06),
+                color: const Color(0xFF00E5FF).withValues(alpha: 0.06),
                 borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.2)),
+                border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.2)),
               ),
               child: Wrap(
                 crossAxisAlignment: WrapCrossAlignment.center,
@@ -179,21 +179,21 @@ class _SpaceCatalogDialogState extends ConsumerState<SpaceCatalogDialog> {
                     avatar: const CircleAvatar(backgroundColor: Color(0xFF00E5FF), radius: 5),
                     label: Text(lang == 'es' ? 'Nuevo (Propuesto)' : 'Proposed (New)'),
                     selected: _selectedStatus == ElementStatus.isNew,
-                    selectedColor: const Color(0xFF00E5FF).withOpacity(0.25),
+                    selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.25),
                     onSelected: (_) => setState(() => _selectedStatus = ElementStatus.isNew),
                   ),
                   ChoiceChip(
                     avatar: const CircleAvatar(backgroundColor: Color(0xFF4CAF50), radius: 5),
                     label: Text(lang == 'es' ? 'Existente (Conservar)' : 'Preserved'),
                     selected: _selectedStatus == ElementStatus.preserved,
-                    selectedColor: const Color(0xFF4CAF50).withOpacity(0.25),
+                    selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.25),
                     onSelected: (_) => setState(() => _selectedStatus = ElementStatus.preserved),
                   ),
                   ChoiceChip(
                     avatar: const CircleAvatar(backgroundColor: Color(0xFFE53935), radius: 5),
                     label: Text(lang == 'es' ? 'Existente (A Demoler)' : 'To Demolish'),
                     selected: _selectedStatus == ElementStatus.toDemolish,
-                    selectedColor: const Color(0xFFE53935).withOpacity(0.25),
+                    selectedColor: const Color(0xFFE53935).withValues(alpha: 0.25),
                     onSelected: (_) => setState(() => _selectedStatus = ElementStatus.toDemolish),
                   ),
                 ],
@@ -212,7 +212,7 @@ class _SpaceCatalogDialogState extends ConsumerState<SpaceCatalogDialog> {
                     child: FilterChip(
                       label: Text(cat, style: TextStyle(fontSize: 11, fontWeight: isSel ? FontWeight.bold : FontWeight.normal)),
                       selected: isSel,
-                      selectedColor: const Color(0xFF00E5FF).withOpacity(0.2),
+                      selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                       onSelected: (_) => setState(() => _selectedCategory = cat),
                     ),
                   );
@@ -243,14 +243,14 @@ class _SpaceCatalogDialogState extends ConsumerState<SpaceCatalogDialog> {
                             decoration: BoxDecoration(
                               borderRadius: BorderRadius.circular(8),
                               border: Border.all(color: Theme.of(context).dividerColor),
-                              color: Theme.of(context).scaffoldBackgroundColor.withOpacity(0.5),
+                              color: Theme.of(context).scaffoldBackgroundColor.withValues(alpha: 0.5),
                             ),
                             child: Row(
                               children: [
                                 Container(
                                   padding: const EdgeInsets.all(8),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFF00E5FF).withOpacity(0.12),
+                                    color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                                     borderRadius: BorderRadius.circular(6),
                                   ),
                                   child: Icon(tpl.icon, color: const Color(0xFF00E5FF), size: 22),

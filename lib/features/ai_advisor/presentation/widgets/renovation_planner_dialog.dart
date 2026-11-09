@@ -237,9 +237,9 @@ class _RenovationPlannerDialogState
                   Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withOpacity(0.12),
+                      color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                      border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                     ),
                     child: const Icon(Icons.tune_rounded, color: Color(0xFF00E5FF), size: 18),
                   ),
@@ -260,7 +260,7 @@ class _RenovationPlannerDialogState
                         const SizedBox(height: 2),
                         Text(
                           'Cómputo métrico por recinto con desperdicio técnico, especialistas y ruta crítica',
-                          style: TextStyle(color: Colors.white.withOpacity(0.7), fontSize: 10),
+                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10),
                         ),
                       ],
                     ),
@@ -279,7 +279,7 @@ class _RenovationPlannerDialogState
                 decoration: BoxDecoration(
                   color: const Color(0xFF1E293B),
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.35)),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.35)),
                 ),
                 child: Row(
                   children: [
@@ -305,7 +305,7 @@ class _RenovationPlannerDialogState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withOpacity(0.2),
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Row(
@@ -344,7 +344,7 @@ class _RenovationPlannerDialogState
                       avatar: const Icon(Icons.home, size: 13),
                       label: const Text('Toda la Casa', style: TextStyle(fontSize: 10)),
                       selected: _allHouseScope,
-                      selectedColor: const Color(0xFF00E5FF).withOpacity(0.25),
+                      selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.25),
                       onSelected: (val) {
                         setState(() {
                           _allHouseScope = true;
@@ -356,7 +356,7 @@ class _RenovationPlannerDialogState
                       avatar: const Icon(Icons.layers, size: 13),
                       label: const Text('Solo Este Piso', style: TextStyle(fontSize: 10)),
                       selected: !_allHouseScope,
-                      selectedColor: const Color(0xFF00E5FF).withOpacity(0.25),
+                      selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.25),
                       onSelected: (val) {
                         setState(() {
                           _allHouseScope = false;
@@ -369,7 +369,7 @@ class _RenovationPlannerDialogState
                     FilterChip(
                       label: const Text('Pisos', style: TextStyle(fontSize: 10)),
                       selected: _renovateFloors,
-                      selectedColor: const Color(0xFF4CAF50).withOpacity(0.25),
+                      selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateFloors = v;
@@ -380,7 +380,7 @@ class _RenovationPlannerDialogState
                     FilterChip(
                       label: const Text('Baños', style: TextStyle(fontSize: 10)),
                       selected: _renovateBathrooms,
-                      selectedColor: const Color(0xFF29B6F6).withOpacity(0.25),
+                      selectedColor: const Color(0xFF29B6F6).withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateBathrooms = v;
@@ -391,7 +391,7 @@ class _RenovationPlannerDialogState
                     FilterChip(
                       label: const Text('Cocina', style: TextStyle(fontSize: 10)),
                       selected: _renovateKitchen,
-                      selectedColor: const Color(0xFFFFB74D).withOpacity(0.25),
+                      selectedColor: const Color(0xFFFFB74D).withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateKitchen = v;
@@ -402,7 +402,7 @@ class _RenovationPlannerDialogState
                     FilterChip(
                       label: const Text('Pintura', style: TextStyle(fontSize: 10)),
                       selected: _renovateWallsPaint,
-                      selectedColor: const Color(0xFFAB47BC).withOpacity(0.25),
+                      selectedColor: const Color(0xFFAB47BC).withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateWallsPaint = v;
@@ -414,7 +414,7 @@ class _RenovationPlannerDialogState
                       avatar: const Icon(Icons.lightbulb_outline, size: 12),
                       label: const Text('Luces LED', style: TextStyle(fontSize: 10)),
                       selected: _renovateLighting,
-                      selectedColor: const Color(0xFFFFD54F).withOpacity(0.25),
+                      selectedColor: const Color(0xFFFFD54F).withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateLighting = v;
@@ -430,7 +430,7 @@ class _RenovationPlannerDialogState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _showGranularSettings ? const Color(0xFF00E5FF).withOpacity(0.2) : Colors.white10,
+                          color: _showGranularSettings ? const Color(0xFF00E5FF).withValues(alpha: 0.2) : Colors.white10,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
                             color: _showGranularSettings ? const Color(0xFF00E5FF) : Colors.white24,
@@ -521,10 +521,7 @@ class _RenovationPlannerDialogState
   }
 
   Widget _buildGranularSettingsPanel() {
-    final modules = _getSourceModules().where((m) {
-      final t = m.moduleType.toUpperCase();
-      return !t.contains('DOOR') && !t.contains('WINDOW') && !t.contains('GATE');
-    }).toList();
+    final modules = _getSourceModules().where((m) => !m.isOpening).toList();
 
     final bathrooms = modules.where((m) =>
         m.moduleType.toUpperCase() == 'BATHROOM' ||
@@ -538,7 +535,7 @@ class _RenovationPlannerDialogState
       decoration: BoxDecoration(
         color: const Color(0xFF0F172A),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
       ),
       child: SingleChildScrollView(
         child: Column(
@@ -570,7 +567,7 @@ class _RenovationPlannerDialogState
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: isHalf ? const Color(0xFFFFB74D).withOpacity(0.2) : const Color(0xFF29B6F6).withOpacity(0.2),
+                        color: isHalf ? const Color(0xFFFFB74D).withValues(alpha: 0.2) : const Color(0xFF29B6F6).withValues(alpha: 0.2),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
                           color: isHalf ? const Color(0xFFFFB74D) : const Color(0xFF29B6F6),
@@ -615,16 +612,27 @@ class _RenovationPlannerDialogState
                 return FilterChip(
                   label: Text('${m.name} (${m.area.toStringAsFixed(1)}m²)', style: const TextStyle(fontSize: 9)),
                   selected: hasFloors,
-                  selectedColor: const Color(0xFF4CAF50).withOpacity(0.25),
+                  selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.25),
                   onSelected: (selected) {
                     setState(() {
+                      final allIds = modules.map((r) => r.id).toSet();
                       if (_roomsForFloors.isEmpty) {
-                        _roomsForFloors = modules.map((r) => r.id).toSet();
+                        _roomsForFloors = Set<String>.from(allIds);
+                      }
+                      if (_roomsForPaint.isEmpty) {
+                        _roomsForPaint = Set<String>.from(allIds);
+                      }
+                      if (_roomsForLighting.isEmpty) {
+                        _roomsForLighting = Set<String>.from(allIds);
                       }
                       if (selected) {
                         _roomsForFloors.add(m.id);
+                        _roomsForPaint.add(m.id);
+                        _roomsForLighting.add(m.id);
                       } else {
                         _roomsForFloors.remove(m.id);
+                        _roomsForPaint.remove(m.id);
+                        _roomsForLighting.remove(m.id);
                       }
                       _recalculate();
                     });
@@ -648,12 +656,12 @@ class _RenovationPlannerDialogState
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF00E5FF).withOpacity(0.12),
+            const Color(0xFF00E5FF).withValues(alpha: 0.12),
             const Color(0xFF1E293B),
           ],
         ),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.4)),
+        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -711,7 +719,7 @@ class _RenovationPlannerDialogState
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                     decoration: BoxDecoration(
-                      color: !_isParallelMode ? const Color(0xFFFFB74D).withOpacity(0.3) : Colors.transparent,
+                      color: !_isParallelMode ? const Color(0xFFFFB74D).withValues(alpha: 0.3) : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -730,7 +738,7 @@ class _RenovationPlannerDialogState
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _isParallelMode ? const Color(0xFF00E5FF).withOpacity(0.3) : Colors.transparent,
+                      color: _isParallelMode ? const Color(0xFF00E5FF).withValues(alpha: 0.3) : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
@@ -866,7 +874,7 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withOpacity(0.1),
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(mat.icon, color: const Color(0xFF00E5FF), size: 16),
@@ -893,7 +901,7 @@ class _RenovationPlannerDialogState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00E5FF).withOpacity(0.2),
+                            color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -979,7 +987,7 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withOpacity(0.12),
+                  color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
                 ),
                 child: Icon(crew.icon, color: const Color(0xFF4CAF50), size: 18),
@@ -1006,7 +1014,7 @@ class _RenovationPlannerDialogState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withOpacity(0.2),
+                            color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
@@ -1057,7 +1065,7 @@ class _RenovationPlannerDialogState
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: phase.canParallelize && _isParallelMode
-                  ? const Color(0xFF00E5FF).withOpacity(0.3)
+                  ? const Color(0xFF00E5FF).withValues(alpha: 0.3)
                   : Colors.white10,
             ),
           ),

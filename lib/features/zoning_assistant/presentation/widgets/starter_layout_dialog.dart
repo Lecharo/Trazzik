@@ -44,7 +44,7 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.15),
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF), size: 24),
@@ -89,9 +89,9 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withOpacity(0.12),
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.5)),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5)),
                 ),
                 child: const Row(
                   children: [
@@ -127,42 +127,43 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
             // Tarjetas de Plantillas (Desplazables)
             Flexible(
               child: SingleChildScrollView(
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ...StarterLayoutTemplate.templates.map((tpl) {
-                      final isSelected = tpl.type == _selectedType;
+                child: RadioGroup<StarterLayoutType>(
+                  groupValue: _selectedType,
+                  onChanged: (val) {
+                    if (val != null) setState(() => _selectedType = val);
+                  },
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      ...StarterLayoutTemplate.templates.map((tpl) {
+                        final isSelected = tpl.type == _selectedType;
 
-                      return Padding(
-                        padding: const EdgeInsets.only(bottom: 10),
-                        child: InkWell(
-                          onTap: () => setState(() => _selectedType = tpl.type),
-                          borderRadius: BorderRadius.circular(8),
-                          child: Container(
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: isSelected
-                                  ? const Color(0xFF00E5FF).withOpacity(0.12)
-                                  : const Color(0xFF1E2D4A),
-                              borderRadius: BorderRadius.circular(8),
-                              border: Border.all(
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: InkWell(
+                            onTap: () => setState(() => _selectedType = tpl.type),
+                            borderRadius: BorderRadius.circular(8),
+                            child: Container(
+                              padding: const EdgeInsets.all(14),
+                              decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0xFF00E5FF)
-                                    : const Color(0xFF233554),
-                                width: isSelected ? 1.8 : 1.0,
-                              ),
-                            ),
-                            child: Row(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Radio<StarterLayoutType>(
-                                  value: tpl.type,
-                                  groupValue: _selectedType,
-                                  activeColor: const Color(0xFF00E5FF),
-                                  onChanged: (val) {
-                                    if (val != null) setState(() => _selectedType = val);
-                                  },
+                                    ? const Color(0xFF00E5FF).withValues(alpha: 0.12)
+                                    : const Color(0xFF1E2D4A),
+                                borderRadius: BorderRadius.circular(8),
+                                border: Border.all(
+                                  color: isSelected
+                                      ? const Color(0xFF00E5FF)
+                                      : const Color(0xFF233554),
+                                  width: isSelected ? 1.8 : 1.0,
                                 ),
+                              ),
+                              child: Row(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Radio<StarterLayoutType>(
+                                    value: tpl.type,
+                                    activeColor: const Color(0xFF00E5FF),
+                                  ),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Column(
@@ -185,7 +186,7 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF00E5FF).withOpacity(0.2),
+                                              color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                                               borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: Text(
@@ -241,9 +242,9 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.12),
+                          color: Colors.amber.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.amber.withOpacity(0.4)),
+                          border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
                         ),
                         child: const Row(
                           children: [
@@ -260,6 +261,7 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                       ),
                     ],
                   ],
+                  ),
                 ),
               ),
             ),

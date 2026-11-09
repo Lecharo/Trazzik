@@ -4,7 +4,6 @@ import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
-import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/modules/domain/space_template.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';

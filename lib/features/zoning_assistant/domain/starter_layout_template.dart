@@ -67,31 +67,12 @@ class StarterLayoutTemplate {
   }) {
     final uuid = const Uuid();
     final bbox = lot.boundary.boundingBox;
+    final setbacks = lot.setbacks;
 
-    // 1. Detectar retiros
-    double frontSetback = 0.0;
-    double rearSetback = 0.0;
-    double leftSetback = 0.0;
-    double rightSetback = 0.0;
-
-    for (final zone in lot.zones) {
-      final name = zone.name.toLowerCase();
-      final zBbox = zone.boundary.boundingBox;
-      if (name.contains('frontal')) {
-        frontSetback = math.max(frontSetback, zBbox.height);
-      } else if (name.contains('posterior')) {
-        rearSetback = math.max(rearSetback, zBbox.height);
-      } else if (name.contains('izquierdo')) {
-        leftSetback = math.max(leftSetback, zBbox.width);
-      } else if (name.contains('derecho')) {
-        rightSetback = math.max(rightSetback, zBbox.width);
-      }
-    }
-
-    final startX = bbox.minX + leftSetback;
-    final endX = bbox.maxX - rightSetback;
-    final startY = bbox.minY + frontSetback;
-    final endY = bbox.maxY - rearSetback;
+    final startX = bbox.minX + setbacks.left;
+    final endX = bbox.maxX - setbacks.right;
+    final startY = bbox.minY + setbacks.front;
+    final endY = bbox.maxY - setbacks.rear;
 
     final buildWidth = math.max(6.0, endX - startX);
     final buildDepth = math.max(8.0, endY - startY);

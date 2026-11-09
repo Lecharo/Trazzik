@@ -71,7 +71,7 @@ void main() {
       expect(grout.quantity, equals(10.0));
     });
 
-    test('Genera kit completo de aparatos y materiales técnicos para baños', () {
+    test('Genera kit completo de aparatos y distingue medio baño social de baño completo', () {
       final plan = RenovationPlannerEngine.generatePlan(
         allRooms: sampleRooms,
         renovateFloors: false,
@@ -80,8 +80,10 @@ void main() {
       );
 
       expect(plan.bathroomCount, equals(2));
+      expect(plan.fullBathroomCount, equals(1));
+      expect(plan.halfBathroomCount, equals(1));
 
-      // 2 combos inodoro
+      // 2 combos inodoro (aplica a Baño Social y Baño Principal)
       final combo = plan.materials.firstWhere((m) => m.id == 'mat_sanitary_combo');
       expect(combo.quantity, equals(2.0));
 
@@ -89,13 +91,13 @@ void main() {
       final vanity = plan.materials.firstWhere((m) => m.id == 'mat_vanity_sink');
       expect(vanity.quantity, equals(2.0));
 
-      // 2 kits de ducha
+      // 1 kit de ducha únicamente para el Baño Principal (excluye Baño Social)
       final shower = plan.materials.firstWhere((m) => m.id == 'mat_shower_set');
-      expect(shower.quantity, equals(2.0));
+      expect(shower.quantity, equals(1.0));
 
-      // Impermeabilizante de ducha (4 kg por baño = 8 kg)
+      // Impermeabilizante de ducha (4 kg por baño completo = 4 kg)
       final waterproof = plan.materials.firstWhere((m) => m.id == 'mat_waterproofing_shower');
-      expect(waterproof.quantity, equals(8.0));
+      expect(waterproof.quantity, equals(4.0));
     });
 
     test('Planifica cuadrillas y calcula reducción de tiempo en modo paralelo', () {

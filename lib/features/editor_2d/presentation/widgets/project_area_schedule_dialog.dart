@@ -2,9 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
-import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
-import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
@@ -66,7 +64,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF00E5FF).withOpacity(0.12),
+              color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
               borderRadius: BorderRadius.circular(8),
             ),
             child: const Icon(Icons.table_chart, color: Color(0xFF00E5FF), size: 22),
@@ -186,9 +184,9 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                 decoration: BoxDecoration(
-                  color: Colors.amber.withOpacity(0.08),
+                  color: Colors.amber.withValues(alpha: 0.08),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: Colors.amber.withOpacity(0.25)),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.25)),
                 ),
                 child: Row(
                   children: [
@@ -213,7 +211,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
             Expanded(
               child: ListView.separated(
                 itemCount: floors.length,
-                separatorBuilder: (_, __) => const SizedBox(height: 12),
+                separatorBuilder: (_, _) => const SizedBox(height: 12),
                 itemBuilder: (ctx, index) {
                   final floor = floors[index];
                   final isCurrentFloor = floor.id == state.floor.id;
@@ -300,7 +298,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
         borderRadius: BorderRadius.circular(10),
         side: BorderSide(
           color: isCurrentFloor
-              ? const Color(0xFF00E5FF).withOpacity(0.6)
+              ? const Color(0xFF00E5FF).withValues(alpha: 0.6)
               : Theme.of(context).dividerColor,
           width: isCurrentFloor ? 1.5 : 1.0,
         ),
@@ -314,8 +312,8 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
               color: isCurrentFloor
-                  ? const Color(0xFF00E5FF).withOpacity(0.15)
-                  : Colors.grey.withOpacity(0.1),
+                  ? const Color(0xFF00E5FF).withValues(alpha: 0.15)
+                  : Colors.grey.withValues(alpha: 0.1),
               borderRadius: BorderRadius.circular(6),
             ),
             child: Icon(
@@ -339,7 +337,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withOpacity(0.2),
+                    color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
                     borderRadius: BorderRadius.circular(4),
                   ),
                   child: const Text(
@@ -366,9 +364,9 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withOpacity(0.12),
+                  color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
-                  border: Border.all(color: const Color(0xFF00E5FF).withOpacity(0.3)),
+                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
                 ),
                 child: Text(
                   '${floor.calculatedBuiltArea.toStringAsFixed(2)} m²',
@@ -444,7 +442,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
                       return TableRow(
                         decoration: BoxDecoration(
                           border: Border(
-                            top: BorderSide(color: Theme.of(context).dividerColor.withOpacity(0.5)),
+                            top: BorderSide(color: Theme.of(context).dividerColor.withValues(alpha: 0.5)),
                           ),
                         ),
                         children: [
@@ -459,7 +457,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
                     if (floor.wallsFootprintArea > 0)
                       TableRow(
                         decoration: BoxDecoration(
-                          color: Colors.amber.withOpacity(0.06),
+                          color: Colors.amber.withValues(alpha: 0.06),
                           border: Border(
                             top: BorderSide(color: Theme.of(context).dividerColor),
                           ),
@@ -489,7 +487,7 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
                               child: Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
-                                  color: Colors.amber.withOpacity(0.15),
+                                  color: Colors.amber.withValues(alpha: 0.15),
                                   borderRadius: BorderRadius.circular(4),
                                 ),
                                 child: Text(
@@ -559,30 +557,25 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
   }
 
   Widget _buildStatusCell(ElementStatus status, String lang) {
+    final label = status.displayLabel(lang);
     Color color;
-    String label;
 
     switch (status) {
       case ElementStatus.isNew:
         color = const Color(0xFF00E5FF);
-        label = lang == 'es' ? 'Nuevo' : 'New';
         break;
       case ElementStatus.preserved:
       case ElementStatus.existing:
         color = const Color(0xFF4CAF50);
-        label = lang == 'es' ? 'Conservar' : 'Preserved';
         break;
       case ElementStatus.toDemolish:
         color = const Color(0xFFEF5350);
-        label = lang == 'es' ? 'A Demoler' : 'Demolish';
         break;
       case ElementStatus.toModify:
         color = const Color(0xFFFFB74D);
-        label = lang == 'es' ? 'Modificar' : 'Modify';
         break;
       default:
         color = Colors.grey;
-        label = status.name;
     }
 
     return Padding(
@@ -592,9 +585,9 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
-            color: color.withOpacity(0.12),
+            color: color.withValues(alpha: 0.12),
             borderRadius: BorderRadius.circular(4),
-            border: Border.all(color: color.withOpacity(0.4)),
+            border: Border.all(color: color.withValues(alpha: 0.4)),
           ),
           child: Text(
             label,
@@ -633,28 +626,37 @@ class ProjectAreaScheduleDialog extends ConsumerWidget {
   IconData _getIconForModuleType(String type) {
     switch (type.toUpperCase()) {
       case 'KITCHEN':
+      case 'PANTRY':
         return Icons.soup_kitchen;
       case 'LIVING_ROOM':
+      case 'LIVING_DINING':
         return Icons.weekend;
       case 'DINING_ROOM':
         return Icons.dining;
       case 'BATHROOM':
         return Icons.bathtub;
       case 'BEDROOM':
+      case 'DRESSING_ROOM':
         return Icons.bed;
       case 'OFFICE':
+      case 'STUDIO':
         return Icons.work;
       case 'STAIRS':
         return Icons.stairs;
       case 'HALLWAY':
+      case 'CORRIDOR':
+      case 'FOYER':
         return Icons.door_sliding;
       case 'LAUNDRY':
+      case 'STORAGE':
         return Icons.local_laundry_service;
       case 'GARAGE':
         return Icons.directions_car;
       case 'POOL':
         return Icons.pool;
       case 'GARDEN':
+      case 'PATIO':
+      case 'TERRACE':
         return Icons.park;
       default:
         return Icons.crop_square;

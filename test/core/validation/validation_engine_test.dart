@@ -1,6 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
-import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/validation/validation_engine.dart';
 import 'package:trazzik/core/validation/validation_issue.dart';

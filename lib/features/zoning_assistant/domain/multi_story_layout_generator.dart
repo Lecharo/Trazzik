@@ -17,31 +17,12 @@ class MultiStoryLayoutGenerator {
   }) {
     final uuid = const Uuid();
     final bbox = lot.boundary.boundingBox;
+    final setbacks = lot.setbacks;
 
-    // 1. Detectar retiros normativos del lote
-    double frontSetback = 0.0;
-    double rearSetback = 0.0;
-    double leftSetback = 0.0;
-    double rightSetback = 0.0;
-
-    for (final zone in lot.zones) {
-      final name = zone.name.toLowerCase();
-      final zBbox = zone.boundary.boundingBox;
-      if (name.contains('frontal')) {
-        frontSetback = math.max(frontSetback, zBbox.height);
-      } else if (name.contains('posterior')) {
-        rearSetback = math.max(rearSetback, zBbox.height);
-      } else if (name.contains('izquierdo')) {
-        leftSetback = math.max(leftSetback, zBbox.width);
-      } else if (name.contains('derecho')) {
-        rightSetback = math.max(rightSetback, zBbox.width);
-      }
-    }
-
-    final buildStartX = bbox.minX + leftSetback;
-    final buildEndX = bbox.maxX - rightSetback;
-    final buildStartY = bbox.minY + frontSetback;
-    final buildEndY = bbox.maxY - rearSetback;
+    final buildStartX = bbox.minX + setbacks.left;
+    final buildEndX = bbox.maxX - setbacks.right;
+    final buildStartY = bbox.minY + setbacks.front;
+    final buildEndY = bbox.maxY - setbacks.rear;
 
     final buildW = math.max(6.0, buildEndX - buildStartX);
     final buildD = math.max(8.0, buildEndY - buildStartY);
@@ -58,17 +39,19 @@ class MultiStoryLayoutGenerator {
     final pbModules = <Module>[];
     final pbFloorId = existingFloors.isNotEmpty
         ? existingFloors.first.id
-        : 'floor-pb-${uuid.v4().substring(0, 8)}';
+        : uuid.v4();
     final buildingId = existingFloors.isNotEmpty
         ? existingFloors.first.buildingId
         : 'bldg-main';
 
     double actualPbStartY = buildStartY;
+    final socialH = math.min(5.00, buildD * 0.36);
+    double enclosedGarageRightX = 0.0;
 
     // A. Garaje
     if (brief.garagePlacement == GaragePlacement.frontSetbackSemiCovered) {
       final garageW = brief.garageCars == 2 ? math.min(5.50, buildW * 0.65) : 3.00;
-      final garageH = math.max(4.80, frontSetback > 0 ? frontSetback : 5.00);
+      final garageH = math.max(4.80, setbacks.front > 0 ? setbacks.front : 5.00);
       final garageY = math.max(bbox.minY, buildStartY - garageH);
       actualPbStartY = garageY;
 
@@ -102,6 +85,53 @@ class MultiStoryLayoutGenerator {
           ],
         ),
       );
+    } else if (brief.garagePlacement == GaragePlacement.frontEnclosed) {
+      final garageW = brief.garageCars == 2
+          ? math.min(5.20, buildW * 0.45)
+          : math.min(3.00, buildW * 0.35);
+      final garageH = socialH;
+      enclosedGarageRightX = buildStartX + garageW;
+
+      final garageId = uuid.v4();
+      pbModules.add(
+        Module(
+          id: garageId,
+          floorId: pbFloorId,
+          name: 'Garaje Cubierto (${brief.garageCars} Auto${brief.garageCars > 1 ? 's' : ''})',
+          moduleType: 'GARAGE',
+          geometry: Polygon2D.fromRect(buildStartX, buildStartY, garageW, garageH),
+          status: ElementStatus.isNew,
+          subModules: [
+            SubModule(
+              id: uuid.v4(),
+              moduleId: garageId,
+              name: 'Vehículo 1',
+              type: 'CAR',
+              geometry: Polygon2D.fromRect(
+                buildStartX + 0.4,
+                buildStartY + 0.4,
+                math.min(2.00, garageW - 0.6),
+                math.min(4.00, garageH - 0.6),
+              ),
+              status: ElementStatus.isNew,
+            ),
+            if (brief.garageCars == 2)
+              SubModule(
+                id: uuid.v4(),
+                moduleId: garageId,
+                name: 'Vehículo 2',
+                type: 'CAR',
+                geometry: Polygon2D.fromRect(
+                  buildStartX + math.min(2.7, garageW * 0.52),
+                  buildStartY + 0.4,
+                  math.min(2.00, garageW * 0.44),
+                  math.min(4.00, garageH - 0.6),
+                ),
+                status: ElementStatus.isNew,
+              ),
+          ],
+        ),
+      );
     }
 
     // B. Escalera PB (Sube a Planta Alta)
@@ -119,9 +149,10 @@ class MultiStoryLayoutGenerator {
     );
 
     // C. Zona Social Frontal (Estar y Comedor)
-    final socialStartX = stairX + stairW + 0.20;
+    final serviceStartX = stairX + stairW + 0.20;
+    final serviceW = math.max(3.50, buildEndX - serviceStartX);
+    final socialStartX = math.max(serviceStartX, enclosedGarageRightX);
     final socialW = math.max(3.50, buildEndX - socialStartX);
-    final socialH = math.min(5.00, buildD * 0.36);
 
     final livingId = uuid.v4();
     pbModules.add(
@@ -176,8 +207,8 @@ class MultiStoryLayoutGenerator {
     );
 
     // D. Zona de Servicios Central (Cocina y Baño Social)
-    final kitchenW = socialW * 0.65;
-    final bathSocW = socialW * 0.35;
+    final kitchenW = serviceW * 0.65;
+    final bathSocW = serviceW * 0.35;
     final kitchenId = uuid.v4();
     pbModules.add(
       Module(
@@ -185,7 +216,7 @@ class MultiStoryLayoutGenerator {
         floorId: pbFloorId,
         name: 'Cocina & Desayunador',
         moduleType: 'KITCHEN',
-        geometry: Polygon2D.fromRect(socialStartX, stairY, kitchenW, stairH),
+        geometry: Polygon2D.fromRect(serviceStartX, stairY, kitchenW, stairH),
         status: ElementStatus.isNew,
         subModules: [
           SubModule(
@@ -193,7 +224,7 @@ class MultiStoryLayoutGenerator {
             moduleId: kitchenId,
             name: 'Mesada con Bacha',
             type: 'SINK',
-            geometry: Polygon2D.fromRect(socialStartX + 0.2, stairY + 0.2, 1.60, 0.60),
+            geometry: Polygon2D.fromRect(serviceStartX + 0.2, stairY + 0.2, 1.60, 0.60),
             status: ElementStatus.isNew,
           ),
           SubModule(
@@ -201,7 +232,7 @@ class MultiStoryLayoutGenerator {
             moduleId: kitchenId,
             name: 'Cocina 4 Hornallas',
             type: 'STOVE',
-            geometry: Polygon2D.fromRect(socialStartX + 2.0, stairY + 0.2, 0.70, 0.60),
+            geometry: Polygon2D.fromRect(serviceStartX + 2.0, stairY + 0.2, 0.70, 0.60),
             status: ElementStatus.isNew,
           ),
         ],
@@ -216,7 +247,7 @@ class MultiStoryLayoutGenerator {
           floorId: pbFloorId,
           name: 'Baño Social',
           moduleType: 'BATHROOM',
-          geometry: Polygon2D.fromRect(socialStartX + kitchenW, stairY, bathSocW, stairH),
+          geometry: Polygon2D.fromRect(serviceStartX + kitchenW, stairY, bathSocW, stairH),
           status: ElementStatus.isNew,
           subModules: [
             SubModule(
@@ -224,7 +255,7 @@ class MultiStoryLayoutGenerator {
               moduleId: bathId,
               name: 'Inodoro',
               type: 'TOILET',
-              geometry: Polygon2D.fromRect(socialStartX + kitchenW + 0.3, stairY + 0.3, 0.50, 0.70),
+              geometry: Polygon2D.fromRect(serviceStartX + kitchenW + 0.3, stairY + 0.3, 0.50, 0.70),
               status: ElementStatus.isNew,
             ),
             SubModule(
@@ -232,7 +263,7 @@ class MultiStoryLayoutGenerator {
               moduleId: bathId,
               name: 'Lavamanos',
               type: 'WASHBASIN',
-              geometry: Polygon2D.fromRect(socialStartX + kitchenW + 0.9, stairY + 0.3, 0.55, 0.45),
+              geometry: Polygon2D.fromRect(serviceStartX + kitchenW + 0.9, stairY + 0.3, 0.55, 0.45),
               status: ElementStatus.isNew,
             ),
           ],
@@ -347,7 +378,7 @@ class MultiStoryLayoutGenerator {
     final paModules = <Module>[];
     final paFloorId = existingFloors.length > 1
         ? existingFloors[1].id
-        : 'floor-pa-${uuid.v4().substring(0, 8)}';
+        : uuid.v4();
 
     // A. Llegada de escalera PA (misma coordenada x, y)
     final paStairId = uuid.v4();

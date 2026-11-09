@@ -11,33 +11,12 @@ class ZoningEngine {
     if (lot.boundary.vertices.isEmpty) return const [];
 
     final bbox = lot.boundary.boundingBox;
-    final lotWidth = bbox.width;
-    final lotDepth = bbox.height;
+    final setbacks = lot.setbacks;
 
-    // 1. Detectar retiros normativos si existen
-    double frontSetback = 0.0;
-    double rearSetback = 0.0;
-    double leftSetback = 0.0;
-    double rightSetback = 0.0;
-
-    for (final zone in lot.zones) {
-      final name = zone.name.toLowerCase();
-      final zBbox = zone.boundary.boundingBox;
-      if (name.contains('frontal')) {
-        frontSetback = math.max(frontSetback, zBbox.height);
-      } else if (name.contains('posterior')) {
-        rearSetback = math.max(rearSetback, zBbox.height);
-      } else if (name.contains('izquierdo')) {
-        leftSetback = math.max(leftSetback, zBbox.width);
-      } else if (name.contains('derecho')) {
-        rightSetback = math.max(rightSetback, zBbox.width);
-      }
-    }
-
-    final buildableMinX = bbox.minX + leftSetback;
-    final buildableMaxX = bbox.maxX - rightSetback;
-    final buildableMinY = bbox.minY + frontSetback;
-    final buildableMaxY = bbox.maxY - rearSetback;
+    final buildableMinX = bbox.minX + setbacks.left;
+    final buildableMaxX = bbox.maxX - setbacks.right;
+    final buildableMinY = bbox.minY + setbacks.front;
+    final buildableMaxY = bbox.maxY - setbacks.rear;
 
     final buildableWidth = math.max(1.0, buildableMaxX - buildableMinX);
     final buildableDepth = math.max(1.0, buildableMaxY - buildableMinY);
