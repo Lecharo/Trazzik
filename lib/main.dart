@@ -91,18 +91,39 @@ class _StartupShareGateState extends ConsumerState<_StartupShareGate> {
       final res = await SharedProjectOpener.hydrateSharedProject(
         ref,
         widget.shareToken,
-      );
+      ).timeout(const Duration(seconds: 12));
       if (mounted) {
         setState(() {
           _hydrated = res;
           _loading = false;
         });
+        if (res == null) {
+          _showInvalidTokenBanner();
+        }
       }
     } catch (_) {
       if (mounted) {
         setState(() => _loading = false);
+        _showInvalidTokenBanner();
       }
     }
+  }
+
+  void _showInvalidTokenBanner() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final lang = ref.read(appLocaleProvider);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            lang == 'es'
+                ? 'El enlace compartido no existe o expiró (vigencia 60 días).'
+                : 'The shared link is invalid or expired (60-day validity).',
+          ),
+          backgroundColor: Colors.orange.shade800,
+        ),
+      );
+    });
   }
 
   @override

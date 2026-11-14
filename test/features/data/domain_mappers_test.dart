@@ -3,6 +3,8 @@ import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/demolition/domain/replacement_relationship.dart';
+import 'package:trazzik/features/fee_proposal/domain/architect_fee_proposal.dart';
+import 'package:trazzik/features/fee_proposal/presentation/services/architect_fee_proposal_pdf_service.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/lots/domain/zoning_type.dart';
@@ -140,6 +142,90 @@ void main() {
       expect(restored.stateProvince, equals('Cundinamarca'));
       expect(restored.city, equals('Bogotá'));
       expect(restored.address, equals('Cra 15 # 93-20'));
+    });
+
+    test('Project.fromJson tolera payload público sin owner_id ni timestamps', () {
+      final restored = Project.fromJson({
+        'id': '11111111-1111-4111-8111-111111111111',
+        'name': 'Proyecto Compartido',
+      });
+
+      expect(restored.id, equals('11111111-1111-4111-8111-111111111111'));
+      expect(restored.ownerId, isEmpty);
+      expect(restored.name, equals('Proyecto Compartido'));
+    });
+
+    test('Polygon2D.fromJson y SubModule.fromJson sanitizan geometría corrupta o no finita', () {
+      final badPoly = Polygon2D.fromJson({
+        'vertices': [
+          {'x': double.nan, 'y': 0.0},
+          {'x': 2.0, 'y': 0.0},
+        ],
+      });
+      expect(badPoly.vertices.length, greaterThanOrEqualTo(3));
+      expect(badPoly.vertices.every((v) => v.x.isFinite && v.y.isFinite), isTrue);
+
+      final badSub = SubModule.fromJson({
+        'id': 'sub-bad',
+        'module_id': 'mod-1',
+        'name': 'Mueble corrupto',
+        'type': 'SOFA',
+        'status': 'invalid_status',
+      });
+      expect(badSub.status, equals(ElementStatus.existing));
+      expect(badSub.geometry.vertices.length, greaterThanOrEqualTo(3));
+    });
+
+    test('Wall.deduplicate conserva muros coincidentes con distinto status (demolición + nuevo)', () {
+      final demoWall = Wall(
+        id: 'w-demo',
+        floorId: 'f1',
+        startPoint: const Point2D(0, 0),
+        endPoint: const Point2D(4, 0),
+        status: ElementStatus.toDemolish,
+      );
+      final newWall = Wall(
+        id: 'w-new',
+        floorId: 'f1',
+        startPoint: const Point2D(0, 0),
+        endPoint: const Point2D(4, 0),
+        status: ElementStatus.isNew,
+      );
+      final dupNewWall = Wall(
+        id: 'w-new-dup',
+        floorId: 'f1',
+        startPoint: const Point2D(4, 0),
+        endPoint: const Point2D(0, 0),
+        status: ElementStatus.isNew,
+      );
+
+      final deduped = Wall.deduplicate([demoWall, newWall, dupNewWall]);
+      expect(deduped.length, equals(2));
+      expect(deduped.any((w) => w.status == ElementStatus.toDemolish), isTrue);
+      expect(deduped.any((w) => w.status == ElementStatus.isNew), isTrue);
+    });
+
+    test('ArchitectFeeProposal.applyConfigJson y formatCop sanitizan NaN, negativos e infinitos', () {
+      final proposal = ArchitectFeeProposal.fromProjectFloors(
+        projectName: 'Proyecto Fee',
+        floors: const [],
+      );
+      final sanitized = proposal.applyConfigJson({
+        'rate_per_m2_cop': -500.0,
+        'construction_cost_per_m2_cop': double.infinity,
+        'fee_percentage_of_construction': 150.0,
+        'custom_fixed_fee_cop': double.nan,
+        'validity_days': -10,
+      });
+
+      expect(sanitized.ratePerM2Cop, greaterThanOrEqualTo(0));
+      expect(sanitized.constructionCostPerM2Cop, equals(proposal.constructionCostPerM2Cop));
+      expect(sanitized.feePercentageOfConstruction, lessThanOrEqualTo(50.0));
+      expect(sanitized.customFixedFeeCop, equals(proposal.customFixedFeeCop));
+      expect(sanitized.validityDays, equals(1));
+
+      expect(ArchitectFeeProposalPdfService.formatCop(double.nan), equals(r'$0 COP'));
+      expect(ArchitectFeeProposalPdfService.formatCop(-12500), equals(r'-$12.500 COP'));
     });
   });
 }

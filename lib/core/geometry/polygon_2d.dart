@@ -25,10 +25,23 @@ class Polygon2D {
   }
 
   factory Polygon2D.fromJson(Map<String, dynamic> json) {
-    final list = json['vertices'] as List<dynamic>;
-    return Polygon2D(
-      list.map((v) => Point2D.fromJson(v as Map<String, dynamic>)),
-    );
+    final rawList = json['vertices'];
+    if (rawList is! List || rawList.length < 3) {
+      return Polygon2D.fromRect(0.0, 0.0, 1.0, 1.0);
+    }
+    final parsed = <Point2D>[];
+    for (final entry in rawList) {
+      if (entry is Map) {
+        final pt = Point2D.fromJson(Map<String, dynamic>.from(entry));
+        if (pt.x.isFinite && pt.y.isFinite) {
+          parsed.add(pt);
+        }
+      }
+    }
+    if (parsed.length < 3) {
+      return Polygon2D.fromRect(0.0, 0.0, 1.0, 1.0);
+    }
+    return Polygon2D(parsed);
   }
 
   Map<String, dynamic> toJson() => {

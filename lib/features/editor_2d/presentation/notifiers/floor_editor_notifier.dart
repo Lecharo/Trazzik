@@ -1342,12 +1342,17 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
           .map((w) => w.copyWith(floorId: state.floor.id))
           .toList(),
     );
+    final orphanedIds = state.allFloors
+        .where((f) => f.id != preservedFloor.id)
+        .map((f) => f.id)
+        .toSet();
     state = seed.copyWith(
       project: existingProj,
       lot: state.lot,
       floor: preservedFloor,
       allFloors: [preservedFloor],
       dirtyFloorIds: {preservedFloor.id},
+      deletedFloorIds: {...state.deletedFloorIds, ...orphanedIds},
       hasUnsavedChanges: true,
     );
   }

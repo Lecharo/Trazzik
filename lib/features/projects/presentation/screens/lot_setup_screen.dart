@@ -69,6 +69,12 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
     _loadExistingLotData();
   }
 
+  static bool _isDesignVariantFloor(Floor f) {
+    return f.name.contains('(Opción') ||
+        f.name.contains('(Variant') ||
+        (f.floorNumber > 1 && f.levelMeters == 0.0);
+  }
+
   Future<void> _loadExistingLotData() async {
     try {
       final lot = await _projectRepo.getLotByProjectId(widget.project.id);
@@ -107,9 +113,13 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
               await _floorRepo.getFloorsByBuildingId(_existingBuildingId!);
           _loadedFloors = floors;
           if (floors.isNotEmpty) {
-            if (_floorsCountController.text.isEmpty || _floorsCountController.text == '0') {
-              _floorsCountController.text = floors.length.toString();
-            }
+            final physicalCount =
+                floors.where((f) => !_isDesignVariantFloor(f)).length;
+            final effectiveFloorsCount = math.max(
+              primaryBuilding.floorsCount ?? 1,
+              math.max(1, physicalCount),
+            );
+            _floorsCountController.text = effectiveFloorsCount.toString();
             final firstFloor = floors.first;
             _heightController.text = firstFloor.heightMeters.toStringAsFixed(2);
             _clearHeightController.text = (firstFloor.heightMeters - 0.20)
@@ -308,11 +318,17 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       );
       final actualBuildingId = savedBuilding.id;
 
-      // 3. Crear o actualizar todos los Pisos según floorsCount (reutilizando los pisos ya cargados si aplica)
+      // 3. Preserve existing physical floors up to floorsCount and retain all design variants.
       final existingFloors = actualBuildingId == _existingBuildingId
           ? _loadedFloors
           : await _floorRepo.getFloorsByBuildingId(actualBuildingId);
-      final existingFloorsByNumber = {for (final f in existingFloors) f.floorNumber: f};
+      final existingVariants =
+          existingFloors.where(_isDesignVariantFloor).toList();
+      final existingPhysicalFloors =
+          existingFloors.where((f) => !_isDesignVariantFloor(f)).toList();
+      final existingFloorsByNumber = {
+        for (final f in existingPhysicalFloors) f.floorNumber: f,
+      };
 
       // Polígono del límite del piso dentro de los retiros
       final floorBoundary = Polygon2D.fromRect(
@@ -323,7 +339,7 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
       );
 
       final allFloors = <Floor>[];
-      final removedFloorIds = existingFloors
+      final removedFloorIds = existingPhysicalFloors
           .where((f) => f.floorNumber > floorsCount)
           .map((f) => f.id)
           .toSet();
@@ -352,6 +368,16 @@ class _LotSetupScreenState extends ConsumerState<LotSetupScreen> {
         );
 
         allFloors.add(fFloor);
+      }
+
+      for (final variant in existingVariants) {
+        allFloors.add(
+          variant.copyWith(
+            boundary: floorBoundary,
+            maxAllowedArea: maxArea,
+            heightMeters: height,
+          ),
+        );
       }
 
       await _floorRepo.saveProjectFloors(

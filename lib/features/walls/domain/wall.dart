@@ -119,6 +119,7 @@ class Wall {
           final candidates = buckets[(startCell.$1 + dx, startCell.$2 + dy)];
           if (candidates == null) continue;
           for (final existing in candidates) {
+            if (existing.status != w.status) continue;
             final sameDir = existing.startPoint.distanceTo(w.startPoint) < 0.05 &&
                 existing.endPoint.distanceTo(w.endPoint) < 0.05;
             final oppDir = existing.startPoint.distanceTo(w.endPoint) < 0.05 &&

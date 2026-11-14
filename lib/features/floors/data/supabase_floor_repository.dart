@@ -20,7 +20,10 @@ class SupabaseFloorRepository {
     Map<String, String> resolvedMap,
   ) {
     if (_uuidRegex.hasMatch(id)) return id;
-    return resolvedMap.putIfAbsent(id, () => const Uuid().v4());
+    return resolvedMap.putIfAbsent(
+      id,
+      () => const Uuid().v5(Namespace.url.value, 'trazzik:$id'),
+    );
   }
 
   SupabaseFloorRepository([SupabaseClient? client])
@@ -41,11 +44,13 @@ class SupabaseFloorRepository {
 
     for (final floor in dirtyFloors) {
       final resolvedFloorId = _resolveStableUuid(floor.id, resolvedIds);
+      final resolvedBuildingId =
+          _resolveStableUuid(floor.buildingId, resolvedIds);
       resolvedFloorIds.add(resolvedFloorId);
 
       floorPayloads.add({
         'id': resolvedFloorId,
-        'building_id': floor.buildingId,
+        'building_id': resolvedBuildingId,
         'floor_number': floor.floorNumber,
         'name': floor.name,
         'level_meters': floor.levelMeters,
@@ -137,13 +142,18 @@ class SupabaseFloorRepository {
       final existingWalls = existingResults[1];
       final existingRels = existingResults[2];
 
-      // 2. Si hay pisos eliminados que puedan colisionar en (building_id, floor_number), eliminarlos
-      if (deletedFloorIds.isNotEmpty) {
-        await deleteFloors(deletedFloorIds);
+      // 2. Upsert first (floors -> modules & walls -> relationships) to avoid data loss on network failure.
+      // Only fall back to pre-deleting deletedFloorIds if a unique (building_id, floor_number) constraint triggers.
+      try {
+        await _client.from('floors').upsert(floorPayloads);
+      } on PostgrestException catch (e) {
+        if (e.code == '23505' && deletedFloorIds.isNotEmpty) {
+          await deleteFloors(deletedFloorIds);
+          await _client.from('floors').upsert(floorPayloads);
+        } else {
+          rethrow;
+        }
       }
-
-      // 3. Upsert primero (floors -> modules & walls -> relationships) para evitar pérdida ante corte de red
-      await _client.from('floors').upsert(floorPayloads);
 
       await Future.wait([
         if (modulePayloads.isNotEmpty)
@@ -156,7 +166,7 @@ class SupabaseFloorRepository {
         await _client.from('replacement_relationships').upsert(relPayloads);
       }
 
-      // 4. Eliminar elementos obsoletos sólo después de que los upserts hayan tenido éxito
+      // 3. Delete obsolete child rows and deleted floors only after all upserts succeed.
       final currentRelIds = relPayloads.map((r) => r['id'] as String).toSet();
       final removedRelIds = existingRels
           .map((row) => row['id'] as String)
@@ -188,6 +198,10 @@ class SupabaseFloorRepository {
         if (removedWallIds.isNotEmpty)
           _client.from('walls').delete().inFilter('id', removedWallIds),
       ]);
+
+      if (deletedFloorIds.isNotEmpty) {
+        await deleteFloors(deletedFloorIds);
+      }
     } else if (deletedFloorIds.isNotEmpty) {
       await deleteFloors(deletedFloorIds);
     }

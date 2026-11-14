@@ -1,5 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/data.dart';
+import 'package:uuid/rng.dart';
 import 'package:uuid/uuid.dart';
 import 'package:trazzik/core/supabase/supabase_providers.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -243,8 +245,9 @@ class SupabaseProjectRepository {
     return null;
   }
 
-  /// Crea o reutiliza un token de enlace interactivo para cliente (vigencia 60 días).
-  Future<String> createOrGetProjectShareLink({
+  /// Creates or reuses an active 60-day client share link with full expiration metadata.
+  Future<({String token, DateTime expiresAt, bool allowFinishSelection})>
+      createOrGetProjectShareLinkDetails({
     required String projectId,
     bool allowFinishSelection = true,
   }) async {
@@ -258,7 +261,19 @@ class SupabaseProjectRepository {
 
     if (existing.isNotEmpty) {
       final token = existing.first['token'] as String?;
-      if (token != null && token.isNotEmpty) return token;
+      if (token != null && token.isNotEmpty) {
+        final rawExpires = existing.first['expires_at']?.toString();
+        final parsedExpires = (rawExpires != null
+                ? DateTime.tryParse(rawExpires)?.toLocal()
+                : null) ??
+            DateTime.now().add(const Duration(days: 60));
+        final storedAllow = existing.first['allow_finish_selection'] as bool?;
+        return (
+          token: token,
+          expiresAt: parsedExpires,
+          allowFinishSelection: storedAllow ?? allowFinishSelection,
+        );
+      }
     }
 
     final currentUserId = _client.auth.currentUser?.id;
@@ -266,14 +281,33 @@ class SupabaseProjectRepository {
       throw StateError('Authenticated user required to create share link.');
     }
 
-    final token = const Uuid().v4().replaceAll('-', '');
+    final secureUuid = Uuid(goptions: GlobalOptions(CryptoRNG()));
+    final token = secureUuid.v4().replaceAll('-', '');
+    final expiresAt = DateTime.now().toUtc().add(const Duration(days: 60));
     await _client.from('project_share_links').insert({
       'project_id': projectId,
       'token': token,
       'created_by': currentUserId,
       'allow_finish_selection': allowFinishSelection,
+      'expires_at': expiresAt.toIso8601String(),
     });
-    return token;
+    return (
+      token: token,
+      expiresAt: expiresAt.toLocal(),
+      allowFinishSelection: allowFinishSelection,
+    );
+  }
+
+  /// Crea o reutiliza un token de enlace interactivo para cliente (vigencia 60 días).
+  Future<String> createOrGetProjectShareLink({
+    required String projectId,
+    bool allowFinishSelection = true,
+  }) async {
+    final details = await createOrGetProjectShareLinkDetails(
+      projectId: projectId,
+      allowFinishSelection: allowFinishSelection,
+    );
+    return details.token;
   }
 
   /// Obtiene el permiso actual `allow_finish_selection` del enlace compartido activo del proyecto.

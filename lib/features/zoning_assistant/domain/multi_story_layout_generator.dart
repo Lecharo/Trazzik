@@ -42,7 +42,7 @@ class MultiStoryLayoutGenerator {
         : uuid.v4();
     final buildingId = existingFloors.isNotEmpty
         ? existingFloors.first.buildingId
-        : 'bldg-main';
+        : uuid.v4();
 
     double actualPbStartY = buildStartY;
     final socialH = math.min(5.00, buildD * 0.36);

@@ -105,17 +105,19 @@ class Project {
       };
 
   factory Project.fromJson(Map<String, dynamic> json, {Lot? lot}) => Project(
-        id: json['id'] as String,
-        name: json['name'] as String,
+        id: json['id']?.toString() ?? '',
+        name: json['name']?.toString() ?? 'Proyecto',
         description: json['description'] as String?,
-        ownerId: json['owner_id'] as String,
+        ownerId: json['owner_id']?.toString() ?? '',
         country: json['country'] as String?,
         stateProvince: json['state_province'] as String?,
         city: json['city'] as String?,
         address: json['address'] as String?,
         imageUrl: json['image_url'] as String?,
         lot: lot,
-        createdAt: DateTime.parse(json['created_at'] as String),
-        updatedAt: DateTime.parse(json['updated_at'] as String),
+        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+            DateTime.now(),
+        updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
+            DateTime.now(),
       );
 }

@@ -12,7 +12,9 @@ import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_s
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/projects/data/supabase_project_repository.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
+import 'package:trazzik/features/projects/domain/project_building.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/domain/gltf_exporter_service.dart';
@@ -366,7 +368,11 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Compartir Maqueta 3D con Cliente'), findsOneWidget);
-      expect(find.textContaining('https://trazzik.app/?share='), findsOneWidget);
+      expect(
+        find.textContaining('Proyecto local sin guardar en la nube'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('https://trazzik.app/?share=tz_'), findsNothing);
       expect(find.text('Probar Vista Cliente'), findsOneWidget);
 
       await tester.tap(find.text('Probar Vista Cliente'));
@@ -376,6 +382,66 @@ void main() {
         find.textContaining('VISTA CLIENTE (60d) • Acabados interactivos'),
         findsOneWidget,
       );
+    });
+
+    testWidgets('Proyecto UUID muestra token cloud real y sesión cliente independiente oculta Render Studio', (tester) async {
+      tester.view.physicalSize = const Size(1280, 900);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(() {
+        tester.view.resetPhysicalSize();
+        tester.view.resetDevicePixelRatio();
+      });
+
+      final cloudProject = Project(
+        id: '11111111-1111-4111-8111-111111111111',
+        name: 'Casa Cloud 60d',
+        ownerId: 'owner-1',
+        createdAt: DateTime.now(),
+      );
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            floorEditorProvider.overrideWith(
+              () => _Test3DFloorEditorNotifier(lot, floor1, allFloors, cloudProject),
+            ),
+            projectRepositoryProvider.overrideWithValue(_FakeCloudShareRepo()),
+          ],
+          child: const MaterialApp(
+            home: Viewer3dScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      await tester.tap(find.byIcon(Icons.share_rounded));
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('https://trazzik.app/?share=realcloudtoken998877'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('vence el 14/05/2027'), findsOneWidget);
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            floorEditorProvider.overrideWith(
+              () => _Test3DFloorEditorNotifier(lot, floor1, allFloors, cloudProject),
+            ),
+            projectRepositoryProvider.overrideWithValue(_FakeCloudShareRepo()),
+          ],
+          child: const MaterialApp(
+            home: Viewer3dScreen(
+              isStandaloneClientSession: true,
+              initialShareToken: 'realcloudtoken998877',
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byIcon(Icons.camera_enhance_outlined), findsNothing);
     });
 
     test('SharedProjectOpener.extractToken extrae token desde URL completa o código directo', () {
@@ -609,4 +675,22 @@ class _Test3DFloorEditorNotifier extends FloorEditorNotifier {
       project: _testProject,
     );
   }
+}
+
+class _FakeCloudShareRepo extends Fake implements SupabaseProjectRepository {
+  @override
+  Future<({String token, DateTime expiresAt, bool allowFinishSelection})>
+      createOrGetProjectShareLinkDetails({
+    required String projectId,
+    bool allowFinishSelection = true,
+  }) async {
+    return (
+      token: 'realcloudtoken998877',
+      expiresAt: DateTime(2027, 5, 14),
+      allowFinishSelection: true,
+    );
+  }
+
+  @override
+  Future<ProjectBuilding?> getPrimaryBuildingByLotId(String lotId) async => null;
 }

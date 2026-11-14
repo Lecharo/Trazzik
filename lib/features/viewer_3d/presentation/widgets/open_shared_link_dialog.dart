@@ -126,6 +126,33 @@ class _OpenSharedLinkDialogState extends ConsumerState<OpenSharedLinkDialog> {
       return;
     }
 
+    if (ref.read(floorEditorProvider).hasUnsavedChanges) {
+      final confirm = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text(
+            lang == 'es' ? 'Cambios sin guardar' : 'Unsaved changes',
+          ),
+          content: Text(
+            lang == 'es'
+                ? 'Hay cambios sin guardar en el proyecto activo. ¿Desea abrir el enlace compartido de todas formas?'
+                : 'You have unsaved changes in the active project. Open shared link anyway?',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(false),
+              child: Text(lang == 'es' ? 'Cancelar' : 'Cancel'),
+            ),
+            FilledButton(
+              onPressed: () => Navigator.of(ctx).pop(true),
+              child: Text(lang == 'es' ? 'Continuar' : 'Continue'),
+            ),
+          ],
+        ),
+      );
+      if (confirm != true || !mounted) return;
+    }
+
     setState(() {
       _isLoading = true;
       _errorText = null;

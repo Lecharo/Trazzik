@@ -354,7 +354,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   });
                 } else if (val == 'cycle_section') {
                   _cycleSectionCut();
-                } else if (val == 'render_studio') {
+                } else if (val == 'render_studio' &&
+                    !widget.isStandaloneClientSession) {
                   Render3dStudioDialog.show(
                     context,
                     activeFloor: floor,
@@ -500,16 +501,17 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                     ],
                   ),
                 ),
-                PopupMenuItem(
-                  value: 'render_studio',
-                  child: Row(
-                    children: [
-                      const Icon(Icons.camera_enhance_outlined, size: 18, color: Color(0xFF00E5FF)),
-                      const SizedBox(width: 8),
-                      Text(lang == 'es' ? 'Render Studio / Exportar glTF' : 'Render Studio / Export glTF'),
-                    ],
+                if (!widget.isStandaloneClientSession)
+                  PopupMenuItem(
+                    value: 'render_studio',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.camera_enhance_outlined, size: 18, color: Color(0xFF00E5FF)),
+                        const SizedBox(width: 8),
+                        Text(lang == 'es' ? 'Render Studio / Exportar glTF' : 'Render Studio / Export glTF'),
+                      ],
+                    ),
                   ),
-                ),
               ],
             ),
             IconButton(
@@ -690,23 +692,24 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   : (_showLabels ? 'Hide labels' : 'Show short labels'),
               onPressed: () => setState(() => _showLabels = !_showLabels),
             ),
-            IconButton(
-              visualDensity: VisualDensity.compact,
-              padding: const EdgeInsets.symmetric(horizontal: 5),
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              icon: const Icon(Icons.camera_enhance_outlined, size: 19, color: Color(0xFF38BDF8)),
-              tooltip: lang == 'es'
-                  ? 'Render Studio 3D / Exportar glTF y Lámina PL-3D'
-                  : '3D Render Studio / Export glTF & PL-3D Sheet',
-              onPressed: () => Render3dStudioDialog.show(
-                context,
-                activeFloor: floor,
-                allFloors: floors,
-                lot: lot,
-                project: ref.read(floorEditorProvider).project,
-                currentFaces: faces,
+            if (!widget.isStandaloneClientSession)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: const EdgeInsets.symmetric(horizontal: 5),
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                icon: const Icon(Icons.camera_enhance_outlined, size: 19, color: Color(0xFF38BDF8)),
+                tooltip: lang == 'es'
+                    ? 'Render Studio 3D / Exportar glTF y Lámina PL-3D'
+                    : '3D Render Studio / Export glTF & PL-3D Sheet',
+                onPressed: () => Render3dStudioDialog.show(
+                  context,
+                  activeFloor: floor,
+                  allFloors: floors,
+                  lot: lot,
+                  project: ref.read(floorEditorProvider).project,
+                  currentFaces: faces,
+                ),
               ),
-            ),
             if (!widget.isStandaloneClientSession)
               IconButton(
                 visualDensity: VisualDensity.compact,
@@ -1127,7 +1130,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     final rooms = floors
         .where((f) => _selectedFloorId == null || f.id == _selectedFloorId)
         .expand((f) => f.modules)
-        .where((m) => !m.isOpening && !m.isStairs)
+        .where((m) =>
+            !m.isOpening &&
+            !m.isStairs &&
+            !m.isOutdoorUnpaved &&
+            m.status != ElementStatus.toDemolish)
         .toList();
 
     if (rooms.isEmpty) return const SizedBox.shrink();
@@ -1411,44 +1418,27 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                             );
                           }
 
-                          if (_isClientPreviewMode &&
-                              _clientShareToken.isNotEmpty &&
-                              !_clientShareToken.startsWith('tz_')) {
-                            final editorState = ref.read(floorEditorProvider);
-                            final targetFloor = editorState.allFloors
-                                    .where((f) => f.id == targetFloorId)
-                                    .firstOrNull ??
-                                editorState.floor;
-                            final targetModuleIds = _applyToEntireFloor
-                                ? targetFloor.modules
-                                    .where(
-                                      (m) =>
-                                          !m.isOpening &&
-                                          !m.isStairs &&
-                                          !m.isOutdoorUnpaved &&
-                                          m.status != ElementStatus.toDemolish,
-                                    )
-                                    .map((m) => m.id)
-                                    .toList()
-                                : <String>[selectedModule.id];
-                            final repo = ref.read(projectRepositoryProvider);
-                            for (final modId in targetModuleIds) {
-                              repo
-                                  .updateSharedModuleFinishes(
-                                    token: _clientShareToken,
-                                    moduleId: modId,
-                                    floorMaterialId: _activeSurfaceTab ==
-                                            FinishSurfaceTarget.floor
-                                        ? item.id
-                                        : null,
-                                    wallFinishId: _activeSurfaceTab ==
-                                            FinishSurfaceTarget.wall
-                                        ? item.id
-                                        : null,
-                                  )
-                                  .ignore();
-                            }
-                          }
+                          final langCode = ref.read(appLocaleProvider);
+                          final editorState = ref.read(floorEditorProvider);
+                          final targetFloor = editorState.allFloors
+                                  .where((f) => f.id == targetFloorId)
+                                  .firstOrNull ??
+                              editorState.floor;
+                          final targetModules = _applyToEntireFloor
+                              ? targetFloor.modules
+                              : <Module>[selectedModule];
+                          _persistSharedModuleFinishes(
+                            targetModules,
+                            overrideFloorMatId:
+                                _activeSurfaceTab == FinishSurfaceTarget.floor
+                                    ? item.id
+                                    : null,
+                            overrideWallFinishId:
+                                _activeSurfaceTab == FinishSurfaceTarget.wall
+                                    ? item.id
+                                    : null,
+                            lang: langCode,
+                          );
                         },
                         child: AnimatedContainer(
                           duration: const Duration(milliseconds: 160),
@@ -1595,30 +1585,69 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       floorId: _selectedFloorId,
     );
 
-    if (_isClientPreviewMode &&
-        _clientShareToken.isNotEmpty &&
-        !_clientShareToken.startsWith('tz_')) {
-      final editorState = ref.read(floorEditorProvider);
-      final targetFloor = _selectedFloorId != null
-          ? (editorState.allFloors
-                  .where((f) => f.id == _selectedFloorId)
-                  .firstOrNull ??
-              editorState.floor)
-          : editorState.floor;
-      final repo = ref.read(projectRepositoryProvider);
-      for (final m in targetFloor.modules) {
-        if (m.isOpening || m.isStairs || m.status == ElementStatus.toDemolish) {
-          continue;
-        }
-        repo
-            .updateSharedModuleFinishes(
-              token: _clientShareToken,
-              moduleId: m.id,
-              floorMaterialId: m.floorMaterialId,
-              wallFinishId: m.wallFinishId,
-            )
-            .ignore();
+    final editorState = ref.read(floorEditorProvider);
+    final targetFloors = _selectedFloorId != null
+        ? editorState.allFloors.where((f) => f.id == _selectedFloorId).toList()
+        : editorState.allFloors;
+    final targetModules = targetFloors.expand((f) => f.modules).toList();
+    _persistSharedModuleFinishes(
+      targetModules,
+      useModuleFinishes: true,
+      lang: ref.read(appLocaleProvider),
+    );
+  }
+
+  Future<void> _persistSharedModuleFinishes(
+    List<Module> modules, {
+    String? overrideFloorMatId,
+    String? overrideWallFinishId,
+    bool useModuleFinishes = false,
+    required String lang,
+  }) async {
+    if (!_isClientPreviewMode ||
+        _clientShareToken.isEmpty ||
+        _clientShareToken.startsWith('tz_')) {
+      return;
+    }
+
+    final repo = ref.read(projectRepositoryProvider);
+    var anyFailure = false;
+    for (final m in modules) {
+      if (m.isLocked ||
+          m.isOpening ||
+          m.isStairs ||
+          m.isOutdoorUnpaved ||
+          m.status == ElementStatus.toDemolish) {
+        continue;
       }
+      try {
+        final ok = await repo.updateSharedModuleFinishes(
+          token: _clientShareToken,
+          moduleId: m.id,
+          floorMaterialId:
+              useModuleFinishes ? m.floorMaterialId : overrideFloorMatId,
+          wallFinishId:
+              useModuleFinishes ? m.wallFinishId : overrideWallFinishId,
+        );
+        if (!ok) anyFailure = true;
+      } catch (_) {
+        anyFailure = true;
+      }
+    }
+
+    if (anyFailure && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.amber.shade900,
+            content: Text(
+              lang == 'es'
+                  ? 'No se pudieron guardar todos los acabados en la nube. Verifica el enlace o intenta de nuevo.'
+                  : 'Could not save all finishes to the cloud. Check the link or try again.',
+            ),
+          ),
+        );
     }
   }
 

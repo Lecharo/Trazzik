@@ -75,17 +75,31 @@ class SubModule {
         'is_locked': isLocked,
       };
 
-  factory SubModule.fromJson(Map<String, dynamic> json) => SubModule(
-        id: json['id'] as String,
-        moduleId: json['module_id'] as String,
-        name: json['name'] as String,
-        type: json['type'] as String,
-        geometry: Polygon2D.fromJson(json['geometry'] as Map<String, dynamic>),
-        status: ElementStatus.values.byName(json['status'] as String),
-        height: (json['height'] as num?)?.toDouble(),
-        elevation: (json['elevation'] as num?)?.toDouble() ?? 0.0,
-        isLocked: json['is_locked'] as bool? ?? false,
-      );
+  factory SubModule.fromJson(Map<String, dynamic> json) {
+    final statusName = json['status']?.toString();
+    final parsedStatus = ElementStatus.values
+            .where((e) => e.name == statusName)
+            .firstOrNull ??
+        ElementStatus.existing;
+    final geomMap = json['geometry'] is Map
+        ? Map<String, dynamic>.from(json['geometry'] as Map)
+        : const <String, dynamic>{};
+    final rawHeight = (json['height'] as num?)?.toDouble();
+    final rawElev = (json['elevation'] as num?)?.toDouble() ?? 0.0;
+    return SubModule(
+      id: json['id']?.toString() ?? '',
+      moduleId: json['module_id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Item',
+      type: json['type']?.toString() ?? 'GENERIC',
+      geometry: Polygon2D.fromJson(geomMap),
+      status: parsedStatus,
+      height: (rawHeight != null && rawHeight.isFinite && rawHeight > 0)
+          ? rawHeight
+          : null,
+      elevation: rawElev.isFinite ? rawElev : 0.0,
+      isLocked: json['is_locked'] as bool? ?? false,
+    );
+  }
 }
 
 /// Módulo arquitectónico (Espacio funcional: Cocina, Sala, Habitación, Baño).

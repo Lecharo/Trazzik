@@ -51,7 +51,8 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
   bool _allowFinishSelection = true;
   bool _isCloudSynced = false;
   String _token = '';
-  final DateTime _expiresAt = DateTime.now().add(const Duration(days: 60));
+  String? _syncIssue;
+  DateTime _expiresAt = DateTime.now().add(const Duration(days: 60));
 
   @override
   void initState() {
@@ -60,38 +61,47 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
   }
 
   Future<void> _loadOrCreateLink() async {
-    setState(() => _isLoading = true);
-    final fallbackToken =
-        'tz_${widget.projectId.replaceAll('-', '').padRight(16, '0').substring(0, 16)}';
+    setState(() {
+      _isLoading = true;
+      _syncIssue = null;
+    });
 
     if (_uuidRegex.hasMatch(widget.projectId)) {
       try {
         final repo = ref.read(projectRepositoryProvider);
-        final storedAllow =
-            await repo.getProjectShareLinkAllowFinishes(widget.projectId);
-        final effectiveAllow = storedAllow ?? _allowFinishSelection;
-        final token = await repo.createOrGetProjectShareLink(
+        final details = await repo.createOrGetProjectShareLinkDetails(
           projectId: widget.projectId,
-          allowFinishSelection: effectiveAllow,
+          allowFinishSelection: _allowFinishSelection,
         );
         if (mounted) {
           setState(() {
-            _token = token;
-            _allowFinishSelection = effectiveAllow;
+            _token = details.token;
+            _expiresAt = details.expiresAt;
+            _allowFinishSelection = details.allowFinishSelection;
             _isCloudSynced = true;
+            _syncIssue = null;
             _isLoading = false;
           });
         }
         return;
       } catch (_) {
-        // Offline or unsynced project fallback
+        if (mounted) {
+          setState(() {
+            _token = '';
+            _isCloudSynced = false;
+            _syncIssue = 'network';
+            _isLoading = false;
+          });
+        }
+        return;
       }
     }
 
     if (mounted) {
       setState(() {
-        _token = fallbackToken;
+        _token = '';
         _isCloudSynced = false;
+        _syncIssue = 'unsaved';
         _isLoading = false;
       });
     }
@@ -203,25 +213,43 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                   vertical: 10,
                 ),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF10B981).withValues(alpha: 0.12),
+                  color: (_isCloudSynced
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFF59E0B))
+                      .withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                    color: const Color(0xFF10B981).withValues(alpha: 0.35),
+                    color: (_isCloudSynced
+                            ? const Color(0xFF10B981)
+                            : const Color(0xFFF59E0B))
+                        .withValues(alpha: 0.35),
                   ),
                 ),
                 child: Row(
                   children: [
-                    const Icon(
-                      Icons.verified_user_outlined,
-                      color: Color(0xFF10B981),
+                    Icon(
+                      _isCloudSynced
+                          ? Icons.verified_user_outlined
+                          : Icons.cloud_off_outlined,
+                      color: _isCloudSynced
+                          ? const Color(0xFF10B981)
+                          : const Color(0xFFF59E0B),
                       size: 18,
                     ),
                     const SizedBox(width: 10),
                     Expanded(
                       child: Text(
-                        lang == 'es'
-                            ? 'Enlace interactivo activo por 60 días (vence el $expDateStr)'
-                            : 'Interactive link active for 60 days (expires $expDateStr)',
+                        _isCloudSynced
+                            ? (lang == 'es'
+                                ? 'Enlace interactivo activo por 60 días (vence el $expDateStr)'
+                                : 'Interactive link active for 60 days (expires $expDateStr)')
+                            : _syncIssue == 'network'
+                                ? (lang == 'es'
+                                    ? 'No se pudo generar el enlace en la nube. Verifica tu conexión e inténtalo nuevamente.'
+                                    : 'Could not generate cloud share link. Check your connection and retry.')
+                                : (lang == 'es'
+                                    ? 'Proyecto local sin guardar en la nube. Guárdalo para generar un enlace externo de 60 días.'
+                                    : 'Local project not yet saved to cloud. Save first to generate a 60-day external link.'),
                         style: TextStyle(
                           color: colors.textPrimary,
                           fontSize: 12,
@@ -247,6 +275,11 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                             fontWeight: FontWeight.bold,
                           ),
                         ),
+                      )
+                    else if (_syncIssue == 'network' && !_isLoading)
+                      TextButton(
+                        onPressed: _loadOrCreateLink,
+                        child: Text(lang == 'es' ? 'Reintentar' : 'Retry'),
                       ),
                   ],
                 ),
@@ -287,38 +320,48 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                           ),
                         ),
                       )
-                    : Row(
-                        children: [
-                          Icon(
-                            Icons.link_rounded,
-                            color: colors.accentCyan,
-                            size: 18,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: SelectableText(
-                              _shareUrl,
-                              style: TextStyle(
-                                color: colors.textPrimary,
-                                fontSize: 12,
-                                fontFamily: 'monospace',
+                    : _isCloudSynced
+                        ? Row(
+                            children: [
+                              Icon(
+                                Icons.link_rounded,
+                                color: colors.accentCyan,
+                                size: 18,
                               ),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: SelectableText(
+                                  _shareUrl,
+                                  style: TextStyle(
+                                    color: colors.textPrimary,
+                                    fontSize: 12,
+                                    fontFamily: 'monospace',
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 8),
+                              FilledButton.tonalIcon(
+                                onPressed: () =>
+                                    _copyToClipboard(_shareUrl, isToken: false),
+                                icon: const Icon(Icons.copy_rounded, size: 15),
+                                label: Text(lang == 'es' ? 'Copiar' : 'Copy'),
+                              ),
+                            ],
+                          )
+                        : Text(
+                            lang == 'es'
+                                ? 'Vista previa local disponible abajo. Guarda el proyecto en la nube para activar el enlace compartible.'
+                                : 'Local preview available below. Save project to cloud to enable external link.',
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 12,
                             ),
                           ),
-                          const SizedBox(width: 8),
-                          FilledButton.tonalIcon(
-                            onPressed: () =>
-                                _copyToClipboard(_shareUrl, isToken: false),
-                            icon: const Icon(Icons.copy_rounded, size: 15),
-                            label: Text(lang == 'es' ? 'Copiar' : 'Copy'),
-                          ),
-                        ],
-                      ),
               ),
               const SizedBox(height: 12),
 
               // Direct Access Code row
-              if (!_isLoading)
+              if (!_isLoading && _isCloudSynced && _token.isNotEmpty)
                 Row(
                   children: [
                     Text(
@@ -395,17 +438,34 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                       fontSize: 11,
                     ),
                   ),
-                  onChanged: (val) {
+                  onChanged: (val) async {
+                    final prev = _allowFinishSelection;
+                    final messenger = ScaffoldMessenger.of(context);
                     setState(() => _allowFinishSelection = val);
                     if (_isCloudSynced && _token.isNotEmpty) {
-                      ref
-                          .read(projectRepositoryProvider)
-                          .updateProjectShareLinkPermission(
-                            projectId: widget.projectId,
-                            token: _token,
-                            allowFinishSelection: val,
-                          )
-                          .ignore();
+                      try {
+                        await ref
+                            .read(projectRepositoryProvider)
+                            .updateProjectShareLinkPermission(
+                              projectId: widget.projectId,
+                              token: _token,
+                              allowFinishSelection: val,
+                            );
+                      } catch (_) {
+                        if (mounted) {
+                          setState(() => _allowFinishSelection = prev);
+                        }
+                        messenger.showSnackBar(
+                          SnackBar(
+                            content: Text(
+                              lang == 'es'
+                                  ? 'No se pudo actualizar el permiso en la nube.'
+                                  : 'Could not update share permission in cloud.',
+                            ),
+                            backgroundColor: Colors.redAccent,
+                          ),
+                        );
+                      }
                     }
                   },
                 ),
@@ -437,7 +497,7 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
                       ),
                     ),
                   FilledButton.icon(
-                    onPressed: _isLoading
+                    onPressed: (_isLoading || !_isCloudSynced || _token.isEmpty)
                         ? null
                         : () => _copyToClipboard(_shareUrl, isToken: false),
                     style: FilledButton.styleFrom(

@@ -365,12 +365,34 @@ class ArchitectFeeProposal {
       mergedPhases = phases.map((phase) {
         final override = byCode[phase.code];
         if (override == null) return phase;
+        final rawDays = (override['business_days'] as num?)?.toDouble();
+        final safeDays = (rawDays != null && rawDays.isFinite)
+            ? rawDays.round().clamp(1, 365)
+            : phase.businessDays;
         return phase.copyWith(
-          businessDays:
-              (override['business_days'] as num?)?.toInt() ?? phase.businessDays,
+          businessDays: safeDays,
           included: override['included'] as bool? ?? phase.included,
         );
       }).toList();
+    }
+
+    double sanitizeDouble(
+      dynamic raw,
+      double fallback, {
+      double min = 0.0,
+      double max = 1e12,
+    }) {
+      if (raw is! num) return fallback;
+      final d = raw.toDouble();
+      if (!d.isFinite) return fallback;
+      return d.clamp(min, math.max(min, max));
+    }
+
+    int sanitizeInt(dynamic raw, int fallback, {int min = 1, int max = 365}) {
+      if (raw is! num) return fallback;
+      final d = raw.toDouble();
+      if (!d.isFinite) return fallback;
+      return d.round().clamp(min, math.max(min, max));
     }
 
     return copyWith(
@@ -380,21 +402,26 @@ class ArchitectFeeProposal {
       architectContact: json['architect_contact'] as String? ?? architectContact,
       clientName: json['client_name'] as String? ?? clientName,
       pricingMode: parsedMode,
-      ratePerM2Cop:
-          (json['rate_per_m2_cop'] as num?)?.toDouble() ?? ratePerM2Cop,
-      constructionCostPerM2Cop:
-          (json['construction_cost_per_m2_cop'] as num?)?.toDouble() ??
-              constructionCostPerM2Cop,
-      feePercentageOfConstruction:
-          (json['fee_percentage_of_construction'] as num?)?.toDouble() ??
-              feePercentageOfConstruction,
+      ratePerM2Cop: sanitizeDouble(json['rate_per_m2_cop'], ratePerM2Cop),
+      constructionCostPerM2Cop: sanitizeDouble(
+        json['construction_cost_per_m2_cop'],
+        constructionCostPerM2Cop,
+      ),
+      feePercentageOfConstruction: sanitizeDouble(
+        json['fee_percentage_of_construction'],
+        feePercentageOfConstruction,
+        min: 0.5,
+        max: 50.0,
+      ),
       customFixedFeeCop:
-          (json['custom_fixed_fee_cop'] as num?)?.toDouble() ??
-              customFixedFeeCop,
-      validityDays: (json['validity_days'] as num?)?.toInt() ?? validityDays,
-      includedRevisionRounds:
-          (json['included_revision_rounds'] as num?)?.toInt() ??
-              includedRevisionRounds,
+          sanitizeDouble(json['custom_fixed_fee_cop'], customFixedFeeCop),
+      validityDays: sanitizeInt(json['validity_days'], validityDays, min: 1),
+      includedRevisionRounds: sanitizeInt(
+        json['included_revision_rounds'],
+        includedRevisionRounds,
+        min: 0,
+        max: 20,
+      ),
       phases: mergedPhases,
     );
   }

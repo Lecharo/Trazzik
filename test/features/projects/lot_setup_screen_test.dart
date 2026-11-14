@@ -71,6 +71,18 @@ class _InMemoryProjectRepo implements SupabaseProjectRepository {
       null;
 
   @override
+  Future<({String token, DateTime expiresAt, bool allowFinishSelection})>
+      createOrGetProjectShareLinkDetails({
+    required String projectId,
+    bool allowFinishSelection = true,
+  }) async =>
+      (
+        token: 'test-share-token',
+        expiresAt: DateTime.now().add(const Duration(days: 60)),
+        allowFinishSelection: allowFinishSelection,
+      );
+
+  @override
   Future<String> createOrGetProjectShareLink({
     required String projectId,
     bool allowFinishSelection = true,

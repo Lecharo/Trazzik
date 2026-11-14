@@ -9,10 +9,11 @@ import 'package:trazzik/features/fee_proposal/domain/architect_fee_proposal.dart
 /// modeled on real architectural studio proposals (`Cotizacion_Valentina_Buendia.pdf`).
 class ArchitectFeeProposalPdfService {
   static String formatCop(double value) {
+    if (!value.isFinite) return r'$0 COP';
     final rounded = value.round();
     final isNegative = rounded < 0;
     final str = rounded.abs().toString();
-    final buffer = StringBuffer(isNegative ? '-\$' : '\$');
+    final buffer = StringBuffer(isNegative ? r'-$' : r'$');
     for (int i = 0; i < str.length; i++) {
       if (i > 0 && (str.length - i) % 3 == 0) {
         buffer.write('.');

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
@@ -44,11 +45,16 @@ class _ArchitectFeeProposalDialogState
   late TextEditingController _clientCtrl;
   late TextEditingController _rateM2Ctrl;
   late TextEditingController _fixedFeeCtrl;
+  SupabaseProjectRepository? _projectRepo;
+  Timer? _syncDebounceTimer;
+  bool _syncInFlight = false;
+  ArchitectFeeProposal? _pendingSyncProposal;
   bool _isExporting = false;
 
   @override
   void initState() {
     super.initState();
+    _projectRepo = ref.read(projectRepositoryProvider);
     final editorState = ref.read(floorEditorProvider);
     final floors = editorState.allFloors.isNotEmpty
         ? editorState.allFloors
@@ -117,17 +123,38 @@ class _ArchitectFeeProposalDialogState
     }
   }
 
-  void _syncToSupabase(ArchitectFeeProposal proposal) {
+  void _syncToSupabase(ArchitectFeeProposal proposal, {bool immediate = false}) {
     if (!_uuidRegex.hasMatch(_projectKey)) return;
-    Future<void>(() async {
-      try {
-        if (!mounted) return;
-        await ref.read(projectRepositoryProvider).saveFeeProposalConfig(
-              projectId: _projectKey,
-              config: proposal.toConfigJson(),
-            );
-      } catch (_) {}
+    _pendingSyncProposal = proposal;
+    _syncDebounceTimer?.cancel();
+    if (immediate) {
+      _flushSupabaseSync();
+      return;
+    }
+    _syncDebounceTimer = Timer(const Duration(milliseconds: 400), () {
+      _flushSupabaseSync();
     });
+  }
+
+  Future<void> _flushSupabaseSync() async {
+    if (_syncInFlight) return;
+    final repo = _projectRepo;
+    if (repo == null || !_uuidRegex.hasMatch(_projectKey)) return;
+    _syncInFlight = true;
+    try {
+      while (_pendingSyncProposal != null) {
+        final next = _pendingSyncProposal!;
+        _pendingSyncProposal = null;
+        await repo.saveFeeProposalConfig(
+          projectId: _projectKey,
+          config: next.toConfigJson(),
+        );
+      }
+    } catch (_) {
+      // Offline or test environment: keep local session draft.
+    } finally {
+      _syncInFlight = false;
+    }
   }
 
   void _updateProposal(ArchitectFeeProposal next) {
@@ -143,6 +170,10 @@ class _ArchitectFeeProposalDialogState
 
   @override
   void dispose() {
+    _syncDebounceTimer?.cancel();
+    if (_pendingSyncProposal != null) {
+      unawaited(_flushSupabaseSync());
+    }
     _sessionDrafts[_projectKey] = _proposal;
     _lastStudioName = _proposal.studioName;
     _lastArchitectName = _proposal.architectName;
