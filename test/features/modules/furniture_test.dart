@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/geometry_engine.dart';
+import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/furniture_catalog_dialog.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
+import 'package:trazzik/features/modules/domain/auto_furnish_engine.dart';
 import 'package:trazzik/features/modules/domain/furniture_template.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
@@ -240,6 +243,104 @@ void main() {
           );
         }
       }
+    });
+
+    test('AutoFurnishEngine respeta polígonos en L, clearance de puertas, elementos bloqueados y tipos canónicos', () {
+      // Polígono en L con recorte 1.2m x 1.2m en esquina inferior derecha (x: 2.8..4.0, y: 0..1.2)
+      final lBedroom = Module(
+        id: 'l-bed',
+        floorId: floor.id,
+        name: 'Recámara en L',
+        moduleType: 'MASTER_BEDROOM',
+        geometry: Polygon2D(const [
+          Point2D(0, 0),
+          Point2D(2.8, 0),
+          Point2D(2.8, 1.2),
+          Point2D(4.0, 1.2),
+          Point2D(4.0, 3.6),
+          Point2D(0, 3.6),
+        ]),
+        status: ElementStatus.isNew,
+      );
+      final doorNearTopLeft = Module(
+        id: 'door-entry',
+        floorId: floor.id,
+        name: 'Puerta',
+        moduleType: 'DOOR',
+        geometry: Polygon2D.fromRect(0.2, 0.0, 0.90, 0.15),
+        status: ElementStatus.isNew,
+      );
+
+      final generated = AutoFurnishEngine.generateFurnitureForModule(
+        lBedroom,
+        allFloorModules: [lBedroom, doorNearTopLeft],
+      );
+      expect(generated, isNotEmpty);
+
+      for (int i = 0; i < generated.length; i++) {
+        final s = generated[i];
+        expect(
+          GeometryEngine.polygonContainsPolygon(lBedroom.geometry, s.geometry),
+          isTrue,
+          reason: '${s.name} debe permanecer dentro del contorno en L sin invadir el recorte',
+        );
+        for (int j = i + 1; j < generated.length; j++) {
+          final a = s.geometry.boundingBox;
+          final b = generated[j].geometry.boundingBox;
+          final overlaps = a.minX < b.maxX - 0.01 &&
+              a.maxX > b.minX + 0.01 &&
+              a.minY < b.maxY - 0.01 &&
+              a.maxY > b.minY + 0.01;
+          expect(overlaps, isFalse, reason: '${s.name} y ${generated[j].name} no deben superponerse');
+        }
+      }
+
+      // Tipos canónicos en Baño y Lavandería
+      final bathMod = Module(
+        id: 'canon-bath',
+        floorId: floor.id,
+        name: 'Baño Principal',
+        moduleType: 'BATHROOM',
+        geometry: Polygon2D.fromRect(0, 0, 2.4, 2.2),
+        status: ElementStatus.isNew,
+      );
+      final bathItems = AutoFurnishEngine.generateFurnitureForModule(bathMod);
+      expect(bathItems.any((s) => s.type == 'VANITY'), isTrue);
+
+      final laundryMod = Module(
+        id: 'canon-laundry',
+        floorId: floor.id,
+        name: 'Lavandería',
+        moduleType: 'LAUNDRY',
+        geometry: Polygon2D.fromRect(0, 0, 2.5, 2.0),
+        status: ElementStatus.isNew,
+      );
+      final laundryItems = AutoFurnishEngine.generateFurnitureForModule(laundryMod);
+      expect(laundryItems.any((s) => s.type == 'WASHING_MACHINE'), isTrue);
+      expect(laundryItems.any((s) => s.type == 'LAUNDRY_SINK'), isTrue);
+
+      // Preservar submódulos bloqueados y evitar colisión en autoFurnishModule
+      final lockedFixture = SubModule(
+        id: 'locked-sub',
+        moduleId: livingRoom.id,
+        name: 'Fijo',
+        type: 'SOFA_2',
+        geometry: Polygon2D.fromRect(1.5, 1.5, 1.0, 0.8),
+        status: ElementStatus.existing,
+        isLocked: true,
+      );
+      final roomWithLocked = livingRoom.copyWith(subModules: [lockedFixture]);
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(floorEditorProvider.notifier);
+      notifier.loadProjectData(
+        lot: lot,
+        floor: floor.copyWith(modules: [roomWithLocked]),
+      );
+      notifier.autoFurnishModule(roomWithLocked.id);
+      final afterSubs = container.read(floorEditorProvider).floor.modules.first.subModules;
+      expect(afterSubs.any((s) => s.id == 'locked-sub'), isTrue);
+      expect(afterSubs.length, greaterThan(1));
     });
   });
 }

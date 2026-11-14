@@ -1313,7 +1313,7 @@ class Canvas2DPainter extends CustomPainter {
         ..strokeWidth = 1.6,
     );
 
-    // 2. Structural reference grid bays (Ejes A, B, C... & 1, 2, 3...)
+    // 2. Structural reference grid bays (Ejes A..Z, AA... & 1, 2, 3...)
     final bayMeters = math.max(1.0, cfg.structuralBayMeters);
     final bayPx = bayMeters * zoom;
     final axisLinePaint = Paint()
@@ -1321,9 +1321,9 @@ class Canvas2DPainter extends CustomPainter {
       ..strokeWidth = 1.0;
 
     int colIdx = 0;
-    for (double x = left; x <= left + widthPx + 0.5; x += bayPx) {
+    for (double x = left; x <= left + widthPx + 0.5 && colIdx < 64; x += bayPx) {
       canvas.drawLine(Offset(x, top - 16), Offset(x, top + heightPx), axisLinePaint);
-      final letter = String.fromCharCode(65 + (colIdx % 26));
+      final letter = _excelColumnLabel(colIdx);
       final bubbleCenter = Offset(x, top - 24);
       canvas.drawCircle(
         bubbleCenter,
@@ -1357,7 +1357,7 @@ class Canvas2DPainter extends CustomPainter {
     }
 
     int rowIdx = 1;
-    for (double y = top; y <= top + heightPx + 0.5; y += bayPx) {
+    for (double y = top; y <= top + heightPx + 0.5 && rowIdx <= 64; y += bayPx) {
       canvas.drawLine(Offset(left - 16, y), Offset(left + widthPx, y), axisLinePaint);
       final bubbleCenter = Offset(left - 24, y);
       canvas.drawCircle(
@@ -1407,6 +1407,16 @@ class Canvas2DPainter extends CustomPainter {
     stampTp.paint(canvas, Offset(left + 8, top + heightPx - stampTp.height - 6));
   }
 
+  static String _excelColumnLabel(int index) {
+    var n = index;
+    var label = '';
+    while (n >= 0) {
+      label = String.fromCharCode(65 + (n % 26)) + label;
+      n = (n ~/ 26) - 1;
+    }
+    return label;
+  }
+
   void _drawLaserMeasureOverlay(Canvas canvas, double zoom) {
     final p1 = state.laserStart!;
     final p2 = state.laserEnd!;
@@ -1452,10 +1462,14 @@ class Canvas2DPainter extends CustomPainter {
       );
     }
 
-    // Ergonomic passage clearance evaluation
+    // Ergonomic passage clearance evaluation (only certify near-orthogonal spans)
+    final isNearOrtho = dx <= 0.12 || dy <= 0.12 || dist < 0.01;
     final String verdict;
     final Color verdictColor;
-    if (dist >= 0.90) {
+    if (!isNearOrtho) {
+      verdict = '⟋ MEDICIÓN DIAGONAL • Traza recto para verificar paso';
+      verdictColor = const Color(0xFF38BDF8);
+    } else if (dist >= 0.90) {
       verdict = '✓ PASO NORMATIVO / ACCESIBLE (≥ 0.90 m)';
       verdictColor = const Color(0xFF00E676);
     } else if (dist >= 0.60) {

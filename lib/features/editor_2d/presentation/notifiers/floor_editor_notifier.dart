@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
@@ -82,6 +83,8 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       redoStacksByFloor: const {},
       dirtyFloorIds: const {},
       deletedFloorIds: const {},
+      blueprintUnderlay: const BlueprintUnderlayConfig(),
+      blueprintUnderlaysByFloor: const {},
     );
   }
 
@@ -225,6 +228,9 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       ..[state.floor.id] = state.undoStack;
     final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
       ..[state.floor.id] = state.redoStack;
+    final updatedUnderlays = Map<String, BlueprintUnderlayConfig>.from(
+      state.blueprintUnderlaysByFloor,
+    )..[state.floor.id] = state.blueprintUnderlay;
 
     // 2. Obtener el piso destino y restaurar su historial propio
     final targetFloor = updatedAllFloors.firstWhere(
@@ -242,11 +248,15 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       clearSelection: true,
       clearWallSelection: true,
       clearSubModuleSelection: true,
+      clearLaserMeasure: true,
       issues: issues,
       undoStack: updatedUndoMap[targetFloor.id] ?? const [],
       redoStack: updatedRedoMap[targetFloor.id] ?? const [],
       undoStacksByFloor: updatedUndoMap,
       redoStacksByFloor: updatedRedoMap,
+      blueprintUnderlay:
+          updatedUnderlays[targetFloor.id] ?? const BlueprintUnderlayConfig(),
+      blueprintUnderlaysByFloor: updatedUnderlays,
       hasUnsavedChanges: keepUnsaved,
     );
   }
@@ -354,7 +364,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   /// Desplaza el módulo seleccionado en metros junto con su mobiliario interior
   void moveSelectedModule(double dxMeters, double dyMeters) {
     final selected = state.selectedModule;
-    if (selected == null) return;
+    if (selected == null || selected.isLocked) return;
     if (dxMeters.abs() < 1e-6 && dyMeters.abs() < 1e-6) return;
 
     final updatedSubs = selected.subModules
@@ -381,7 +391,12 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final updatedModules = List<Module>.from(state.floor.modules)..add(module);
     final updatedFloor = state.floor.copyWith(modules: updatedModules);
     _applyFloorChange(updatedFloor);
-    state = state.copyWith(selectedModuleId: module.id);
+    state = state.copyWith(
+      selectedModuleId: module.id,
+      clearWallSelection: true,
+      clearSubModuleSelection: true,
+      clearLaserMeasure: true,
+    );
   }
 
   void updateModule(Module module) {
@@ -392,6 +407,8 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   }
 
   void deleteModule(String moduleId) {
+    final target = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (target == null || target.isLocked) return;
     final updatedModules =
         state.floor.modules.where((m) => m.id != moduleId).toList();
     final updatedRels = state.floor.replacementRelationships
@@ -437,7 +454,8 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   }
 
   void setModulePosition(String moduleId, double newX, double newY) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
     final snappedX = snapToGrid(newX);
     final snappedY = snapToGrid(newY);
@@ -453,8 +471,59 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     updateModule(mod.copyWith(geometry: updatedGeom, subModules: updatedSubs));
   }
 
+  List<SubModule> _clampSubModulesInside(
+    Polygon2D container,
+    List<SubModule> subs,
+  ) {
+    if (subs.isEmpty) return subs;
+    final cbb = container.boundingBox;
+    const inset = 0.02;
+    final availW = math.max(0.05, cbb.width - inset * 2);
+    final availH = math.max(0.05, cbb.height - inset * 2);
+    final minAllowedX = cbb.minX + (cbb.width > inset * 2 ? inset : 0.0);
+    final minAllowedY = cbb.minY + (cbb.height > inset * 2 ? inset : 0.0);
+    final maxAllowedX = cbb.maxX - (cbb.width > inset * 2 ? inset : 0.0);
+    final maxAllowedY = cbb.maxY - (cbb.height > inset * 2 ? inset : 0.0);
+
+    return subs.map((s) {
+      final sbb = s.geometry.boundingBox;
+      final w = math.min(sbb.width, availW);
+      final h = math.min(sbb.height, availH);
+      final maxX = math.max(minAllowedX, maxAllowedX - w);
+      final maxY = math.max(minAllowedY, maxAllowedY - h);
+      final clampedX = sbb.minX.clamp(minAllowedX, maxX).toDouble();
+      final clampedY = sbb.minY.clamp(minAllowedY, maxY).toDouble();
+
+      var candidate = Polygon2D.fromRect(clampedX, clampedY, w, h);
+      if (GeometryEngine.polygonContainsPolygon(container, candidate)) {
+        return s.copyWith(geometry: candidate);
+      }
+
+      // If container has a concave corner (e.g. L-nook), search nearest valid grid spot
+      Polygon2D? bestPoly;
+      double bestDist = double.infinity;
+      const step = 0.15;
+      for (double gy = minAllowedY; gy <= maxY + 1e-6; gy += step) {
+        final ry = gy.clamp(minAllowedY, maxY).toDouble();
+        for (double gx = minAllowedX; gx <= maxX + 1e-6; gx += step) {
+          final rx = gx.clamp(minAllowedX, maxX).toDouble();
+          final test = Polygon2D.fromRect(rx, ry, w, h);
+          if (GeometryEngine.polygonContainsPolygon(container, test)) {
+            final d = math.pow(rx - sbb.minX, 2) + math.pow(ry - sbb.minY, 2);
+            if (d < bestDist) {
+              bestDist = d.toDouble();
+              bestPoly = test;
+            }
+          }
+        }
+      }
+      return s.copyWith(geometry: bestPoly ?? candidate);
+    }).toList();
+  }
+
   void setModuleDimensions(String moduleId, double newWidth, double newHeight) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
     final snappedW = math.max(0.10, snapToGrid(newWidth));
     final snappedH = math.max(0.10, snapToGrid(newHeight));
@@ -468,12 +537,14 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       final scaleY = bb.height > 0 ? (snappedH / bb.height) : 1.0;
       updatedGeom = mod.geometry.scale(scaleX, scaleY);
     }
-    updateModule(mod.copyWith(geometry: updatedGeom));
+    final clampedSubs = _clampSubModulesInside(updatedGeom, mod.subModules);
+    updateModule(mod.copyWith(geometry: updatedGeom, subModules: clampedSubs));
   }
 
   /// Alterna entre forma rectangular simple y forma en L con remetido de acceso (0.50m)
   void toggleLShapedNook(String moduleId, {double nookW = 0.50, double nookD = 0.50}) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
     final Polygon2D newGeom;
     if (mod.geometry.vertices.length > 4) {
@@ -494,12 +565,14 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
         Point2D(bb.minX, bb.minY + h),
       ]);
     }
-    updateModule(mod.copyWith(geometry: newGeom));
+    final clampedSubs = _clampSubModulesInside(newGeom, mod.subModules);
+    updateModule(mod.copyWith(geometry: newGeom, subModules: clampedSubs));
   }
 
   /// Rota el módulo 90 grados intercambiando ancho y largo respecto a su centro
   void rotateModule90(String moduleId) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
     final center = Point2D(bb.minX + bb.width / 2, bb.minY + bb.height / 2);
 
@@ -534,13 +607,15 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Invierte la mano / bisagra de la abertura (espejo horizontal)
   void flipModuleHorizontal(String moduleId) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     updateModule(mod.copyWith(flipX: !mod.flipX));
   }
 
   /// Invierte el sentido de apertura / abatimiento (espejo vertical: adentro/afuera)
   void flipModuleVertical(String moduleId) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     updateModule(mod.copyWith(flipY: !mod.flipY));
   }
 
@@ -642,11 +717,25 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Añade una pieza de mobiliario o equipamiento al recinto seleccionado
   void addFurnitureToModule(String moduleId, FurnitureTemplate template, {double? customX, double? customY}) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null ||
+        mod.isLocked ||
+        mod.status == ElementStatus.toDemolish ||
+        mod.isOpening ||
+        mod.isStairs ||
+        mod.isOutdoorUnpaved) {
+      return;
+    }
     final bb = mod.geometry.boundingBox;
 
-    final posX = customX ?? snapToGrid(bb.minX + math.max(0.10, (bb.width - template.defaultWidth) / 2));
-    final posY = customY ?? snapToGrid(bb.minY + math.max(0.10, (bb.height - template.defaultDepth) / 2));
+    final clampedW = math.min(template.defaultWidth, math.max(0.15, bb.width - 0.04));
+    final clampedD = math.min(template.defaultDepth, math.max(0.15, bb.height - 0.04));
+    final posX = (customX ?? snapToGrid(bb.minX + math.max(0.02, (bb.width - clampedW) / 2)))
+        .clamp(bb.minX, math.max(bb.minX, bb.maxX - clampedW))
+        .toDouble();
+    final posY = (customY ?? snapToGrid(bb.minY + math.max(0.02, (bb.height - clampedD) / 2)))
+        .clamp(bb.minY, math.max(bb.minY, bb.maxY - clampedD))
+        .toDouble();
 
     final subId = const Uuid().v4();
     final subModule = SubModule(
@@ -654,12 +743,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       moduleId: moduleId,
       name: template.name,
       type: template.type,
-      geometry: Polygon2D.fromRect(
-        posX,
-        posY,
-        template.defaultWidth,
-        template.defaultDepth,
-      ),
+      geometry: Polygon2D.fromRect(posX, posY, clampedW, clampedD),
       status: ElementStatus.isNew,
       height: template.defaultHeight,
       elevation: template.type.toUpperCase().contains('WALL_CABINET') ? 1.50 : 0.0,
@@ -674,15 +758,17 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   /// Returns the number of generated furniture items.
   int autoFurnishModule(String moduleId) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
-    if (mod == null) return 0;
+    if (mod == null || mod.isLocked) return 0;
 
+    final lockedSubs = mod.subModules.where((s) => s.isLocked).toList();
     final generated = AutoFurnishEngine.generateFurnitureForModule(
       mod,
       allFloorModules: state.floor.modules,
+      lockedObstacles: lockedSubs,
     );
     if (generated.isEmpty) return 0;
 
-    updateModule(mod.copyWith(subModules: generated));
+    updateModule(mod.copyWith(subModules: [...lockedSubs, ...generated]));
     return generated.length;
   }
 
@@ -692,16 +778,19 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   int autoFurnishAllRooms({bool overwriteExisting = true}) {
     int totalAdded = 0;
     final updatedModules = state.floor.modules.map((mod) {
+      if (mod.isLocked) return mod;
       if (!overwriteExisting && mod.subModules.isNotEmpty) {
         return mod;
       }
+      final lockedSubs = mod.subModules.where((s) => s.isLocked).toList();
       final generated = AutoFurnishEngine.generateFurnitureForModule(
         mod,
         allFloorModules: state.floor.modules,
+        lockedObstacles: lockedSubs,
       );
       if (generated.isEmpty) return mod;
       totalAdded += generated.length;
-      return mod.copyWith(subModules: generated);
+      return mod.copyWith(subModules: [...lockedSubs, ...generated]);
     }).toList();
 
     if (totalAdded > 0) {
@@ -712,7 +801,10 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Elimina una pieza de mobiliario / submódulo
   void removeSubModule(String moduleId, String subModuleId) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
+    final target = mod.subModules.where((s) => s.id == subModuleId).firstOrNull;
+    if (target == null || target.isLocked) return;
     final updatedSubs = mod.subModules.where((s) => s.id != subModuleId).toList();
     updateModule(mod.copyWith(subModules: updatedSubs));
     if (state.selectedSubModuleId == subModuleId) {
@@ -722,19 +814,23 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Rota una pieza de mobiliario 90 grados intercambiando ancho y profundidad
   void rotateSubModule(String moduleId, String subModuleId) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
-    final sub = mod.subModules.firstWhere((s) => s.id == subModuleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
+    final sub = mod.subModules.where((s) => s.id == subModuleId).firstOrNull;
+    if (sub == null || sub.isLocked) return;
+    final modBb = mod.geometry.boundingBox;
     final bb = sub.geometry.boundingBox;
     final cx = bb.minX + bb.width / 2;
     final cy = bb.minY + bb.height / 2;
-    final newW = bb.height;
-    final newH = bb.width;
-    final newGeom = Polygon2D.fromRect(
-      snapToGrid(cx - newW / 2),
-      snapToGrid(cy - newH / 2),
-      newW,
-      newH,
-    );
+    final newW = math.min(bb.height, math.max(0.15, modBb.width));
+    final newH = math.min(bb.width, math.max(0.15, modBb.height));
+    final newX = snapToGrid(cx - newW / 2)
+        .clamp(modBb.minX, math.max(modBb.minX, modBb.maxX - newW))
+        .toDouble();
+    final newY = snapToGrid(cy - newH / 2)
+        .clamp(modBb.minY, math.max(modBb.minY, modBb.maxY - newH))
+        .toDouble();
+    final newGeom = Polygon2D.fromRect(newX, newY, newW, newH);
     final updatedSubs = mod.subModules.map((s) {
       if (s.id == subModuleId) {
         return s.copyWith(geometry: newGeom);
@@ -746,11 +842,18 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Mueve una pieza de mobiliario dentro del recinto
   void setSubModulePosition(String moduleId, String subModuleId, double newX, double newY) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
-    final sub = mod.subModules.firstWhere((s) => s.id == subModuleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
+    final sub = mod.subModules.where((s) => s.id == subModuleId).firstOrNull;
+    if (sub == null || sub.isLocked) return;
+    final modBb = mod.geometry.boundingBox;
     final bb = sub.geometry.boundingBox;
-    final snappedX = snapToGrid(newX);
-    final snappedY = snapToGrid(newY);
+    final snappedX = snapToGrid(newX)
+        .clamp(modBb.minX, math.max(modBb.minX, modBb.maxX - bb.width))
+        .toDouble();
+    final snappedY = snapToGrid(newY)
+        .clamp(modBb.minY, math.max(modBb.minY, modBb.maxY - bb.height))
+        .toDouble();
     if ((snappedX - bb.minX).abs() < 1e-6 && (snappedY - bb.minY).abs() < 1e-6) {
       return;
     }
@@ -778,16 +881,31 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     double? height,
     double? elevation,
   }) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
-    final sub = mod.subModules.firstWhere((s) => s.id == subModuleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
+    final sub = mod.subModules.where((s) => s.id == subModuleId).firstOrNull;
+    if (sub == null || sub.isLocked) return;
+    final modBb = mod.geometry.boundingBox;
     final bb = sub.geometry.boundingBox;
 
-    final newW = width != null ? math.max(0.15, snapToGrid(width)) : bb.width;
-    final newD = depth != null ? math.max(0.15, snapToGrid(depth)) : bb.height;
+    final newW = math.min(
+      width != null ? math.max(0.15, snapToGrid(width)) : bb.width,
+      math.max(0.15, modBb.width),
+    );
+    final newD = math.min(
+      depth != null ? math.max(0.15, snapToGrid(depth)) : bb.height,
+      math.max(0.15, modBb.height),
+    );
     final newH = height != null ? math.max(0.05, (height * 100).round() / 100.0) : sub.resolvedHeight;
     final newElev = elevation != null ? math.max(0.0, (elevation * 100).round() / 100.0) : sub.elevation;
 
-    final updatedGeom = Polygon2D.fromRect(bb.minX, bb.minY, newW, newD);
+    final clampedX = bb.minX
+        .clamp(modBb.minX, math.max(modBb.minX, modBb.maxX - newW))
+        .toDouble();
+    final clampedY = bb.minY
+        .clamp(modBb.minY, math.max(modBb.minY, modBb.maxY - newD))
+        .toDouble();
+    final updatedGeom = Polygon2D.fromRect(clampedX, clampedY, newW, newD);
 
     final updatedSubs = mod.subModules.map((s) {
       if (s.id == subModuleId) {
@@ -848,22 +966,30 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Updates the calibrated Blueprint Reference Underlay configuration.
   void updateBlueprintUnderlay(BlueprintUnderlayConfig config) {
-    state = state.copyWith(blueprintUnderlay: config);
+    final updatedMap = Map<String, BlueprintUnderlayConfig>.from(
+      state.blueprintUnderlaysByFloor,
+    )..[state.floor.id] = config;
+    state = state.copyWith(
+      blueprintUnderlay: config,
+      blueprintUnderlaysByFloor: updatedMap,
+    );
   }
 
-  /// Snaps [rawPoint] to the nearest room corner, wall endpoint, or furniture corner
+  /// Snaps [rawPoint] to the nearest room corner, wall face/endpoint, or furniture corner
   /// within [snapRadiusMeters], falling back to 0.05m metric grid snapping.
   Point2D snapToNearestVertexOrGrid(
     Point2D rawPoint, {
     double snapRadiusMeters = 0.22,
   }) {
     Point2D? bestVertex;
-    double bestDist = snapRadiusMeters;
+    double bestVertexDist = snapRadiusMeters;
+    Point2D? bestFacePoint;
+    double bestFaceDist = snapRadiusMeters;
 
     void checkCandidate(Point2D pt) {
       final d = rawPoint.distanceTo(pt);
-      if (d <= bestDist) {
-        bestDist = d;
+      if (d <= bestVertexDist) {
+        bestVertexDist = d;
         bestVertex = pt;
       }
     }
@@ -884,9 +1010,24 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     for (final w in state.floor.walls) {
       checkCandidate(w.startPoint);
       checkCandidate(w.endPoint);
+      final faceVerts = w.footprint.vertices;
+      for (int i = 0; i < faceVerts.length; i++) {
+        final a = faceVerts[i];
+        final b = faceVerts[(i + 1) % faceVerts.length];
+        final proj = GeometryEngine.closestPointOnSegment(rawPoint, a, b);
+        final d = rawPoint.distanceTo(proj);
+        if (d <= bestFaceDist) {
+          bestFaceDist = d;
+          bestFacePoint = proj;
+        }
+      }
     }
 
-    return bestVertex ??
+    if (bestVertex != null && bestVertexDist <= bestFaceDist + 0.03) {
+      return bestVertex!;
+    }
+    return bestFacePoint ??
+        bestVertex ??
         Point2D(
           snapToGrid(rawPoint.x, 0.05),
           snapToGrid(rawPoint.y, 0.05),
@@ -1006,8 +1147,10 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       floor: pb,
       allFloors: generatedFloors,
       selectedModuleId: pb.modules.isNotEmpty ? pb.modules.first.id : null,
+      clearSelection: pb.modules.isEmpty,
       clearWallSelection: true,
       clearSubModuleSelection: true,
+      clearLaserMeasure: true,
       issues: issues,
       showZoningGuide: true,
       undoStack: nextPbUndo,
@@ -1016,6 +1159,8 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       redoStacksByFloor: updatedRedoMap,
       dirtyFloorIds: updatedDirtyIds,
       deletedFloorIds: updatedDeletedIds,
+      blueprintUnderlay: const BlueprintUnderlayConfig(),
+      blueprintUnderlaysByFloor: const {},
       hasUnsavedChanges: true,
     );
   }
@@ -1090,12 +1235,14 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   }
 
   void setModuleStatus(String moduleId, ElementStatus status) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     updateModule(mod.copyWith(status: status));
   }
 
   void setModuleName(String moduleId, String name) {
-    final mod = state.floor.modules.firstWhere((m) => m.id == moduleId);
+    final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
+    if (mod == null || mod.isLocked) return;
     updateModule(mod.copyWith(name: name));
   }
 
@@ -1110,7 +1257,13 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       switchFloor(floorId);
     }
     final updatedModules = state.floor.modules.map((m) {
-      if (m.isOpening || m.isStairs) return m;
+      if (m.isLocked ||
+          m.isOpening ||
+          m.isStairs ||
+          m.isOutdoorUnpaved ||
+          m.status == ElementStatus.toDemolish) {
+        return m;
+      }
       if (applyToAllRoomsOnFloor || m.id == moduleId) {
         return m.copyWith(
           floorMaterialId: materialId,
@@ -1133,7 +1286,13 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       switchFloor(floorId);
     }
     final updatedModules = state.floor.modules.map((m) {
-      if (m.isOpening || m.isStairs) return m;
+      if (m.isLocked ||
+          m.isOpening ||
+          m.isStairs ||
+          m.isOutdoorUnpaved ||
+          m.status == ElementStatus.toDemolish) {
+        return m;
+      }
       if (applyToAllRoomsOnFloor || m.id == moduleId) {
         return m.copyWith(
           wallFinishId: finishId,
@@ -1155,7 +1314,11 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       switchFloor(floorId);
     }
     final updatedModules = state.floor.modules.map((m) {
-      if (m.isOpening || m.isStairs || m.status == ElementStatus.toDemolish) {
+      if (m.isLocked ||
+          m.isOpening ||
+          m.isStairs ||
+          m.isOutdoorUnpaved ||
+          m.status == ElementStatus.toDemolish) {
         return m;
       }
       final (floorIdMat, wallIdMat) = pack.resolveForModule(m);
@@ -1263,6 +1426,11 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
       ..[state.floor.id] = state.redoStack
       ..[newFloorId] = const [];
+    final updatedUnderlays = Map<String, BlueprintUnderlayConfig>.from(
+      state.blueprintUnderlaysByFloor,
+    )
+      ..[state.floor.id] = state.blueprintUnderlay
+      ..[newFloorId] = state.blueprintUnderlay;
     final issues = ValidationEngine.validateFloor(floor: newFloor, lot: state.lot);
 
     state = state.copyWith(
@@ -1271,11 +1439,13 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       clearSelection: true,
       clearWallSelection: true,
       clearSubModuleSelection: true,
+      clearLaserMeasure: true,
       issues: issues,
       undoStack: const [],
       redoStack: const [],
       undoStacksByFloor: updatedUndoMap,
       redoStacksByFloor: updatedRedoMap,
+      blueprintUnderlaysByFloor: updatedUnderlays,
       dirtyFloorIds: {...state.dirtyFloorIds, newFloorId},
       hasUnsavedChanges: true,
     );
@@ -1302,6 +1472,11 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final updatedRedoMap = Map<String, List<Floor>>.from(state.redoStacksByFloor)
       ..[state.floor.id] = state.redoStack
       ..remove(floorId);
+    final updatedUnderlays = Map<String, BlueprintUnderlayConfig>.from(
+      state.blueprintUnderlaysByFloor,
+    )
+      ..[state.floor.id] = state.blueprintUnderlay
+      ..remove(floorId);
     final updatedDirtyIds = Set<String>.from(state.dirtyFloorIds)..remove(floorId);
     final updatedDeletedIds = {...state.deletedFloorIds, floorId};
     final issues = ValidationEngine.validateFloor(floor: nextFloor, lot: state.lot);
@@ -1312,11 +1487,15 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
       clearSelection: state.floor.id == floorId,
       clearWallSelection: state.floor.id == floorId,
       clearSubModuleSelection: state.floor.id == floorId,
+      clearLaserMeasure: state.floor.id == floorId,
       issues: issues,
       undoStack: updatedUndoMap[nextFloor.id] ?? const [],
       redoStack: updatedRedoMap[nextFloor.id] ?? const [],
       undoStacksByFloor: updatedUndoMap,
       redoStacksByFloor: updatedRedoMap,
+      blueprintUnderlay:
+          updatedUnderlays[nextFloor.id] ?? const BlueprintUnderlayConfig(),
+      blueprintUnderlaysByFloor: updatedUnderlays,
       dirtyFloorIds: updatedDirtyIds,
       deletedFloorIds: updatedDeletedIds,
       hasUnsavedChanges: true,

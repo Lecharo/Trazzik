@@ -217,6 +217,7 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           final curMetersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
           final snappedEnd = notifier.snapToNearestVertexOrGrid(
             Point2D(curMetersX, curMetersY),
+            snapRadiusMeters: (12.0 / editorState.zoom).clamp(0.12, 0.45),
           );
           final startPt = editorState.laserStart ?? snappedEnd;
           notifier.setLaserMeasurePoints(startPt, snappedEnd);
@@ -263,7 +264,10 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         final clickPoint = Point2D(metersX, metersY);
 
         if (editorState.isLaserMeasureActive) {
-          final snapped = notifier.snapToNearestVertexOrGrid(clickPoint);
+          final snapped = notifier.snapToNearestVertexOrGrid(
+            clickPoint,
+            snapRadiusMeters: (12.0 / editorState.zoom).clamp(0.12, 0.45),
+          );
           if (editorState.laserStart == null ||
               (editorState.laserEnd != null &&
                   editorState.laserStart != editorState.laserEnd)) {

@@ -1,9 +1,14 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
+import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/modules/domain/space_template.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
@@ -368,6 +373,185 @@ void main() {
       expect(deduplicated.length, equals(2));
       expect(deduplicated.any((w) => w.id == 'w1'), isTrue);
       expect(deduplicated.any((w) => w.id == 'w4'), isTrue);
+    });
+
+    test('isLocked protege módulos y submódulos contra traslación, redimensionado, borrado y acabados', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(floorEditorProvider.notifier);
+
+      final lockedSub = SubModule(
+        id: 'sub-locked',
+        moduleId: 'mod-locked',
+        name: 'Cama Fija',
+        type: 'BED_QUEEN',
+        geometry: Polygon2D.fromRect(0.2, 0.2, 1.5, 2.0),
+        status: ElementStatus.existing,
+        isLocked: true,
+      );
+      final lockedMod = Module(
+        id: 'mod-locked',
+        floorId: 'f1',
+        name: 'Habitación Bloqueada',
+        moduleType: 'BEDROOM',
+        geometry: Polygon2D.fromRect(0, 0, 4.0, 4.0),
+        status: ElementStatus.existing,
+        isLocked: true,
+        subModules: [lockedSub],
+      );
+      final lot = Lot(
+        id: 'lot-lock',
+        projectId: 'p1',
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+      );
+      final floor = Floor(
+        id: 'f1',
+        buildingId: 'b1',
+        name: 'PB',
+        floorNumber: 1,
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+        maxAllowedArea: 150.0,
+        modules: [lockedMod],
+      );
+      notifier.loadProjectData(lot: lot, floor: floor);
+
+      notifier.setModulePosition('mod-locked', 2.0, 2.0);
+      notifier.setModuleDimensions('mod-locked', 6.0, 6.0);
+      notifier.deleteModule('mod-locked');
+      notifier.setModuleFloorMaterial('mod-locked', 'floor_oak_wood');
+      notifier.setModuleWallFinish('mod-locked', 'wall_pure_white');
+      notifier.applyArchitecturalStylePack(FinishMaterialCatalog.stylePacks.first);
+      notifier.removeSubModule('mod-locked', 'sub-locked');
+
+      final mod = container.read(floorEditorProvider).floor.modules.first;
+      expect(mod.geometry.boundingBox.minX, closeTo(0.0, 0.001));
+      expect(mod.geometry.boundingBox.width, closeTo(4.0, 0.001));
+      expect(mod.floorMaterialId, isNull);
+      expect(mod.wallFinishId, isNull);
+      expect(mod.subModules.length, equals(1));
+    });
+
+    test('setModuleDimensions y toggleLShapedNook re-confinan mobiliario dentro del recinto', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(floorEditorProvider.notifier);
+
+      final room = Module(
+        id: 'mod-shrink',
+        floorId: 'f1',
+        name: 'Sala',
+        moduleType: 'LIVING_ROOM',
+        geometry: Polygon2D.fromRect(0, 0, 5.0, 4.0),
+        status: ElementStatus.isNew,
+        subModules: [
+          SubModule(
+            id: 'sub-edge',
+            moduleId: 'mod-shrink',
+            name: 'Sofá',
+            type: 'SOFA_3',
+            geometry: Polygon2D.fromRect(3.4, 0.1, 1.5, 0.9),
+            status: ElementStatus.isNew,
+          ),
+        ],
+      );
+      final lot = Lot(
+        id: 'lot-shrink',
+        projectId: 'p1',
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+      );
+      notifier.loadProjectData(
+        lot: lot,
+        floor: Floor(
+          id: 'f1',
+          buildingId: 'b1',
+          name: 'PB',
+          floorNumber: 1,
+          boundary: Polygon2D.fromRect(0, 0, 10, 15),
+          maxAllowedArea: 150.0,
+          modules: [room],
+        ),
+      );
+
+      notifier.setModuleDimensions('mod-shrink', 3.0, 3.0);
+      var updatedRoom = container.read(floorEditorProvider).floor.modules.first;
+      expect(
+        GeometryEngine.polygonContainsPolygon(
+          updatedRoom.geometry,
+          updatedRoom.subModules.first.geometry,
+        ),
+        isTrue,
+      );
+
+      notifier.toggleLShapedNook('mod-shrink', nookW: 1.0, nookD: 1.0);
+      updatedRoom = container.read(floorEditorProvider).floor.modules.first;
+      expect(
+        GeometryEngine.polygonContainsPolygon(
+          updatedRoom.geometry,
+          updatedRoom.subModules.first.geometry,
+        ),
+        isTrue,
+      );
+    });
+
+    test('snapToNearestVertexOrGrid engancha a caras de muros y switchFloor aisla underlay y limpia laser', () {
+      final container = ProviderContainer();
+      addTearDown(container.dispose);
+      final notifier = container.read(floorEditorProvider.notifier);
+
+      final lot = Lot(
+        id: 'lot-snap',
+        projectId: 'p1',
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+      );
+      final wall = Wall(
+        id: 'w-snap',
+        floorId: 'f1',
+        startPoint: const Point2D(0, 2.0),
+        endPoint: const Point2D(6.0, 2.0),
+        thickness: 0.20,
+        status: ElementStatus.existing,
+      );
+      final f1 = Floor(
+        id: 'f1',
+        buildingId: 'b1',
+        name: 'PB',
+        floorNumber: 1,
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+        maxAllowedArea: 150.0,
+        walls: [wall],
+      );
+      final f2 = Floor(
+        id: 'f2',
+        buildingId: 'b1',
+        name: 'PA',
+        floorNumber: 2,
+        boundary: Polygon2D.fromRect(0, 0, 10, 15),
+        maxAllowedArea: 150.0,
+      );
+      notifier.loadProjectData(lot: lot, floor: f1, allFloors: [f1, f2]);
+
+      // Cara inferior del muro está en y = 1.90 (2.0 - 0.10)
+      final snappedFace = notifier.snapToNearestVertexOrGrid(
+        const Point2D(3.13, 1.84),
+        snapRadiusMeters: 0.20,
+      );
+      expect(snappedFace.x, closeTo(3.13, 0.01));
+      expect(snappedFace.y, closeTo(1.90, 0.01));
+
+      // Underlay por piso + limpiar láser al cambiar de piso
+      notifier.updateBlueprintUnderlay(
+        const BlueprintUnderlayConfig(isEnabled: true, widthMeters: 14.0),
+      );
+      notifier.setLaserMeasurePoints(const Point2D(0, 0), const Point2D(2, 0));
+      notifier.switchFloor('f2');
+      var st = container.read(floorEditorProvider);
+      expect(st.laserStart, isNull);
+      expect(st.blueprintUnderlay.isEnabled, isFalse);
+
+      notifier.switchFloor('f1');
+      st = container.read(floorEditorProvider);
+      expect(st.blueprintUnderlay.isEnabled, isTrue);
+      expect(st.blueprintUnderlay.widthMeters, closeTo(14.0, 0.001));
     });
   });
 }

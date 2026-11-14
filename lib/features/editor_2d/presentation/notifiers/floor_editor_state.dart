@@ -76,6 +76,7 @@ class FloorEditorState {
   final Point2D? laserStart;
   final Point2D? laserEnd;
   final BlueprintUnderlayConfig blueprintUnderlay;
+  final Map<String, BlueprintUnderlayConfig> blueprintUnderlaysByFloor;
 
   const FloorEditorState({
     required this.floor,
@@ -101,6 +102,7 @@ class FloorEditorState {
     this.laserStart,
     this.laserEnd,
     this.blueprintUnderlay = const BlueprintUnderlayConfig(),
+    this.blueprintUnderlaysByFloor = const {},
   });
 
   /// Returns all modified floors pending persistence across the project.
@@ -165,6 +167,7 @@ class FloorEditorState {
     Point2D? laserEnd,
     bool clearLaserMeasure = false,
     BlueprintUnderlayConfig? blueprintUnderlay,
+    Map<String, BlueprintUnderlayConfig>? blueprintUnderlaysByFloor,
   }) {
     return FloorEditorState(
       floor: floor ?? this.floor,
@@ -190,6 +193,8 @@ class FloorEditorState {
       laserStart: clearLaserMeasure ? null : (laserStart ?? this.laserStart),
       laserEnd: clearLaserMeasure ? null : (laserEnd ?? this.laserEnd),
       blueprintUnderlay: blueprintUnderlay ?? this.blueprintUnderlay,
+      blueprintUnderlaysByFloor:
+          blueprintUnderlaysByFloor ?? this.blueprintUnderlaysByFloor,
     );
   }
 }

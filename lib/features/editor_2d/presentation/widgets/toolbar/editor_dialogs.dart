@@ -645,14 +645,26 @@ class EditorDialogs {
                     foregroundColor: const Color(0xFF0A192F),
                   ),
                   onPressed: () {
-                    final w = (double.tryParse(widthCtrl.text.trim()) ?? 10.0)
-                        .clamp(2.0, 200.0);
-                    final h = (double.tryParse(heightCtrl.text.trim()) ?? 15.0)
-                        .clamp(2.0, 200.0);
-                    final bay = (double.tryParse(bayCtrl.text.trim()) ?? 3.0)
-                        .clamp(1.0, 20.0);
-                    final ox = double.tryParse(offsetXCtrl.text.trim()) ?? 0.0;
-                    final oy = double.tryParse(offsetYCtrl.text.trim()) ?? 0.0;
+                    double? parseMetric(String raw) {
+                      final parsed = double.tryParse(raw.trim().replaceAll(',', '.'));
+                      return (parsed != null && parsed.isFinite) ? parsed : null;
+                    }
+
+                    final w = (parseMetric(widthCtrl.text) ?? 10.0)
+                        .clamp(2.0, 200.0)
+                        .toDouble();
+                    final h = (parseMetric(heightCtrl.text) ?? 15.0)
+                        .clamp(2.0, 200.0)
+                        .toDouble();
+                    final bay = (parseMetric(bayCtrl.text) ?? 3.0)
+                        .clamp(1.0, 20.0)
+                        .toDouble();
+                    final ox = (parseMetric(offsetXCtrl.text) ?? 0.0)
+                        .clamp(-500.0, 500.0)
+                        .toDouble();
+                    final oy = (parseMetric(offsetYCtrl.text) ?? 0.0)
+                        .clamp(-500.0, 500.0)
+                        .toDouble();
                     notifier.updateBlueprintUnderlay(
                       currentConfig.copyWith(
                         isEnabled: isEnabled,
