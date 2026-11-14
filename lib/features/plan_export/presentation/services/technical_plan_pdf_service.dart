@@ -1,7 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
-import 'package:flutter/foundation.dart' show listEquals;
+import 'package:flutter/foundation.dart' show listEquals, visibleForTesting;
 import 'package:flutter/material.dart' show Size;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
@@ -11,13 +11,18 @@ import 'package:trazzik/features/ai_advisor/data/architectural_audit_engine.dart
 import 'package:trazzik/features/ai_advisor/domain/architectural_audit_result.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
+import 'package:trazzik/features/plan_export/domain/door_window_schedule_builder.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/domain/technical_plan_painter.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 
 /// Servicio generador de Láminas Técnicas Arquitectónicas en formato PDF.
 class TechnicalPlanPdfService {
+  static const int _maxPngCacheEntries = 4;
   static final Map<PlanDiscipline, _CachedPlanPng> _cachedPlanPngByDiscipline = {};
+
+  @visibleForTesting
+  static void clearPlanCache() => _cachedPlanPngByDiscipline.clear();
 
   static const List<PlanDiscipline> _executivePackageOrder = [
     PlanDiscipline.comparativeBeforeAfter,
@@ -214,83 +219,111 @@ class TechnicalPlanPdfService {
       );
     }
 
-    // 5. Página 4: Lámina de Despiece de Carpintería y Producción (Lámina PL-CARP)
+    // 5. Página 4: Lámina de Despiece de Carpintería y Producción (Lámina PL-CARP, paginada de 3 en 3)
     if (options.includeMillworkPage || options.includeFullDisciplinePackage) {
-      pdf.addPage(
-        pw.Page(
-          pageFormat: options.pageFormat.landscape,
-          margin: const pw.EdgeInsets.all(16),
-          build: (pwContext) {
-            return pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.black, width: 1.5),
-              ),
-              padding: const pw.EdgeInsets.all(12),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  _buildMillworkHeader(floor, options),
-                  pw.SizedBox(height: 8),
-                  pw.Expanded(
-                    child: _buildMillworkBody(floor),
-                  ),
-                  pw.SizedBox(height: 6),
-                  _buildTitleBlock(
-                    floor,
-                    project,
-                    lot,
-                    options.copyWith(
-                      sheetCode: 'PL-CARP',
-                      sheetTitle:
-                          'DESPIECE EJECUTIVO DE CARPINTERÍA Y MOBILIARIO FIJO',
+      final millworkItems = _extractMillworkItems(floor);
+      final totalPages =
+          millworkItems.isEmpty ? 1 : (millworkItems.length / 3).ceil();
+      for (int pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+        final slice = millworkItems.isEmpty
+            ? const <({
+                String code,
+                String title,
+                String roomName,
+                double widthM,
+                double heightM,
+                double depthM,
+                String bodyFinish,
+                String frontFinish,
+                String hardwareSpec,
+              })>[]
+            : millworkItems.skip(pageIdx * 3).take(3).toList();
+        final codeSuffix = totalPages > 1 ? ' (${pageIdx + 1}/$totalPages)' : '';
+        pdf.addPage(
+          pw.Page(
+            pageFormat: options.pageFormat.landscape,
+            margin: const pw.EdgeInsets.all(16),
+            build: (pwContext) {
+              return pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 1.5),
+                ),
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _buildMillworkHeader(floor, options),
+                    pw.SizedBox(height: 8),
+                    pw.Expanded(
+                      child: _buildMillworkPageBody(slice),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      );
+                    pw.SizedBox(height: 6),
+                    _buildTitleBlock(
+                      floor,
+                      project,
+                      lot,
+                      options.copyWith(
+                        sheetCode: 'PL-CARP$codeSuffix',
+                        sheetTitle:
+                            'DESPIECE EJECUTIVO DE CARPINTERÍA Y MOBILIARIO FIJO',
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      }
     }
 
-    // 6. Página 5: Planilla Ejecutiva de Puertas, Ventanas y Cerramientos (PL-VAN)
+    // 6. Página 5: Planilla Ejecutiva de Puertas, Ventanas y Cerramientos (PL-VAN, paginada de 10 en 10)
     if (options.discipline == PlanDiscipline.doorWindowSchedule ||
         options.includeFullDisciplinePackage) {
-      pdf.addPage(
-        pw.Page(
-          pageFormat: options.pageFormat.landscape,
-          margin: const pw.EdgeInsets.all(16),
-          build: (pwContext) {
-            return pw.Container(
-              decoration: pw.BoxDecoration(
-                border: pw.Border.all(color: PdfColors.black, width: 1.5),
-              ),
-              padding: const pw.EdgeInsets.all(12),
-              child: pw.Column(
-                crossAxisAlignment: pw.CrossAxisAlignment.start,
-                children: [
-                  _buildDoorWindowScheduleHeader(floor, options),
-                  pw.SizedBox(height: 8),
-                  pw.Expanded(
-                    child: _buildDoorWindowScheduleBody(floor),
-                  ),
-                  pw.SizedBox(height: 6),
-                  _buildTitleBlock(
-                    floor,
-                    project,
-                    lot,
-                    options.copyWith(
-                      sheetCode: 'PL-VAN-02',
-                      sheetTitle:
-                          'PLANILLA TÉCNICA Y ALZADOS DE PUERTAS, VENTANAS Y CERRAMIENTOS',
+      final allOpenings = DoorWindowScheduleBuilder.build(floor);
+      final totalPages =
+          allOpenings.isEmpty ? 1 : (allOpenings.length / 10).ceil();
+      for (int pageIdx = 0; pageIdx < totalPages; pageIdx++) {
+        final slice = allOpenings.isEmpty
+            ? const <DoorWindowScheduleEntry>[]
+            : allOpenings.skip(pageIdx * 10).take(10).toList();
+        final codeSuffix = totalPages > 1 ? ' (${pageIdx + 1}/$totalPages)' : '';
+        pdf.addPage(
+          pw.Page(
+            pageFormat: options.pageFormat.landscape,
+            margin: const pw.EdgeInsets.all(16),
+            build: (pwContext) {
+              return pw.Container(
+                decoration: pw.BoxDecoration(
+                  border: pw.Border.all(color: PdfColors.black, width: 1.5),
+                ),
+                padding: const pw.EdgeInsets.all(12),
+                child: pw.Column(
+                  crossAxisAlignment: pw.CrossAxisAlignment.start,
+                  children: [
+                    _buildDoorWindowScheduleHeader(floor, options),
+                    pw.SizedBox(height: 8),
+                    pw.Expanded(
+                      child: _buildDoorWindowSchedulePageBody(slice),
                     ),
-                  ),
-                ],
-              ),
-            );
-          },
-        ),
-      );
+                    pw.SizedBox(height: 6),
+                    _buildTitleBlock(
+                      floor,
+                      project,
+                      lot,
+                      options.copyWith(
+                        sheetCode: 'PL-VAN-02$codeSuffix',
+                        sheetTitle:
+                            'PLANILLA TÉCNICA Y ALZADOS DE PUERTAS, VENTANAS Y CERRAMIENTOS',
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        );
+      }
     }
 
     return await pdf.save();
@@ -336,6 +369,10 @@ class TechnicalPlanPdfService {
           throw StateError('Failed to encode technical plan PNG');
         }
         final pngBytes = byteData.buffer.asUint8List();
+        if (_cachedPlanPngByDiscipline.length >= _maxPngCacheEntries &&
+            !_cachedPlanPngByDiscipline.containsKey(options.discipline)) {
+          _cachedPlanPngByDiscipline.remove(_cachedPlanPngByDiscipline.keys.first);
+        }
         _cachedPlanPngByDiscipline[options.discipline] = _CachedPlanPng(
           floor: floor,
           allFloors: List<Floor>.unmodifiable(allFloors),
@@ -481,7 +518,12 @@ class TechnicalPlanPdfService {
                     mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                     children: [
                       pw.Text('ESCALA:', style: pw.TextStyle(fontSize: 7, fontWeight: pw.FontWeight.bold)),
-                      pw.Text(options.scaleLabel, style: pw.TextStyle(fontSize: 8, fontWeight: pw.FontWeight.bold)),
+                      pw.Text(
+                        options.scaleLabel == PlanExportOptions.autoScaleLabel
+                            ? 'Auto-Ajuste (Gráfica)'
+                            : '${options.scaleLabel} (Auto-Ajuste)',
+                        style: pw.TextStyle(fontSize: 7.5, fontWeight: pw.FontWeight.bold),
+                      ),
                     ],
                   ),
                   pw.SizedBox(height: 2),
@@ -1268,8 +1310,18 @@ class TechnicalPlanPdfService {
     );
   }
 
-  static pw.Widget _buildMillworkBody(Floor floor) {
-    // Extraer ítems de carpintería fija del piso o generar los 3 módulos estándar de obra
+  static List<
+      ({
+        String code,
+        String title,
+        String roomName,
+        double widthM,
+        double heightM,
+        double depthM,
+        String bodyFinish,
+        String frontFinish,
+        String hardwareSpec,
+      })> _extractMillworkItems(Floor floor) {
     final items = <({
       String code,
       String title,
@@ -1282,15 +1334,18 @@ class TechnicalPlanPdfService {
       String hardwareSpec,
     })>[];
 
-    // Prioritize kitchen cabinetry first so multi-bedroom layouts never drop the kitchen
+    // Prioritize kitchen cabinetry first using real kitchen geometry span
     for (final m in floor.modules) {
       if (m.status == ElementStatus.toDemolish) continue;
       if (m.isKitchen) {
+        final kbb = m.geometry.boundingBox;
+        final kitchenSpan =
+            math.max(kbb.width, kbb.height).clamp(1.20, 6.00).toDouble();
         items.add((
-          code: 'CARP-0${items.length + 1}',
+          code: 'CARP-${(items.length + 1).toString().padLeft(2, '0')}',
           title: 'Mueble Integral de Cocina (Bajo + Alacena Superior)',
           roomName: m.name,
-          widthM: 2.40,
+          widthM: kitchenSpan,
           heightM: 2.35,
           depthM: 0.60,
           bodyFinish: 'MDP Hidrófugo RH 18mm Blanco Nieve + Canto rígido PVC 2mm',
@@ -1313,7 +1368,7 @@ class TechnicalPlanPdfService {
 
         if (t.contains('CLOSET') || t.contains('WARDROBE')) {
           items.add((
-            code: 'CARP-0${items.length + 1}',
+            code: 'CARP-${(items.length + 1).toString().padLeft(2, '0')}',
             title: 'Clóset / Vestier de Piso a Techo',
             roomName: m.name,
             widthM: widthM.clamp(1.20, 3.60),
@@ -1327,7 +1382,7 @@ class TechnicalPlanPdfService {
         } else if (t.contains('VANITY') ||
             (t.contains('SINK') && m.isBathroom)) {
           items.add((
-            code: 'CARP-0${items.length + 1}',
+            code: 'CARP-${(items.length + 1).toString().padLeft(2, '0')}',
             title: 'Mueble Flotante de Lavamanos (Vanity)',
             roomName: m.name,
             widthM: widthM.clamp(0.80, 1.60),
@@ -1342,48 +1397,31 @@ class TechnicalPlanPdfService {
       }
     }
 
-    if (items.isEmpty) {
-      items.addAll([
-        (
-          code: 'CARP-01',
-          title: 'Clóset Principal de Piso a Techo con Maletero',
-          roomName: 'Alcoba Principal',
-          widthM: 2.10,
-          heightM: 2.40,
-          depthM: 0.60,
-          bodyFinish: 'Melamina RH 18mm Lino Cancún (Estructura interna)',
-          frontFinish: 'Melamina RH 18mm Roble Natural + Manija Perfil Negro',
-          hardwareSpec:
-              '4 Cajones riel telescópico pesado, doble colgadéro y maletero superior H=45cm',
-        ),
-        (
-          code: 'CARP-02',
-          title: 'Mobiliario Integral de Cocina Línea Contemporánea',
-          roomName: 'Cocina',
-          widthM: 2.60,
-          heightM: 2.35,
-          depthM: 0.60,
-          bodyFinish: 'Melamina Hidrófuga RH 18mm Blanco + Canto Termofundido 2mm',
-          frontFinish: 'Poliuretano Semimate / Acrílico Gris Taupe + Perfil Gola',
-          hardwareSpec:
-              'Canasta botellero extraíble, cubiertero, bisagras cierre lento y mesón Cuarzo',
-        ),
-        (
-          code: 'CARP-03',
-          title: 'Mueble Flotante de Baño y Nicho Iluminado',
-          roomName: 'Baño Principal',
-          widthM: 1.10,
-          heightM: 0.60,
-          depthM: 0.50,
-          bodyFinish: 'Melamina Hidrófuga RH 18mm resistente a humedad',
-          frontFinish: 'Frente alistonado Madera Teca + Cinta LED cálida 3000K',
-          hardwareSpec:
-              'Doble gaveta con salvasifón y soportes ocultos de alta carga a muro',
-        ),
-      ]);
-    }
+    return items;
+  }
 
-    final displayItems = items.take(3).toList();
+  static pw.Widget _buildMillworkPageBody(
+    List<
+        ({
+          String code,
+          String title,
+          String roomName,
+          double widthM,
+          double heightM,
+          double depthM,
+          String bodyFinish,
+          String frontFinish,
+          String hardwareSpec,
+        })> displayItems,
+  ) {
+    if (displayItems.isEmpty) {
+      return pw.Center(
+        child: pw.Text(
+          'No se registra carpintería fija ni mueble de cocina en este nivel.',
+          style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+        ),
+      );
+    }
 
     return pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.stretch,
@@ -1716,113 +1754,18 @@ class TechnicalPlanPdfService {
     );
   }
 
-  static pw.Widget _buildDoorWindowScheduleBody(Floor floor) {
-    final rows = <({
-      String code,
-      String name,
-      String mechanism,
-      double widthM,
-      double heightM,
-      double sillM,
-      String spec,
-      String status,
-    })>[];
-
-    int dIdx = 1;
-    int wIdx = 1;
-    int gIdx = 1;
-
-    for (final m in floor.modules) {
-      if (!m.isOpening) continue;
-      final bbox = m.geometry.boundingBox;
-      final spanW = math.max(bbox.width, bbox.height).clamp(0.60, 4.50);
-      if (m.isGate) {
-        rows.add((
-          code: 'PT-${gIdx.toString().padLeft(2, '0')}',
-          name: m.name,
-          mechanism: 'Seccional / Corredizo Motorizado',
-          widthM: spanW,
-          heightM: 2.20,
-          sillM: 0.00,
-          spec: 'Lámina Galvanizada Termoacústica + Motor 1/2 HP',
-          status: m.status.pdfBadgeLabelEs,
-        ));
-        gIdx++;
-      } else if (m.isWindow) {
-        rows.add((
-          code: 'V-${wIdx.toString().padLeft(2, '0')}',
-          name: m.name,
-          mechanism: 'Corrediza 2 Hojas (OX)',
-          widthM: spanW,
-          heightM: 1.20,
-          sillM: 0.90,
-          spec: 'Aluminio Anodizado Negro + Vidrio Laminado 6mm',
-          status: m.status.pdfBadgeLabelEs,
-        ));
-        wIdx++;
-      } else if (m.isSlidingDoor) {
-        rows.add((
-          code: 'P-${dIdx.toString().padLeft(2, '0')}',
-          name: m.name,
-          mechanism: 'Puerta-Ventana Corrediza Piso a Techo',
-          widthM: spanW,
-          heightM: 2.10,
-          sillM: 0.00,
-          spec: 'Aluminio Arquitectónico Pesado + Templado 8mm',
-          status: m.status.pdfBadgeLabelEs,
-        ));
-        dIdx++;
-      } else {
-        rows.add((
-          code: 'P-${dIdx.toString().padLeft(2, '0')}',
-          name: m.name,
-          mechanism: 'Abatible 1 Hoja (Giro 90°)',
-          widthM: spanW,
-          heightM: 2.10,
-          sillM: 0.00,
-          spec: 'Hoja Entamborada RH 42mm + Marco Dilatado + Cerradura Manija',
-          status: m.status.pdfBadgeLabelEs,
-        ));
-        dIdx++;
-      }
+  static pw.Widget _buildDoorWindowSchedulePageBody(
+    List<DoorWindowScheduleEntry> displayRows,
+  ) {
+    if (displayRows.isEmpty) {
+      return pw.Center(
+        child: pw.Text(
+          'No se registran puertas, ventanas ni portones en este nivel.',
+          style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey700),
+        ),
+      );
     }
 
-    if (rows.isEmpty) {
-      rows.addAll([
-        (
-          code: 'P-01',
-          name: 'Puerta Acceso Principal',
-          mechanism: 'Abatible 1 Hoja Pivotante (90°)',
-          widthM: 1.00,
-          heightM: 2.20,
-          sillM: 0.00,
-          spec: 'Madera Maciza / Blindada + Manillón Acero Inox 80cm',
-          status: 'NUEVO',
-        ),
-        (
-          code: 'P-02',
-          name: 'Puerta Interior Alcobas / Baños',
-          mechanism: 'Abatible 1 Hoja (90°)',
-          widthM: 0.80,
-          heightM: 2.10,
-          sillM: 0.00,
-          spec: 'Entamborada Melamina RH Roble + Marco Completo',
-          status: 'NUEVO',
-        ),
-        (
-          code: 'V-01',
-          name: 'Ventana Corrediza Social / Alcoba',
-          mechanism: 'Corrediza 2 Naves (OX)',
-          widthM: 1.50,
-          heightM: 1.20,
-          sillM: 0.90,
-          spec: 'Perfil Aluminio Serie 7025 Negro + Vidrio Templado 6mm',
-          status: 'NUEVO',
-        ),
-      ]);
-    }
-
-    final displayRows = rows.take(10).toList();
     final headers = [
       'CÓD.',
       'ELEMENTO',
@@ -1965,17 +1908,8 @@ class TechnicalPlanPdfService {
     );
   }
 
-  static pw.Widget _buildOpeningElevationCard(({
-    String code,
-    String name,
-    String mechanism,
-    double widthM,
-    double heightM,
-    double sillM,
-    String spec,
-    String status,
-  }) item) {
-    final isWindow = item.code.startsWith('V-');
+  static pw.Widget _buildOpeningElevationCard(DoorWindowScheduleEntry item) {
+    final isWindow = item.isWindow;
     return pw.Container(
       padding: const pw.EdgeInsets.all(8),
       decoration: pw.BoxDecoration(

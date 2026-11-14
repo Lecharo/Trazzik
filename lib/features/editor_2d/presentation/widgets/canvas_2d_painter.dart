@@ -16,6 +16,14 @@ class Canvas2DPainter extends CustomPainter {
 
   static final Map<Object, TextPainter> _textPainterCache = <Object, TextPainter>{};
 
+  @visibleForTesting
+  static void clearTextCache() {
+    for (final tp in _textPainterCache.values) {
+      tp.dispose();
+    }
+    _textPainterCache.clear();
+  }
+
   static TextPainter _getCachedTextPainter(
     Object key,
     TextSpan span, {
@@ -24,7 +32,7 @@ class Canvas2DPainter extends CustomPainter {
     final existing = _textPainterCache[key];
     if (existing != null) return existing;
     if (_textPainterCache.length >= 256) {
-      _textPainterCache.remove(_textPainterCache.keys.first);
+      _textPainterCache.remove(_textPainterCache.keys.first)?.dispose();
     }
     final tp = TextPainter(
       text: span,
@@ -504,29 +512,36 @@ class Canvas2DPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 0.85;
 
+    const int maxPatternLines = 120;
     switch (finish.pattern) {
       case FinishPatternType.woodPlanks:
       case FinishPatternType.outdoorDeck:
-        final plankStep = math.max(6.0, 0.22 * zoom);
-        for (double y = top; y <= top + h; y += plankStep) {
+        final plankStep = math.max(6.0, math.max(0.22 * zoom, h / maxPatternLines));
+        int count = 0;
+        for (double y = top; y <= top + h && count < maxPatternLines; y += plankStep, count++) {
           canvas.drawLine(Offset(left, y), Offset(left + w, y), accentPaint);
         }
         break;
       case FinishPatternType.porcelainGrid:
       case FinishPatternType.hydraulicTile:
-        final tileStep = finish.pattern == FinishPatternType.hydraulicTile
+        final rawTileStep = finish.pattern == FinishPatternType.hydraulicTile
             ? math.max(8.0, 0.35 * zoom)
             : math.max(10.0, 0.60 * zoom);
-        for (double x = left; x <= left + w; x += tileStep) {
+        final tileStepX = math.max(rawTileStep, w / maxPatternLines);
+        final tileStepY = math.max(rawTileStep, h / maxPatternLines);
+        int cx = 0;
+        for (double x = left; x <= left + w && cx < maxPatternLines; x += tileStepX, cx++) {
           canvas.drawLine(Offset(x, top), Offset(x, top + h), accentPaint);
         }
-        for (double y = top; y <= top + h; y += tileStep) {
+        int cy = 0;
+        for (double y = top; y <= top + h && cy < maxPatternLines; y += tileStepY, cy++) {
           canvas.drawLine(Offset(left, y), Offset(left + w, y), accentPaint);
         }
         break;
       case FinishPatternType.marbleVeins:
-        final veinStep = math.max(14.0, 0.80 * zoom);
-        for (double d = left - h; d <= left + w; d += veinStep) {
+        final veinStep = math.max(14.0, math.max(0.80 * zoom, (w + h) / maxPatternLines));
+        int cv = 0;
+        for (double d = left - h; d <= left + w && cv < maxPatternLines; d += veinStep, cv++) {
           canvas.drawLine(
             Offset(d, top),
             Offset(d + h * 0.65, top + h),

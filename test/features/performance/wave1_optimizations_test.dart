@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdf/pdf.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
@@ -52,6 +53,14 @@ void main() {
           geometry: Polygon2D.fromRect(0, 5, 3.0, 0.25), // 0.75 m2
           status: ElementStatus.isNew,
         );
+        final pool = Module(
+          id: 'pool-1',
+          floorId: 'floor-1',
+          name: 'Piscina Exterior',
+          moduleType: 'POOL',
+          geometry: Polygon2D.fromRect(5, 0, 4.0, 3.0), // 12.0 m2 (not built floor)
+          status: ElementStatus.isNew,
+        );
         final wall = Wall(
           id: 'wall-1',
           floorId: 'floor-1',
@@ -68,13 +77,21 @@ void main() {
           name: 'Level 1',
           boundary: Polygon2D.fromRect(0, 0, 10, 15),
           maxAllowedArea: 100,
-          modules: [room, door, window, gate],
+          modules: [room, door, window, gate, pool],
           walls: [wall],
         );
 
         expect(floor.usableSpacesArea, closeTo(20.0, 1e-6));
         expect(floor.wallsFootprintArea, closeTo(0.60, 1e-6));
         expect(floor.calculatedBuiltArea, closeTo(20.60, 1e-6));
+        expect(
+          GeometryEngine.sanitizeMetric(double.nan, fallback: 2.0, min: 1.0, max: 5.0),
+          equals(2.0),
+        );
+        expect(
+          GeometryEngine.sanitizeMetric(10.0, fallback: 2.0, min: 5.0, max: 1.0),
+          equals(5.0),
+        );
       },
     );
 

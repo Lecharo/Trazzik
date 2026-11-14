@@ -787,6 +787,28 @@ void main() {
       expect(livingWall, equals('wall_japandi_sand'));
       expect(bathFloor, equals('floor_grey_porcelain'));
       expect(bathWall, equals('wall_travertine'));
+
+      // Sutherland-Hodgman clip en plano de sección corta polígonos largos justo en el límite
+      final wallSpanFace = Face3D(
+        vertices: const [
+          Point3D(0.0, 0.0, 0.0),
+          Point3D(6.0, 0.0, 0.0),
+          Point3D(6.0, 0.0, 2.6),
+          Point3D(0.0, 0.0, 2.6),
+        ],
+        baseColor: Color(0xFFFFFFFF),
+        isWallFace: true,
+      );
+      final clipped = AxonometricSceneRenderer.clipFaceVerticesToSectionPlane(
+        wallSpanFace,
+        SectionCutAxis3D.axisX,
+        3.5,
+      );
+      expect(clipped.length, equals(4));
+      for (final v in clipped) {
+        expect(v.x, lessThanOrEqualTo(3.5 + 1e-6));
+      }
+      expect(clipped.any((v) => (v.x - 3.5).abs() < 1e-6), isTrue);
     });
   });
 }

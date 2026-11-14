@@ -187,6 +187,21 @@ class GeometryEngine {
     return true;
   }
 
+  /// Sanitizes user/dynamic metric values against NaN, Infinity, and swapped bounds.
+  static double sanitizeMetric(
+    double value, {
+    required double fallback,
+    required double min,
+    required double max,
+  }) {
+    final safeMin = min <= max ? min : max;
+    final safeMax = min <= max ? max : min;
+    if (!value.isFinite) {
+      return fallback.clamp(safeMin, safeMax).toDouble();
+    }
+    return value.clamp(safeMin, safeMax).toDouble();
+  }
+
   /// Closest point on line segment [a]-[b] to point [p].
   static Point2D closestPointOnSegment(Point2D p, Point2D a, Point2D b) {
     final dx = b.x - a.x;

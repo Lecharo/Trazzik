@@ -72,8 +72,45 @@ class _RenovationPlannerDialogState
     }
   }
 
+  Set<String> _resolveScopedModuleIds(List<Module> sourceModules) {
+    final ids = <String>{};
+    if (_renovateFloors) {
+      if (_roomsForFloors.isNotEmpty) {
+        ids.addAll(_roomsForFloors);
+      } else {
+        ids.addAll(sourceModules.map((m) => m.id));
+      }
+    }
+    if (_renovateBathrooms) {
+      if (_selectedBathroomIds.isNotEmpty) {
+        ids.addAll(_selectedBathroomIds);
+      } else {
+        ids.addAll(sourceModules.where((m) => m.isBathroom).map((m) => m.id));
+      }
+    }
+    if (_renovateKitchen) {
+      ids.addAll(sourceModules.where((m) => m.isKitchen).map((m) => m.id));
+    }
+    if (_renovateWallsPaint) {
+      if (_roomsForPaint.isNotEmpty) {
+        ids.addAll(_roomsForPaint);
+      } else {
+        ids.addAll(sourceModules.map((m) => m.id));
+      }
+    }
+    if (_renovateLighting) {
+      if (_roomsForLighting.isNotEmpty) {
+        ids.addAll(_roomsForLighting);
+      } else {
+        ids.addAll(sourceModules.map((m) => m.id));
+      }
+    }
+    return ids;
+  }
+
   void _recalculate() {
     final sourceModules = _getSourceModules();
+    final scopedIds = _resolveScopedModuleIds(sourceModules);
 
     final config = RenovationPlanConfig(
       renovateFloors: _renovateFloors,
@@ -91,6 +128,7 @@ class _RenovationPlannerDialogState
 
     _plan = RenovationPlannerEngine.generatePlan(
       allRooms: sourceModules,
+      selectedModuleIds: scopedIds.isEmpty ? null : scopedIds,
       config: config,
     );
   }
@@ -217,9 +255,12 @@ class _RenovationPlannerDialogState
     final messenger = ScaffoldMessenger.of(context);
     final state = ref.read(floorEditorProvider);
     final projectName = state.project?.name ?? 'Vivienda Trazzik';
+    final sourceModules = _getSourceModules();
+    final scopedIds = _resolveScopedModuleIds(sourceModules);
     final csv = RenovationPlannerEngine.exportPlanToCsv(
       plan: _plan,
-      rooms: _getSourceModules(),
+      rooms: sourceModules,
+      includedRoomIds: scopedIds.isEmpty ? null : scopedIds,
       projectName: projectName,
     );
     final safeName = projectName

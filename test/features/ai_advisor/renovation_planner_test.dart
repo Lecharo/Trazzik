@@ -205,6 +205,47 @@ void main() {
         planWithCeilings.materials.any((m) => m.id == 'mat_drywall_led_cove'),
         isTrue,
       );
+      // Todos los materiales estándar tienen costo unitario y total COP calculados
+      for (final item in planWithCeilings.materials) {
+        expect(item.estimatedUnitCostCop, isNotNull);
+        expect(item.estimatedTotalCostCop, isNotNull);
+      }
+
+      // Espacios semiabiertos/exteriores quedan excluidos del cielorraso drywall y CSV respeta includedRoomIds
+      final terrace = Module(
+        id: 'mod_terrace',
+        floorId: 'fl1',
+        name: 'Terraza Abierta',
+        moduleType: 'TERRACE',
+        geometry: Polygon2D.fromRect(0, 6, 4.0, 3.0),
+        status: ElementStatus.isNew,
+      );
+      final roomsWithTerrace = [...sampleRooms, terrace];
+      final scopedPlan = RenovationPlannerEngine.generatePlan(
+        allRooms: roomsWithTerrace,
+        selectedModuleIds: {sampleRooms.first.id, terrace.id},
+        renovateLighting: true,
+      );
+      final dryCove = scopedPlan.materials.firstWhere((m) => m.id == 'mat_drywall_led_cove');
+      expect(dryCove.targetRoomNames, isNot(contains('Terraza Abierta')));
+
+      // Rollos LED de 5m dimensionados según ML de foseado
+      final ledStrips = scopedPlan.materials.firstWhere((m) => m.id == 'mat_led_strips');
+      expect(ledStrips.quantity, equals((dryCove.quantity / 5.0).ceil().toDouble()));
+
+      final partialPlan = RenovationPlannerEngine.generatePlan(
+        allRooms: roomsWithTerrace,
+        selectedModuleIds: {sampleRooms.first.id},
+        renovateLighting: true,
+      );
+      final scopedCsv = RenovationPlannerEngine.exportPlanToCsv(
+        plan: partialPlan,
+        rooms: roomsWithTerrace,
+        includedRoomIds: {sampleRooms.first.id},
+        projectName: 'Alcance Parcial',
+      );
+      expect(scopedCsv, contains('Sala - Comedor'));
+      expect(scopedCsv, isNot(contains('Terraza Abierta')));
     });
   });
 }

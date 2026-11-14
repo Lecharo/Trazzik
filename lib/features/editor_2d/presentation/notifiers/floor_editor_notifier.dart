@@ -121,7 +121,12 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   }
 
   void updateZoom(double newZoom) {
-    final clampedZoom = newZoom.clamp(15.0, 100.0);
+    final clampedZoom = GeometryEngine.sanitizeMetric(
+      newZoom,
+      fallback: state.zoom,
+      min: 15.0,
+      max: 100.0,
+    );
     state = state.copyWith(zoom: clampedZoom);
   }
 
@@ -930,7 +935,12 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     const padding = 50.0;
     final availW = math.max(100.0, viewportSize.width - padding * 2);
     final availH = math.max(100.0, viewportSize.height - padding * 2);
-    final optimalZoom = math.min(availW / lotW, availH / lotH).clamp(20.0, 110.0);
+    final optimalZoom = GeometryEngine.sanitizeMetric(
+      math.min(availW / lotW, availH / lotH),
+      fallback: 35.0,
+      min: 20.0,
+      max: 110.0,
+    );
     final offsetX = (viewportSize.width - lotW * optimalZoom) / 2 - bb.minX * optimalZoom;
     final offsetY = (viewportSize.height - lotH * optimalZoom) / 2 - bb.minY * optimalZoom;
     state = state.copyWith(zoom: optimalZoom, panOffset: Offset(offsetX, offsetY));
@@ -1045,7 +1055,12 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     const padding = 70.0;
     final availW = math.max(100.0, viewportSize.width - padding * 2);
     final availH = math.max(100.0, viewportSize.height - padding * 2);
-    final targetZoom = math.min(availW / modW, availH / modH).clamp(32.0, 90.0);
+    final targetZoom = GeometryEngine.sanitizeMetric(
+      math.min(availW / modW, availH / modH),
+      fallback: 48.0,
+      min: 32.0,
+      max: 90.0,
+    );
     final offsetX = (viewportSize.width - modW * targetZoom) / 2 - bb.minX * targetZoom;
     final offsetY = (viewportSize.height - modH * targetZoom) / 2 - bb.minY * targetZoom;
 
@@ -1060,7 +1075,16 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
 
   /// Establece explícitamente el encuadre (pan y zoom) para transiciones animadas
   void setCamera({required double zoom, required Offset panOffset}) {
-    state = state.copyWith(zoom: zoom, panOffset: panOffset);
+    final safeZoom = GeometryEngine.sanitizeMetric(
+      zoom,
+      fallback: state.zoom,
+      min: 15.0,
+      max: 110.0,
+    );
+    final safePan = (panOffset.dx.isFinite && panOffset.dy.isFinite)
+        ? panOffset
+        : state.panOffset;
+    state = state.copyWith(zoom: safeZoom, panOffset: safePan);
   }
 
   /// Aplica una plantilla arquitectónica inicial distribuida en el lote vacío

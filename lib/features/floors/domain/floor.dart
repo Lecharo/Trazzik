@@ -34,13 +34,14 @@ class Floor {
 
   double get floorGeometricArea => boundary.area;
 
-  /// Superficie útil interior habitable (módulos propuestos o conservados que no son vanos de puertas o ventanas)
+  /// Superficie útil interior habitable (módulos propuestos o conservados que no son vanos ni zonas exteriores sin techar)
   late final double usableSpacesArea = modules
       .where(
         (m) =>
             (m.status == ElementStatus.isNew ||
                 m.status == ElementStatus.preserved) &&
-            !m.isOpening,
+            !m.isOpening &&
+            !m.isOutdoorUnpaved,
       )
       .fold(0.0, (acc, m) => acc + m.area);
 

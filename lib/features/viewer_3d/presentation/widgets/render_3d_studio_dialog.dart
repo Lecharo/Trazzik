@@ -62,6 +62,17 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
   bool _gltfCopied = false;
   bool _dxfCopied = false;
   bool _exportFullVolumeGltf = true;
+  List<Face3D>? _cachedFullVolumeFaces;
+
+  @override
+  void didUpdateWidget(covariant Render3dStudioDialog oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.activeFloor != widget.activeFloor ||
+        oldWidget.allFloors != widget.allFloors ||
+        oldWidget.lot != widget.lot) {
+      _cachedFullVolumeFaces = null;
+    }
+  }
 
   Future<void> _exportPdfRenderSheet(String lang) async {
     setState(() => _isExportingPdf = true);
@@ -113,11 +124,10 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
 
   List<Face3D> _resolveGltfFaces() {
     if (!_exportFullVolumeGltf) return widget.currentFaces;
-    final targetFloors = widget.allFloors.isNotEmpty
-        ? widget.allFloors
-        : <Floor>[widget.activeFloor];
-    return Building3DBuilder.buildScene(
-      floors: targetFloors,
+    return _cachedFullVolumeFaces ??= Building3DBuilder.buildScene(
+      floors: widget.allFloors.isNotEmpty
+          ? widget.allFloors
+          : <Floor>[widget.activeFloor],
       lot: widget.lot,
       wallHeight: 2.60,
       includeShadows: false,

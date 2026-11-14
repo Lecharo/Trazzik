@@ -13,6 +13,7 @@ import 'package:trazzik/features/fee_proposal/presentation/services/architect_fe
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/plan_export/domain/door_window_schedule_builder.dart';
 import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/plan_export/presentation/screens/technical_plan_export_screen.dart';
@@ -283,6 +284,77 @@ void main() {
       expect(demoDxf, contains('A-WALL-EXIST'));
       expect(demoDxf, contains('BANO ANTIGUO 999'));
       expect(demoDxf, isNot(contains('BANO\nANTIGUO')));
+    });
+
+    test('DoorWindowScheduleBuilder omite filas fantasma en piso vacío y TechnicalPlanPdfService pagina >10 vanos y >3 carpinterías', () async {
+      // Piso sin vanos: no debe inventar P-01 / V-01 falsos
+      expect(DoorWindowScheduleBuilder.build(testFloor), isEmpty);
+
+      // Piso con 12 aberturas y 4 carpinterías fijas -> multi-página PL-VAN-02 & PL-CARP
+      final manyOpenings = List.generate(
+        12,
+        (i) => Module(
+          id: 'open_$i',
+          floorId: testFloor.id,
+          name: i.isEven ? 'Puerta ${i + 1}' : 'Ventana ${i + 1}',
+          moduleType: i.isEven ? 'DOOR' : 'WINDOW',
+          geometry: Polygon2D.fromRect(1.0 + (i % 4) * 1.4, 1.0, 0.90, 0.20),
+          status: ElementStatus.isNew,
+        ),
+      );
+      final kitchenReal = Module(
+        id: 'mod_k_real',
+        floorId: testFloor.id,
+        name: 'Cocina Principal',
+        moduleType: 'KITCHEN',
+        geometry: Polygon2D.fromRect(1.0, 2.0, 4.20, 2.80),
+        status: ElementStatus.isNew,
+      );
+      final bedWithCloset = Module(
+        id: 'mod_bed_carp',
+        floorId: testFloor.id,
+        name: 'Alcoba',
+        moduleType: 'BEDROOM',
+        geometry: Polygon2D.fromRect(1.0, 5.0, 3.5, 3.5),
+        status: ElementStatus.isNew,
+        subModules: List.generate(
+          3,
+          (i) => SubModule(
+            id: 'closet_$i',
+            moduleId: 'mod_bed_carp',
+            name: 'Clóset $i',
+            type: 'CLOSET',
+            geometry: Polygon2D.fromRect(1.1 + i * 0.8, 5.1, 0.70, 0.60),
+            status: ElementStatus.isNew,
+          ),
+        ),
+      );
+
+      final heavyFloor = testFloor.copyWith(
+        modules: [kitchenReal, bedWithCloset, ...manyOpenings],
+      );
+      final scheduleEntries = DoorWindowScheduleBuilder.build(heavyFloor);
+      expect(scheduleEntries.length, equals(12));
+      expect(scheduleEntries.first.code, equals('P-01'));
+      expect(scheduleEntries.last.code, equals('V-06'));
+
+      final pdfBytes = await TechnicalPlanPdfService.generatePlanPdf(
+        floor: heavyFloor,
+        allFloors: [heavyFloor],
+        lot: testLot,
+        options: const PlanExportOptions(
+          discipline: PlanDiscipline.doorWindowSchedule,
+          includeAreaSchedulePage: false,
+          includeAuditPage: false,
+          includeMillworkPage: true,
+        ),
+      );
+      expect(String.fromCharCodes(pdfBytes.sublist(0, 5)), equals('%PDF-'));
+      // Debe generar 5 páginas: PL-VAN + 2 páginas PL-CARP (4 items de 3 en 3) + 2 páginas PL-VAN-02 (12 vanos de 10 en 10)
+      final pageMatches = RegExp(r'/Type\s*/Page[^s]').allMatches(
+        String.fromCharCodes(pdfBytes),
+      );
+      expect(pageMatches.length, equals(5));
     });
   });
 }

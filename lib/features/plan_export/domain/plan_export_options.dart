@@ -101,9 +101,11 @@ extension PlanDisciplineMeta on PlanDiscipline {
 
 /// Configuration options for exporting technical architectural sheets.
 class PlanExportOptions {
+  static const String autoScaleLabel = 'Auto (Esc. Gráfica)';
+
   final PdfPageFormat pageFormat;
   final PlanDiscipline discipline;
-  final String scaleLabel; // e.g. "1:50", "1:100", "1:75"
+  final String scaleLabel; // e.g. "Auto (Esc. Gráfica)", "1:50", "1:100"
   final String sheetCode; // e.g. "PL-01"
   final String sheetTitle; // e.g. "Planta de Arquitectura y Equipamiento"
   final String projectName;
@@ -122,7 +124,7 @@ class PlanExportOptions {
   const PlanExportOptions({
     this.pageFormat = PdfPageFormat.a4,
     this.discipline = PlanDiscipline.architectural,
-    this.scaleLabel = '1:50',
+    this.scaleLabel = autoScaleLabel,
     this.sheetCode = 'PL-01',
     this.sheetTitle = 'PLANTA DE ARQUITECTURA Y EQUIPAMIENTO',
     this.projectName = 'Vivienda Unifamiliar',

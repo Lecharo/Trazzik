@@ -8,6 +8,7 @@ import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/plan_export/domain/door_window_schedule_builder.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
@@ -618,11 +619,13 @@ class TechnicalPlanPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.6;
       final step = math.max(8.0, scale * 0.45);
-      for (double x = left; x <= left + w; x += step) {
+      int count = 0;
+      for (double x = left; x <= left + w && count < 160; x += step, count++) {
         canvas.drawLine(Offset(x, top), Offset(x, top + h), hatchPaint);
       }
       if (floorMat.pattern != FinishPatternType.woodPlanks) {
-        for (double y = top; y <= top + h; y += step) {
+        int rCount = 0;
+        for (double y = top; y <= top + h && rCount < 160; y += step, rCount++) {
           canvas.drawLine(Offset(left, y), Offset(left + w, y), hatchPaint);
         }
       }
@@ -638,7 +641,9 @@ class TechnicalPlanPainter extends CustomPainter {
         ..color = const Color(0xFFD32F2F).withValues(alpha: 0.45)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.9;
-      for (double d = -h; d <= w + h; d += 10.0) {
+      final diagStep = math.max(10.0, (w + h * 2) / 160.0);
+      int dCount = 0;
+      for (double d = -h; d <= w + h && dCount < 160; d += diagStep, dCount++) {
         canvas.drawLine(
           Offset(left + d, top),
           Offset(left + d - h, top + h),
@@ -812,38 +817,14 @@ class TechnicalPlanPainter extends CustomPainter {
     double scale,
     Size size,
   ) {
-    int doorIdx = 1;
-    int winIdx = 1;
-    int gateIdx = 1;
+    final entries = DoorWindowScheduleBuilder.build(floor);
 
-    for (final m in floor.modules) {
-      if (!m.isOpening || m.geometry.vertices.isEmpty) continue;
-      final bbox = m.geometry.boundingBox;
-      final spanW = math.max(bbox.width, bbox.height);
-      final center = toCanvas(
-        (bbox.minX + bbox.maxX) / 2,
-        (bbox.minY + bbox.maxY) / 2,
-      );
-
-      final String code;
-      final double heightM;
-      final Color tagColor;
-      if (m.isGate) {
-        code = 'PT-${gateIdx.toString().padLeft(2, '0')}';
-        gateIdx++;
-        heightM = 2.20;
-        tagColor = const Color(0xFFE65100);
-      } else if (m.isWindow) {
-        code = 'V-${winIdx.toString().padLeft(2, '0')}';
-        winIdx++;
-        heightM = 1.20;
-        tagColor = const Color(0xFF00838F);
-      } else {
-        code = 'P-${doorIdx.toString().padLeft(2, '0')}';
-        doorIdx++;
-        heightM = 2.10;
-        tagColor = const Color(0xFF1565C0);
-      }
+    for (final entry in entries) {
+      final center = toCanvas(entry.centerX, entry.centerY);
+      final code = entry.code;
+      final spanW = entry.widthM;
+      final heightM = entry.heightM;
+      final tagColor = Color(entry.tagColorArgb);
 
       final tp = TextPainter(
         text: TextSpan(
@@ -1417,13 +1398,24 @@ class TechnicalPlanPainter extends CustomPainter {
       Offset(topPt.dx - nPainter.width / 2, topPt.dy - nPainter.height - 2),
     );
 
-    // 2. Escala Gráfica en esquina inferior izquierda (0 a 5 metros)
+    // 2. Escala Gráfica dinámica con step-down según el encuadre real del pliego
     final barLeft = 45.0;
     final barBottom = size.height - 20.0;
-    final oneMeterPx = scale; // 1 metro en escala visual
-    final fiveMetersPx = oneMeterPx * 5.0;
+    final oneMeterPx = scale;
+    final maxBarPx = size.width * 0.36;
+    double barMeters = 0.0;
+    for (final candidateM in const [5.0, 2.0, 1.0, 0.5]) {
+      final px = oneMeterPx * candidateM;
+      if (px >= 28.0 && px <= maxBarPx) {
+        barMeters = candidateM;
+        break;
+      }
+    }
 
-    if (fiveMetersPx > 20 && fiveMetersPx < size.width * 0.4) {
+    if (barMeters > 0) {
+      final totalBarPx = oneMeterPx * barMeters;
+      final segmentCount = barMeters >= 2.0 ? barMeters.round() : 2;
+      final segPx = totalBarPx / segmentCount;
       final barPaint = Paint()
         ..color = const Color(0xFF263238)
         ..style = PaintingStyle.fill;
@@ -1432,21 +1424,29 @@ class TechnicalPlanPainter extends CustomPainter {
         ..style = PaintingStyle.stroke
         ..strokeWidth = 0.8;
 
-      canvas.drawRect(Rect.fromLTWH(barLeft, barBottom, fiveMetersPx, 4), strokePaint);
+      canvas.drawRect(Rect.fromLTWH(barLeft, barBottom, totalBarPx, 4), strokePaint);
 
-      // Alternar segmentos blanco/negro de 1m
-      for (int i = 0; i < 5; i++) {
-        if (i % 2 == 0) {
+      for (int i = 0; i < segmentCount; i++) {
+        if (i.isEven) {
           canvas.drawRect(
-            Rect.fromLTWH(barLeft + i * oneMeterPx, barBottom, oneMeterPx, 4),
+            Rect.fromLTWH(barLeft + i * segPx, barBottom, segPx, 4),
             barPaint,
           );
         }
       }
 
+      final midLabel = barMeters >= 2.0
+          ? '1m'
+          : '${(barMeters / 2).toStringAsFixed(2)}m';
+      final endLabel = barMeters % 1 == 0
+          ? '${barMeters.toStringAsFixed(0)}m'
+          : '${barMeters.toStringAsFixed(1)}m';
+      final modeSuffix = options.scaleLabel == PlanExportOptions.autoScaleLabel
+          ? 'Esc. Gráfica'
+          : 'Esc. Gráfica (Ref. ${options.scaleLabel})';
       final scaleText = TextPainter(
         text: TextSpan(
-          text: '0    1m        ${options.scaleLabel}        5m',
+          text: '0    $midLabel    $endLabel  •  $modeSuffix',
           style: const TextStyle(
             color: Color(0xFF37474F),
             fontSize: 7.5,

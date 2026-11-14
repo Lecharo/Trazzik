@@ -43,7 +43,7 @@ class _TechnicalPlanExportScreenState
     _options = PlanExportOptions(
       projectName: projectName,
       pageFormat: PdfPageFormat.a4,
-      scaleLabel: '1:50',
+      scaleLabel: PlanExportOptions.autoScaleLabel,
     );
 
     _projectCtrl = TextEditingController(text: _options.projectName);
@@ -505,19 +505,27 @@ class _TechnicalPlanExportScreenState
           ),
           items: [
             DropdownMenuItem(
+              value: PlanExportOptions.autoScaleLabel,
+              child: Text(
+                lang == 'es'
+                    ? 'Ajustada a Pliego (Esc. Gráfica)'
+                    : 'Auto-Fit Sheet (Graphic Scale)',
+              ),
+            ),
+            DropdownMenuItem(
               value: '1:50',
               child: Text(
-                lang == 'es' ? 'Escala 1:50 (Detallada)' : 'Scale 1:50 (Detailed)',
+                lang == 'es' ? 'Ref. nominal 1:50' : 'Nominal ref. 1:50',
               ),
             ),
             DropdownMenuItem(
               value: '1:75',
-              child: Text(lang == 'es' ? 'Escala 1:75' : 'Scale 1:75'),
+              child: Text(lang == 'es' ? 'Ref. nominal 1:75' : 'Nominal ref. 1:75'),
             ),
             DropdownMenuItem(
               value: '1:100',
               child: Text(
-                lang == 'es' ? 'Escala 1:100 (General)' : 'Scale 1:100 (General)',
+                lang == 'es' ? 'Ref. nominal 1:100' : 'Nominal ref. 1:100',
               ),
             ),
           ],

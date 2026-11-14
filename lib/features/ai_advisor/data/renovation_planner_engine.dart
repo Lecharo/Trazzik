@@ -247,6 +247,53 @@ class RenovationPlannerEngine {
 
     final materials = <MaterialItem>[];
 
+    // Standard Colombian reference unit COP catalog for itemized BOQ fallback pricing
+    const standardUnitPricesCop = <String, double>{
+      'mat_floor_tiles': 78000,
+      'mat_adhesive_floor': 38000,
+      'mat_grout_floor': 16000,
+      'mat_skirting_tiles': 24000,
+      'mat_sanitary_combo': 620000,
+      'mat_vanity_sink': 780000,
+      'mat_faucet_sink': 210000,
+      'mat_plumbing_supplies': 95000,
+      'mat_shower_set': 340000,
+      'mat_waterproofing_shower': 48000,
+      'mat_wall_tiles_bath': 72000,
+      'mat_sink_kitchen': 490000,
+      'mat_faucet_kitchen': 290000,
+      'mat_backsplash_kitchen': 86000,
+      'mat_paint_walls': 145000,
+      'mat_stucco_walls': 42000,
+      'mat_led_panels': 36000,
+      'mat_led_strips': 95000,
+      'mat_electrical_cable': 260000,
+      'mat_drywall_ceiling_rh': 89000,
+      'mat_drywall_ceiling_std': 74000,
+      'mat_drywall_led_cove': 68000,
+    };
+
+    void addMaterial(MaterialItem item) {
+      final unitCop =
+          item.estimatedUnitCostCop ?? standardUnitPricesCop[item.id];
+      final totalCop = item.estimatedTotalCostCop ??
+          (unitCop != null ? (unitCop * item.quantity) : null);
+      materials.add(MaterialItem(
+        id: item.id,
+        name: item.name,
+        category: item.category,
+        quantity: item.quantity,
+        unit: item.unit,
+        wastePercentage: item.wastePercentage,
+        yieldFormula: item.yieldFormula,
+        targetRoomNames: item.targetRoomNames,
+        purchaseTip: item.purchaseTip,
+        packagingDetail: item.packagingDetail,
+        estimatedUnitCostCop: unitCop,
+        estimatedTotalCostCop: totalCop,
+      ));
+    }
+
     // 2. CÓMPUTO DE PISOS Y ENCHAPES
     if (doFloors && floorRooms.isNotEmpty) {
       final wasteMult = 1.0 + (floorTileWastePercent / 100.0);
@@ -272,7 +319,7 @@ class RenovationPlannerEngine {
             (genericFloorArea * wasteMult * 100).round() / 100.0;
         final boxesCount = (purchaseTileM2 / safeBoxCoverage).ceil();
 
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_floor_tiles',
           name: 'Piso Cerámico / Porcelanato Comercial',
           category: MaterialCategory.flooring,
@@ -297,7 +344,7 @@ class RenovationPlannerEngine {
         final safeMatBox = math.max(0.1, mat.boxCoverageM2);
         final groupBoxes = (groupM2WithWaste / safeMatBox).ceil();
         final totalCop = groupM2WithWaste * mat.pricePerM2Cop;
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_custom_floor_${mat.id}',
           name: 'Acabado Elegido: ${mat.nameEs}',
           category: MaterialCategory.flooring,
@@ -315,7 +362,7 @@ class RenovationPlannerEngine {
       }
 
       final adhesiveBags = math.max(1, (floorArea / 5.0).ceil());
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_adhesive_floor',
         name: 'Pegamento Cerámico / Adhesivo en Polvo (Bulto 25kg)',
         category: MaterialCategory.adhesives,
@@ -327,7 +374,7 @@ class RenovationPlannerEngine {
       ));
 
       final groutBagsKg = math.max(1, (floorArea / 3.5).ceil());
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_grout_floor',
         name: 'Boquilla / Lechada Impermeable para Juntas',
         category: MaterialCategory.adhesives,
@@ -341,7 +388,7 @@ class RenovationPlannerEngine {
 
       final perimeterMeters = floorRooms.fold(0.0, (sum, r) => sum + r.geometry.perimeter);
       final zocaloLinearMeters = (perimeterMeters * 1.10 * 100).round() / 100.0;
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_skirting_tiles',
         name: 'Zócalo / Rodapié Cerámico (Cortes de 7 a 8 cm)',
         category: MaterialCategory.flooring,
@@ -363,7 +410,7 @@ class RenovationPlannerEngine {
       final fullBathNames = fullBathrooms.map((b) => b.name).toList();
 
       // Inodoro y lavamanos aplican a TODOS los baños (completos y medios)
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_sanitary_combo',
         name: 'Combo Inodoro / Taza Sanitaria Doble Descarga',
         category: MaterialCategory.sanitary,
@@ -375,7 +422,7 @@ class RenovationPlannerEngine {
         purchaseTip: 'Verificá que la distancia a pared del desagüe sea de 30.5 cm (12 pulgadas estándar).',
       ));
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_vanity_sink',
         name: 'Mueble de Baño con Lavamanos y Espejo',
         category: MaterialCategory.sanitary,
@@ -387,7 +434,7 @@ class RenovationPlannerEngine {
         purchaseTip: 'En baños pequeños (menores a 2.5 m²), preferí muebles flotantes para ganar amplitud visual.',
       ));
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_faucet_sink',
         name: 'Grifería para Lavamanos (Monocontrol o Cuello Alto)',
         category: MaterialCategory.fixtures,
@@ -399,7 +446,7 @@ class RenovationPlannerEngine {
         purchaseTip: 'Elegí acabado cromo o negro mate resistente a la corrosión con cartucho cerámico.',
       ));
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_plumbing_supplies',
         name: 'Kit de Conexión Hidráulica y Desagües de Baño',
         category: MaterialCategory.sanitary,
@@ -413,7 +460,7 @@ class RenovationPlannerEngine {
 
       // DUCHAS, IMPERMEABILIZANTE Y ENCHAPE VERTICAL: ÚNICAMENTE PARA BAÑOS COMPLETOS
       if (fullBCount > 0) {
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_shower_set',
           name: 'Kit de Ducha (Mezclador, Maneral y Regadera Anticalcárea)',
           category: MaterialCategory.fixtures,
@@ -425,7 +472,7 @@ class RenovationPlannerEngine {
           purchaseTip: 'Revisá la presión de agua de la casa (si es baja presión, evitá regaderas ultraplanas gigantes).',
         ));
 
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_waterproofing_shower',
           name: 'Impermeabilizante Acrílico / Membrana Elástica para Duchas',
           category: MaterialCategory.adhesives,
@@ -438,7 +485,7 @@ class RenovationPlannerEngine {
         ));
 
         final wallTilesM2 = (fullBCount * 9.5 * 1.10 * 100).round() / 100.0;
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_wall_tiles_bath',
           name: 'Enchape Cerámico para Muros de Ducha',
           category: MaterialCategory.flooring,
@@ -458,7 +505,7 @@ class RenovationPlannerEngine {
       final kCount = kitchens.length;
       final kNames = kitchens.map((k) => k.name).toList();
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_sink_kitchen',
         name: 'Poceta Lavaplatos en Acero Inoxidable Calibre 18',
         category: MaterialCategory.fixtures,
@@ -470,7 +517,7 @@ class RenovationPlannerEngine {
         purchaseTip: 'Optá por acero AISI 304 con almohadillas fonoabsorbentes en el fondo.',
       ));
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_faucet_kitchen',
         name: 'Grifería Monocontrol Flexible para Lavaplatos',
         category: MaterialCategory.fixtures,
@@ -481,7 +528,7 @@ class RenovationPlannerEngine {
         targetRoomNames: kNames,
       ));
 
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_backsplash_kitchen',
         name: 'Enchape Salpicadero / Muro de Cocina (Backsplash)',
         category: MaterialCategory.flooring,
@@ -511,7 +558,7 @@ class RenovationPlannerEngine {
       final netWallM2 =
           ((groupPerimeter * safeFloorHeight * 0.85) * 100).round() / 100.0;
       final totalCop = netWallM2 * mat.pricePerM2Cop;
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_custom_wall_${mat.id}',
         name: 'Acabado Vertical Elegido: ${mat.nameEs}',
         category: MaterialCategory.paint,
@@ -546,7 +593,7 @@ class RenovationPlannerEngine {
         final genericPaintNames =
             genericPaintRooms.map((r) => r.name).toList();
 
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_paint_walls',
           name: 'Pintura Vinilo Tipo 1 Lavable (Superficie Muros)',
           category: MaterialCategory.paint,
@@ -563,7 +610,7 @@ class RenovationPlannerEngine {
 
       // 25 kg bag of stucco covers ~20 m² at 1.25 kg/m²
       final stuccoBags = math.max(1, (totalNetWallM2 / 20.0).ceil());
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_stucco_walls',
         name: 'Estuco Plástico para Resane y Preparación',
         category: MaterialCategory.paint,
@@ -579,7 +626,7 @@ class RenovationPlannerEngine {
     // 6. CÓMPUTO DE ILUMINACIÓN LED
     if (doLighting && lightingRooms.isNotEmpty) {
       final ledPanelsCount = math.max(2, (lightingArea / 3.5).ceil());
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_led_panels',
         name: 'Paneles / Downlights LED Embebidos 18W (Luz Cálida/Neutra)',
         category: MaterialCategory.electrical,
@@ -591,21 +638,56 @@ class RenovationPlannerEngine {
         purchaseTip: 'Elegí 3000K (cálida) para dormitorios y sala; 4000K (neutra) para baños y cocina.',
       ));
 
-      final ledStripRolls = math.max(1, (lightingRooms.length / 2).ceil());
-      materials.add(MaterialItem(
+      bool isSemiOpenOutdoor(Module r) {
+        if (r.isOutdoorUnpaved) return true;
+        final t = r.moduleType.toUpperCase();
+        final n = r.name.toUpperCase();
+        return t == 'TERRACE' ||
+            t == 'BALCONY' ||
+            t == 'PATIO' ||
+            t == 'PORCH' ||
+            t == 'GARAGE' ||
+            n.contains('TERRAZA') ||
+            n.contains('BALCÓN') ||
+            n.contains('BALCON') ||
+            n.contains('PATIO') ||
+            n.contains('PORCHE');
+      }
+
+      // Cielorrasos Drywall únicamente en recintos interiores cubiertos
+      final interiorCeilingRooms =
+          lightingRooms.where((r) => !isSemiOpenOutdoor(r)).toList();
+      final wetCeilingRooms =
+          interiorCeilingRooms.where((r) => r.isWetCore).toList();
+      final dryCeilingRooms =
+          interiorCeilingRooms.where((r) => !r.isWetCore).toList();
+
+      final coveLinearM = dryCeilingRooms.isNotEmpty
+          ? (dryCeilingRooms.fold(0.0, (s, r) => s + r.geometry.perimeter * 0.5) *
+                      100)
+                  .round() /
+              100.0
+          : 0.0;
+
+      final ledStripRolls = coveLinearM > 0
+          ? math.max(1, (coveLinearM / 5.0).ceil())
+          : math.max(1, (lightingArea / 12.0).ceil());
+      addMaterial(MaterialItem(
         id: 'mat_led_strips',
         name: 'Kit Cinta LED COB Alta Densidad + Perfil de Aluminio Disipador',
         category: MaterialCategory.electrical,
         quantity: ledStripRolls.toDouble(),
         unit: 'rollos (5 m)',
         packagingDetail: '$ledStripRolls rollo(s) de 5m con fuente 12V y perfil difusor',
-        yieldFormula: 'Iluminación arquitectónica indirecta en gargantas, bajo mesón y espejos',
+        yieldFormula: coveLinearM > 0
+            ? 'Dimensionado para ${coveLinearM.toStringAsFixed(1)} ml de foseado LED (rollos de 5 m)'
+            : 'Iluminación arquitectónica indirecta bajo mesón y espejos',
         targetRoomNames: lightingRoomNames,
         purchaseTip: 'Preferí tiras LED COB para que no se noten los puntos individuales de luz en el difusor.',
       ));
 
       final cableSpools = math.max(1, ((lightingArea * 1.5) / 100.0).ceil());
-      materials.add(MaterialItem(
+      addMaterial(MaterialItem(
         id: 'mat_electrical_cable',
         name: 'Cableado Eléctrico THHN #14 AWG + Tubería Conduit Corrugada',
         category: MaterialCategory.electrical,
@@ -616,15 +698,11 @@ class RenovationPlannerEngine {
         targetRoomNames: lightingRoomNames,
       ));
 
-      // Cielorrasos Drywall (RH Hidrófugo en zonas húmedas + Estándar y Foseado LED en zonas secas)
-      final wetCeilingRooms = lightingRooms.where((r) => r.isWetCore).toList();
-      final dryCeilingRooms = lightingRooms.where((r) => !r.isWetCore).toList();
-
       if (wetCeilingRooms.isNotEmpty) {
         final wetCeilingM2 =
             (wetCeilingRooms.fold(0.0, (s, r) => s + r.area) * 1.10 * 100).round() / 100.0;
         final rhSheets = math.max(1, (wetCeilingM2 / 2.98).ceil());
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_drywall_ceiling_rh',
           name: 'Cielorraso Drywall RH Hidrófugo (Placa Verde 1/2" + Perfilería)',
           category: MaterialCategory.electrical,
@@ -645,7 +723,7 @@ class RenovationPlannerEngine {
         final dryCeilingM2 =
             (dryCeilingRooms.fold(0.0, (s, r) => s + r.area) * 1.10 * 100).round() / 100.0;
         final stdSheets = math.max(1, (dryCeilingM2 / 2.98).ceil());
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_drywall_ceiling_std',
           name: 'Cielorraso Drywall Acústico Estándar (Placa 1/2" + Estructura Galvanizada)',
           category: MaterialCategory.electrical,
@@ -655,15 +733,11 @@ class RenovationPlannerEngine {
               '$stdSheets placa(s) 1.22×2.44m + perfilería galvanizada calibre 26',
           wastePercentage: 10.0,
           yieldFormula:
-              'Área de recintos sociales/privados + 10% desperdicio por cortes',
+              'Área de recintos sociales/privados cubiertos + 10% desperdicio por cortes',
           targetRoomNames: dryCeilingRooms.map((r) => r.name).toList(),
         ));
 
-        final coveLinearM =
-            (dryCeilingRooms.fold(0.0, (s, r) => s + r.geometry.perimeter * 0.5) * 100)
-                .round() /
-            100.0;
-        materials.add(MaterialItem(
+        addMaterial(MaterialItem(
           id: 'mat_drywall_led_cove',
           name: 'Cenefa / Foseado Perimetral Drywall para Luz Indirecta LED',
           category: MaterialCategory.electrical,
@@ -672,7 +746,7 @@ class RenovationPlannerEngine {
           packagingDetail:
               '${coveLinearM.toStringAsFixed(1)} m lineales de garganta luminosa con esquinero plástico',
           yieldFormula:
-              '50% del perímetro de ambientes sociales y dormitorios para foseado indirecto',
+              '50% del perímetro de ambientes sociales y dormitorios cubiertos para foseado indirecto',
           targetRoomNames: dryCeilingRooms.map((r) => r.name).toList(),
         ));
       }
@@ -969,6 +1043,7 @@ class RenovationPlannerEngine {
   static String exportPlanToCsv({
     required RenovationPlanResult plan,
     required List<Module> rooms,
+    Set<String>? includedRoomIds,
     String projectName = 'Proyecto Trazzik',
   }) {
     final sb = StringBuffer();
@@ -989,7 +1064,17 @@ class RenovationPlannerEngine {
     sb.writeln('CUADRO DE AMBIENTES Y ACABADOS');
     sb.writeln('AMBIENTE,TIPO,AREA_M2,ACABADO_PISO,ACABADO_MURO,ESTADO');
     for (final r in rooms) {
-      if (r.isOpening || r.isStairs) continue;
+      if (r.isOpening ||
+          r.isStairs ||
+          r.isOutdoorUnpaved ||
+          r.status == ElementStatus.toDemolish) {
+        continue;
+      }
+      if (includedRoomIds != null &&
+          includedRoomIds.isNotEmpty &&
+          !includedRoomIds.contains(r.id)) {
+        continue;
+      }
       final floorMat = FinishMaterialCatalog.resolveFloorForModule(r);
       final wallMat = FinishMaterialCatalog.resolveWallForModule(r);
       sb.writeln(

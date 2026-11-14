@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
@@ -322,8 +323,12 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
           onPointerSignal: (pointerSignal) {
             if (pointerSignal is PointerScrollEvent) {
               final zoomFactor = pointerSignal.scrollDelta.dy < 0 ? 1.12 : 0.88;
-              final nextZoom =
-                  (_viewportNotifier.value.zoom * zoomFactor).clamp(10.0, 200.0);
+              final nextZoom = GeometryEngine.sanitizeMetric(
+                _viewportNotifier.value.zoom * zoomFactor,
+                fallback: 48.0,
+                min: 10.0,
+                max: 200.0,
+              );
               _viewportNotifier.value =
                   _viewportNotifier.value.copyWith(zoom: nextZoom);
               widget.onZoomChanged?.call(nextZoom);
@@ -337,18 +342,30 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
             onScaleUpdate: (details) {
               final current = _viewportNotifier.value;
               if (details.pointerCount == 1) {
-                final nextYaw = current.yaw + details.focalPointDelta.dx * 0.012;
-                final nextPitch =
-                    (current.pitch - details.focalPointDelta.dy * 0.012)
-                        .clamp(0.08, math.pi / 2 - 0.05);
+                final rawYaw = current.yaw + details.focalPointDelta.dx * 0.012;
+                final nextYaw = rawYaw.isFinite ? rawYaw : current.yaw;
+                final nextPitch = GeometryEngine.sanitizeMetric(
+                  current.pitch - details.focalPointDelta.dy * 0.012,
+                  fallback: current.pitch,
+                  min: 0.08,
+                  max: math.pi / 2 - 0.05,
+                );
                 _viewportNotifier.value = current.copyWith(
                   yaw: nextYaw,
                   pitch: nextPitch,
                 );
                 widget.onOrbitChanged?.call(nextYaw, nextPitch);
               } else if (details.pointerCount >= 2) {
-                final nextZoom = (_baseZoom * details.scale).clamp(10.0, 200.0);
-                final nextPan = current.pan + details.focalPointDelta;
+                final nextZoom = GeometryEngine.sanitizeMetric(
+                  _baseZoom * details.scale,
+                  fallback: current.zoom,
+                  min: 10.0,
+                  max: 200.0,
+                );
+                final nextPan = (details.focalPointDelta.dx.isFinite &&
+                        details.focalPointDelta.dy.isFinite)
+                    ? current.pan + details.focalPointDelta
+                    : current.pan;
                 _viewportNotifier.value = current.copyWith(
                   zoom: nextZoom,
                   pan: nextPan,
@@ -443,15 +460,73 @@ class AxonometricSceneRenderer {
     return minC + (maxC - minC) * ratio.clamp(0.10, 1.0);
   }
 
-  /// Returns true when [face] lies beyond the active vertical section plane.
+  /// Sutherland-Hodgman 3D half-space clip of [face] against `coord <= cutLimit`.
+  /// Returns an empty list if [face] is completely clipped past the plane.
+  static List<Point3D> clipFaceVerticesToSectionPlane(
+    Face3D face,
+    SectionCutAxis3D axis,
+    double cutLimit,
+  ) {
+    if (axis == SectionCutAxis3D.none || face.layer == FaceLayer3D.terrain) {
+      return face.vertices;
+    }
+    final input = face.vertices;
+    if (input.length < 3) return const [];
+
+    double coordOf(Point3D p) => axis == SectionCutAxis3D.axisX ? p.x : p.y;
+
+    bool allInside = true;
+    bool allOutside = true;
+    for (final v in input) {
+      final c = coordOf(v);
+      if (c > cutLimit + 1e-6) {
+        allInside = false;
+      } else {
+        allOutside = false;
+      }
+    }
+    if (allOutside) return const [];
+    if (allInside) return input;
+
+    Point3D intersect(Point3D a, Point3D b) {
+      final ca = coordOf(a);
+      final cb = coordOf(b);
+      final denom = cb - ca;
+      if (denom.abs() < 1e-9) return a;
+      final t = ((cutLimit - ca) / denom).clamp(0.0, 1.0);
+      return Point3D(
+        axis == SectionCutAxis3D.axisX ? cutLimit : a.x + (b.x - a.x) * t,
+        axis == SectionCutAxis3D.axisY ? cutLimit : a.y + (b.y - a.y) * t,
+        a.z + (b.z - a.z) * t,
+      );
+    }
+
+    final output = <Point3D>[];
+    for (int i = 0; i < input.length; i++) {
+      final current = input[i];
+      final prev = input[(i - 1 + input.length) % input.length];
+      final curIn = coordOf(current) <= cutLimit + 1e-6;
+      final prevIn = coordOf(prev) <= cutLimit + 1e-6;
+
+      if (curIn) {
+        if (!prevIn) {
+          output.add(intersect(prev, current));
+        }
+        output.add(current);
+      } else if (prevIn) {
+        output.add(intersect(prev, current));
+      }
+    }
+    return output.length >= 3 ? output : const [];
+  }
+
+  /// Returns true when [face] is completely culled beyond the active section plane.
   static bool isFaceCulledBySection(
     Face3D face,
     SectionCutAxis3D axis,
     double cutLimit,
   ) {
-    if (face.layer == FaceLayer3D.terrain) return false;
-    final c = face.centroid;
-    return axis == SectionCutAxis3D.axisX ? c.x > cutLimit : c.y > cutLimit;
+    return clipFaceVerticesToSectionPlane(face, axis, cutLimit).isEmpty;
   }
 
   static Size? _cachedBgSize;
@@ -460,6 +535,18 @@ class AxonometricSceneRenderer {
   static Shader? _cachedBgShader;
 
   static final Map<String, TextPainter> _labelPainterCache = {};
+
+  @visibleForTesting
+  static void clearCaches() {
+    for (final tp in _labelPainterCache.values) {
+      tp.dispose();
+    }
+    _labelPainterCache.clear();
+    _cachedBgSize = null;
+    _cachedBgDark = null;
+    _cachedBgNight = null;
+    _cachedBgShader = null;
+  }
 
   static final Paint _fillPaint = Paint()..style = PaintingStyle.fill;
   static final Paint _strokePaint = Paint()
@@ -580,8 +667,10 @@ class AxonometricSceneRenderer {
 
     for (final face in faces) {
       if (face.vertices.length < 3) continue;
-      if (cutLimit != null &&
-          isFaceCulledBySection(face, sectionCutAxis, cutLimit)) {
+      final renderVertices = cutLimit != null
+          ? clipFaceVerticesToSectionPlane(face, sectionCutAxis, cutLimit)
+          : face.vertices;
+      if (renderVertices.length < 3) {
         continue;
       }
 
@@ -589,14 +678,14 @@ class AxonometricSceneRenderer {
       double maxD = double.negativeInfinity;
       final screenPoints = <Offset>[];
 
-      for (final v in face.vertices) {
+      for (final v in renderVertices) {
         final (screenPt, depth) = project(v, face.floorIndex);
         screenPoints.add(screenPt);
         depthSum += depth;
         if (depth > maxD) maxD = depth;
       }
 
-      final avgDepth = depthSum / face.vertices.length;
+      final avgDepth = depthSum / renderVertices.length;
       final shadedColor = isNight
           ? face.computeNightShadedColor(lightDir)
           : (useDefaultSun
@@ -743,7 +832,7 @@ class AxonometricSceneRenderer {
           final pT1 = pFace.points[2];
           final pT0 = pFace.points[3];
           int row = 0;
-          for (double dz = stepZ; dz < wallH; dz += stepZ) {
+          for (double dz = stepZ; dz < wallH && row < 48; dz += stepZ) {
             final t = (dz / wallH).clamp(0.0, 1.0);
             final start = Offset.lerp(pB0, pT0, t)!;
             final end = Offset.lerp(pB1, pT1, t)!;
@@ -793,14 +882,15 @@ class AxonometricSceneRenderer {
 
     final fIdx = pFace.floorIndex;
 
+    const int max3dPatternLines = 64;
     switch (pFace.pattern!) {
       case FinishPatternType.woodPlanks:
       case FinishPatternType.outdoorDeck:
         final baseStep =
             pFace.pattern == FinishPatternType.outdoorDeck ? 0.22 : 0.28;
-        final step = baseStep * lodFactor;
+        final step = math.max(baseStep * lodFactor, spanY / max3dPatternLines);
         int plankRow = 0;
-        for (double y = minY + step; y < maxY; y += step) {
+        for (double y = minY + step; y < maxY && plankRow < max3dPatternLines; y += step) {
           final (p1, _) = project(Point3D(minX, y, z), fIdx);
           final (p2, _) = project(Point3D(maxX, y, z), fIdx);
           canvas.drawLine(p1, p2, _textureLinePaint);
@@ -821,21 +911,25 @@ class AxonometricSceneRenderer {
       case FinishPatternType.hydraulicTile:
         final baseStep =
             pFace.pattern == FinishPatternType.hydraulicTile ? 0.40 : 0.65;
-        final step = baseStep * lodFactor;
-        for (double x = minX + step; x < maxX; x += step) {
+        final stepX = math.max(baseStep * lodFactor, spanX / max3dPatternLines);
+        final stepY = math.max(baseStep * lodFactor, spanY / max3dPatternLines);
+        int cx = 0;
+        for (double x = minX + stepX; x < maxX && cx < max3dPatternLines; x += stepX, cx++) {
           final (p1, _) = project(Point3D(x, minY, z), fIdx);
           final (p2, _) = project(Point3D(x, maxY, z), fIdx);
           canvas.drawLine(p1, p2, _textureLinePaint);
         }
-        for (double y = minY + step; y < maxY; y += step) {
+        int cy = 0;
+        for (double y = minY + stepY; y < maxY && cy < max3dPatternLines; y += stepY, cy++) {
           final (p1, _) = project(Point3D(minX, y, z), fIdx);
           final (p2, _) = project(Point3D(maxX, y, z), fIdx);
           canvas.drawLine(p1, p2, _textureLinePaint);
         }
         break;
       case FinishPatternType.marbleVeins:
-        final step = 0.85 * lodFactor;
-        for (double d = minX - spanY; d < maxX; d += step) {
+        final step = math.max(0.85 * lodFactor, (spanX + spanY) / max3dPatternLines);
+        int cv = 0;
+        for (double d = minX - spanY; d < maxX && cv < max3dPatternLines; d += step, cv++) {
           final (p1, _) = project(Point3D(d, minY, z), fIdx);
           final (p2, _) = project(Point3D(d + spanY * 0.65, maxY, z), fIdx);
           canvas.drawLine(p1, p2, _textureLinePaint);
@@ -848,9 +942,12 @@ class AxonometricSceneRenderer {
         }
         break;
       case FinishPatternType.naturalGrass:
-        final step = 0.75 * lodFactor;
-        for (double x = minX + 0.35; x < maxX; x += step) {
-          for (double y = minY + 0.35; y < maxY; y += step) {
+        final stepX = math.max(0.75 * lodFactor, spanX / 24);
+        final stepY = math.max(0.75 * lodFactor, spanY / 24);
+        int gx = 0;
+        for (double x = minX + 0.35; x < maxX && gx < 24; x += stepX, gx++) {
+          int gy = 0;
+          for (double y = minY + 0.35; y < maxY && gy < 24; y += stepY, gy++) {
             final (pt, _) = project(Point3D(x, y, z), fIdx);
             canvas.drawLine(
                 pt, Offset(pt.dx - 2, pt.dy - 4), _textureLinePaint);
@@ -881,8 +978,8 @@ class AxonometricSceneRenderer {
     final cached = _labelPainterCache[key];
     if (cached != null) return cached;
 
-    if (_labelPainterCache.length > 256) {
-      _labelPainterCache.clear();
+    if (_labelPainterCache.length >= 256) {
+      _labelPainterCache.remove(_labelPainterCache.keys.first)?.dispose();
     }
 
     final textColor = isSelected
