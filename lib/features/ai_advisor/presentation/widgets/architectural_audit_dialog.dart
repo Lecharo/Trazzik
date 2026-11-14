@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/ai_advisor/data/architectural_audit_engine.dart';
 import 'package:trazzik/features/ai_advisor/domain/architectural_audit_result.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
@@ -41,14 +43,18 @@ class _ArchitecturalAuditDialogState
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final lang = ref.watch(appLocaleProvider);
+    final isEn = lang == 'en';
     final score = _auditResult.overallScore;
     Color scoreColor;
     if (score >= 85) {
-      scoreColor = const Color(0xFF66BB6A);
+      scoreColor = colors.success;
     } else if (score >= 65) {
-      scoreColor = const Color(0xFFFFB74D);
+      scoreColor = colors.warning;
     } else {
-      scoreColor = const Color(0xFFEF5350);
+      scoreColor = colors.danger;
     }
 
     final findings = _auditResult.findings;
@@ -60,10 +66,10 @@ class _ArchitecturalAuditDialogState
     final isMobile = MediaQuery.of(context).size.width < 600;
 
     return Dialog(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: colors.panelBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFF00E5FF), width: 1.2),
+        side: BorderSide(color: colors.accent, width: 1.2),
       ),
       insetPadding: EdgeInsets.symmetric(horizontal: isMobile ? 12 : 24, vertical: 24),
       child: ConstrainedBox(
@@ -79,44 +85,48 @@ class _ArchitecturalAuditDialogState
                   Container(
                     padding: const EdgeInsets.all(8),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                      color: colors.accent.withValues(alpha: 0.15),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF00E5FF)),
+                      border: Border.all(color: colors.accent),
                     ),
-                    child: const Icon(
+                    child: Icon(
                       Icons.psychology,
-                      color: Color(0xFF00E5FF),
+                      color: colors.accent,
                       size: 22,
                     ),
                   ),
                   const SizedBox(width: 12),
-                  const Expanded(
+                  Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'AUDITORÍA Y ASESORÍA ARQUITECTÓNICA IA',
+                          isEn
+                              ? 'AI ARCHITECTURAL AUDIT & ADVISORY'
+                              : 'AUDITORÍA Y ASESORÍA ARQUITECTÓNICA IA',
                           style: TextStyle(
-                            color: Color(0xFF00E5FF),
+                            color: colors.accent,
                             fontWeight: FontWeight.w900,
                             fontSize: 14,
                             letterSpacing: 1.2,
                           ),
                         ),
                         Text(
-                          'Diagnóstico experto de habitabilidad, circulaciones, núcleos húmedos e intervenciones.',
-                          style: TextStyle(color: Colors.white70, fontSize: 11),
+                          isEn
+                              ? 'Expert diagnostics of habitability, circulation, wet cores, and remodeling scope.'
+                              : 'Diagnóstico experto de habitabilidad, circulaciones, núcleos húmedos e intervenciones.',
+                          style: TextStyle(color: colors.textSecondary, fontSize: 11),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.refresh, size: 20, color: Colors.white70),
-                    tooltip: 'Re-auditar plano',
+                    icon: Icon(Icons.refresh, size: 20, color: colors.textSecondary),
+                    tooltip: isEn ? 'Re-run audit' : 'Re-auditar plano',
                     onPressed: () => setState(_runAudit),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, size: 20, color: Colors.white70),
+                    icon: Icon(Icons.close, size: 20, color: colors.textSecondary),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -127,7 +137,7 @@ class _ArchitecturalAuditDialogState
               Container(
                 padding: const EdgeInsets.all(14),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: colors.cardBg,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(color: scoreColor.withValues(alpha: 0.4)),
                 ),
@@ -156,9 +166,9 @@ class _ArchitecturalAuditDialogState
                               height: 1.1,
                             ),
                           ),
-                          const Text(
+                          Text(
                             '/100',
-                            style: TextStyle(color: Colors.white54, fontSize: 9, height: 1.1),
+                            style: TextStyle(color: colors.textMuted, fontSize: 9, height: 1.1),
                           ),
                         ],
                       ),
@@ -187,26 +197,26 @@ class _ArchitecturalAuditDialogState
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   margin: const EdgeInsets.only(right: 6),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFEF5350).withValues(alpha: 0.2),
+                                    color: colors.danger.withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFEF5350)),
+                                    border: Border.all(color: colors.danger),
                                   ),
                                   child: Text(
-                                    '$criticalCount crítico(s)',
-                                    style: const TextStyle(color: Color(0xFFEF5350), fontSize: 10, fontWeight: FontWeight.bold),
+                                    isEn ? '$criticalCount critical' : '$criticalCount crítico(s)',
+                                    style: TextStyle(color: colors.danger, fontSize: 10, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                               if (warningCount > 0)
                                 Container(
                                   padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                   decoration: BoxDecoration(
-                                    color: const Color(0xFFFFB74D).withValues(alpha: 0.2),
+                                    color: colors.warning.withValues(alpha: 0.16),
                                     borderRadius: BorderRadius.circular(4),
-                                    border: Border.all(color: const Color(0xFFFFB74D)),
+                                    border: Border.all(color: colors.warning),
                                   ),
                                   child: Text(
-                                    '$warningCount alerta(s)',
-                                    style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 10, fontWeight: FontWeight.bold),
+                                    isEn ? '$warningCount warning(s)' : '$warningCount alerta(s)',
+                                    style: TextStyle(color: colors.warning, fontSize: 10, fontWeight: FontWeight.bold),
                                   ),
                                 ),
                             ],
@@ -214,7 +224,7 @@ class _ArchitecturalAuditDialogState
                           const SizedBox(height: 4),
                           Text(
                             _auditResult.summaryDescription,
-                            style: const TextStyle(color: Colors.white70, fontSize: 11, height: 1.3),
+                            style: TextStyle(color: colors.textSecondary, fontSize: 11, height: 1.3),
                           ),
                         ],
                       ),
@@ -230,67 +240,85 @@ class _ArchitecturalAuditDialogState
                 runSpacing: 6,
                 children: [
                   _buildMetricChip(
+                    colors: colors,
                     icon: Icons.wb_sunny_outlined,
-                    label: 'Iluminación Natural',
-                    value: '${_auditResult.metrics.naturallyLitRooms}/${_auditResult.metrics.totalHabitableRooms} hab.',
+                    label: isEn ? 'Daylight' : 'Iluminación Natural',
+                    value: '${_auditResult.metrics.naturallyLitRooms}/${_auditResult.metrics.totalHabitableRooms} ${isEn ? 'rooms' : 'hab.'}',
                     isGood: _auditResult.metrics.blindRoomsCount == 0,
-                    tooltip: 'Ambientes habitables (dormitorios/estar/comedor) con ventilación o ventana a fachada/patio.',
+                    tooltip: isEn
+                        ? 'Habitable rooms with natural daylight or window facing facade/patio.'
+                        : 'Ambientes habitables (dormitorios/estar/comedor) con ventilación o ventana a fachada/patio.',
                   ),
                   _buildMetricChip(
+                    colors: colors,
                     icon: Icons.alt_route,
-                    label: 'Circulación',
+                    label: isEn ? 'Circulation' : 'Circulación',
                     value: '${_auditResult.metrics.circulationPercentage.toStringAsFixed(1)}% (${_auditResult.metrics.circulationArea.toStringAsFixed(1)} m²)',
                     isGood: _auditResult.metrics.circulationPercentage <= 15,
-                    tooltip: 'Porcentaje de metros cuadrados destinados a pasillos y halls. Óptimo: 8% a 14%.',
+                    tooltip: isEn
+                        ? 'Percentage of floor area dedicated to hallways and foyers. Optimal: 8% to 14%.'
+                        : 'Porcentaje de metros cuadrados destinados a pasillos y halls. Óptimo: 8% a 14%.',
                   ),
                   _buildMetricChip(
+                    colors: colors,
                     icon: Icons.water_damage_outlined,
-                    label: 'Núcleos Húmedos',
+                    label: isEn ? 'Wet Cores' : 'Núcleos Húmedos',
                     value: _auditResult.metrics.wetCoresMaxDistanceMeters > 0
-                        ? '${_auditResult.metrics.wetCoresMaxDistanceMeters.toStringAsFixed(1)}m dist.'
-                        : 'Concentrados',
+                        ? '${_auditResult.metrics.wetCoresMaxDistanceMeters.toStringAsFixed(1)}m ${isEn ? 'span' : 'dist.'}'
+                        : (isEn ? 'Clustered' : 'Concentrados'),
                     isGood: _auditResult.metrics.wetCoresMaxDistanceMeters <= 8.0,
-                    tooltip: 'Distancia entre baños, cocinas y lavaderos. Menos de 8m optimiza cañerías y bajantes.',
+                    tooltip: isEn
+                        ? 'Distance between bathrooms, kitchens, and laundry rooms. Under 8m optimizes plumbing runs.'
+                        : 'Distancia entre baños, cocinas y lavaderos. Menos de 8m optimiza cañerías y bajantes.',
                   ),
                   _buildMetricChip(
+                    colors: colors,
                     icon: Icons.foundation,
-                    label: 'Intervención',
-                    value: _auditResult.metrics.isRemodeling ? 'Remodelación' : 'Obra Nueva',
+                    label: isEn ? 'Intervention' : 'Intervención',
+                    value: _auditResult.metrics.isRemodeling
+                        ? (isEn ? 'Remodeling' : 'Remodelación')
+                        : (isEn ? 'New Build' : 'Obra Nueva'),
                     isGood: true,
-                    tooltip: 'Detecta si el plano es obra nueva o remodelación sobre estructura existente a conservar/demoler.',
+                    tooltip: isEn
+                        ? 'Detects new construction vs remodeling over existing kept/demolished structure.'
+                        : 'Detecta si el plano es obra nueva o remodelación sobre estructura existente a conservar/demoler.',
                   ),
                 ],
               ),
               const SizedBox(height: 12),
 
-              const Divider(color: Colors.white12),
+              Divider(color: colors.borderSubtle),
 
               // Lista de Hallazgos y Recomendaciones
               Expanded(
                 child: ListView(
                   children: [
                     if (findings.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.all(24),
+                      Padding(
+                        padding: const EdgeInsets.all(24),
                         child: Center(
                           child: Text(
-                            'No se han agregado recintos suficientes para auditar la planta.',
-                            style: TextStyle(color: Colors.white54, fontSize: 12),
+                            isEn
+                                ? 'Add more rooms to run a complete floor audit.'
+                                : 'No se han agregado recintos suficientes para auditar la planta.',
+                            style: TextStyle(color: colors.textMuted, fontSize: 12),
                           ),
                         ),
                       )
                     else ...[
-                      const Text(
-                        'HALLAZGOS Y RECOMENDACIONES DE DISEÑO',
+                      Text(
+                        isEn
+                            ? 'FINDINGS & DESIGN RECOMMENDATIONS'
+                            : 'HALLAZGOS Y RECOMENDACIONES DE DISEÑO',
                         style: TextStyle(
-                          color: Color(0xFF90A4AE),
+                          color: colors.textMuted,
                           fontWeight: FontWeight.bold,
                           fontSize: 10,
                           letterSpacing: 0.8,
                         ),
                       ),
                       const SizedBox(height: 8),
-                      ...findings.map((f) => _buildFindingCard(f)),
+                      ...findings.map((f) => _buildFindingCard(colors, f)),
                     ],
 
                     if (_auditResult.strategicTips.isNotEmpty) ...[
@@ -298,21 +326,21 @@ class _ArchitecturalAuditDialogState
                       Container(
                         padding: const EdgeInsets.all(12),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withValues(alpha: 0.06),
+                          color: colors.accent.withValues(alpha: 0.06),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
+                          border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
                         ),
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            const Row(
+                            Row(
                               children: [
-                                Icon(Icons.tips_and_updates, size: 16, color: Color(0xFF00E5FF)),
-                                SizedBox(width: 8),
+                                Icon(Icons.tips_and_updates, size: 16, color: colors.accent),
+                                const SizedBox(width: 8),
                                 Text(
-                                  'Criterios del Arquitecto Senior',
+                                  isEn ? 'Senior Architect Notes' : 'Criterios del Arquitecto Senior',
                                   style: TextStyle(
-                                    color: Color(0xFF00E5FF),
+                                    color: colors.accent,
                                     fontWeight: FontWeight.bold,
                                     fontSize: 12,
                                   ),
@@ -325,11 +353,11 @@ class _ArchitecturalAuditDialogState
                                   child: Row(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      const Text('• ', style: TextStyle(color: Color(0xFF00E5FF), fontSize: 12)),
+                                      Text('• ', style: TextStyle(color: colors.accent, fontSize: 12)),
                                       Expanded(
                                         child: Text(
                                           tip,
-                                          style: const TextStyle(color: Colors.white70, fontSize: 11, height: 1.3),
+                                          style: TextStyle(color: colors.textSecondary, fontSize: 11, height: 1.3),
                                         ),
                                       ),
                                     ],
@@ -351,14 +379,14 @@ class _ArchitecturalAuditDialogState
                 children: [
                   ElevatedButton.icon(
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: const Color(0xFF00E5FF),
-                      foregroundColor: const Color(0xFF0A192F),
+                      backgroundColor: colors.accent,
+                      foregroundColor: isLight ? Colors.white : const Color(0xFF0A192F),
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                     ),
                     icon: const Icon(Icons.check, size: 16),
-                    label: const Text(
-                      'Entendido, Volver al Plano',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                    label: Text(
+                      isEn ? 'Got It, Back to Plan' : 'Entendido, Volver al Plano',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
                     ),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
@@ -372,17 +400,18 @@ class _ArchitecturalAuditDialogState
   }
 
   Widget _buildMetricChip({
+    required AppColors colors,
     required IconData icon,
     required String label,
     required String value,
     required bool isGood,
     String? tooltip,
   }) {
-    final color = isGood ? const Color(0xFF66BB6A) : const Color(0xFFFFB74D);
+    final color = isGood ? colors.success : colors.warning;
     final chip = Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
       decoration: BoxDecoration(
-        color: const Color(0xFF1E293B),
+        color: colors.cardBg,
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withValues(alpha: 0.4)),
       ),
@@ -393,7 +422,7 @@ class _ArchitecturalAuditDialogState
           const SizedBox(width: 6),
           Text(
             '$label: ',
-            style: const TextStyle(color: Colors.white54, fontSize: 10),
+            style: TextStyle(color: colors.textMuted, fontSize: 10),
           ),
           Text(
             value,
@@ -407,11 +436,11 @@ class _ArchitecturalAuditDialogState
       return Tooltip(
         message: tooltip,
         padding: const EdgeInsets.all(8),
-        textStyle: const TextStyle(fontSize: 11, color: Colors.white),
+        textStyle: TextStyle(fontSize: 11, color: colors.textPrimary),
         decoration: BoxDecoration(
-          color: const Color(0xFF0F172A),
+          color: colors.panelBg,
           borderRadius: BorderRadius.circular(6),
-          border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+          border: Border.all(color: colors.accent.withValues(alpha: 0.4)),
         ),
         child: chip,
       );
@@ -419,7 +448,7 @@ class _ArchitecturalAuditDialogState
     return chip;
   }
 
-  Widget _buildFindingCard(AuditFinding finding) {
+  Widget _buildFindingCard(AppColors colors, AuditFinding finding) {
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(10),
@@ -450,26 +479,26 @@ class _ArchitecturalAuditDialogState
           const SizedBox(height: 4),
           Text(
             finding.description,
-            style: const TextStyle(color: Colors.white70, fontSize: 11, height: 1.3),
+            style: TextStyle(color: colors.textSecondary, fontSize: 11, height: 1.3),
           ),
           const SizedBox(height: 6),
           Container(
             padding: const EdgeInsets.all(8),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A).withValues(alpha: 0.6),
+              color: colors.surfaceSubtle.withValues(alpha: 0.7),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(color: Colors.white12),
+              border: Border.all(color: colors.borderSubtle),
             ),
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(Icons.build_circle_outlined, size: 14, color: Color(0xFF00E5FF)),
+                Icon(Icons.build_circle_outlined, size: 14, color: colors.accent),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                     finding.recommendation,
-                    style: const TextStyle(
-                      color: Color(0xFF00E5FF),
+                    style: TextStyle(
+                      color: colors.accent,
                       fontSize: 10.5,
                       fontWeight: FontWeight.w500,
                       height: 1.25,

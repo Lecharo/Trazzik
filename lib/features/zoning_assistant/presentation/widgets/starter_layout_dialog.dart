@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/zoning_assistant/domain/starter_layout_template.dart';
 import 'package:trazzik/features/zoning_assistant/presentation/widgets/multi_story_brief_dialog.dart';
@@ -24,12 +26,15 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final lang = ref.watch(appLocaleProvider);
+    final isEn = lang == 'en';
     final state = ref.watch(floorEditorProvider);
     final notifier = ref.read(floorEditorProvider.notifier);
     final hasExistingModules = state.floor.modules.isNotEmpty;
 
     return Dialog(
-      backgroundColor: const Color(0xFF112240),
+      backgroundColor: colors.panelBg,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       child: Container(
         width: 620,
@@ -44,34 +49,38 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                 Container(
                   padding: const EdgeInsets.all(8),
                   decoration: BoxDecoration(
-                    color: const Color(0xFF00E5FF).withValues(alpha: 0.15),
+                    color: colors.accent.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF), size: 24),
+                  child: Icon(Icons.auto_awesome, color: colors.accent, size: 24),
                 ),
                 const SizedBox(width: 12),
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Asistente de Distribución Inicial',
+                        isEn
+                            ? 'Starter Layout Assistant'
+                            : 'Asistente de Distribución Inicial',
                         style: TextStyle(
-                          color: Colors.white,
+                          color: colors.textPrimary,
                           fontWeight: FontWeight.bold,
                           fontSize: 17,
                         ),
                       ),
-                      SizedBox(height: 2),
+                      const SizedBox(height: 2),
                       Text(
-                        'Elegí un esquema arquitectónico funcional adaptado a tu lote',
-                        style: TextStyle(color: Colors.white70, fontSize: 12),
+                        isEn
+                            ? 'Select a functional architectural layout tailored to your lot'
+                            : 'Seleccione un esquema arquitectónico funcional adaptado al lote',
+                        style: TextStyle(color: colors.textSecondary, fontSize: 12),
                       ),
                     ],
                   ),
                 ),
                 IconButton(
-                  icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                  icon: Icon(Icons.close, color: colors.textMuted, size: 20),
                   onPressed: () => Navigator.of(context).pop(),
                 ),
               ],
@@ -89,34 +98,38 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
               child: Container(
                 padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
+                  color: colors.accent.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(8),
-                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.5)),
+                  border: Border.all(color: colors.accent.withValues(alpha: 0.5)),
                 ),
-                child: const Row(
+                child: Row(
                   children: [
-                    Icon(Icons.layers, color: Color(0xFF00E5FF), size: 20),
-                    SizedBox(width: 10),
+                    Icon(Icons.layers, color: colors.accent, size: 20),
+                    const SizedBox(width: 10),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            '¿Proyectás una Vivienda de 2 Pisos?',
+                            isEn
+                                ? 'Planning a 2-Story Residence?'
+                                : '¿Proyecta una Vivienda de 2 Pisos?',
                             style: TextStyle(
-                              color: Color(0xFF00E5FF),
+                              color: colors.accent,
                               fontWeight: FontWeight.bold,
                               fontSize: 13,
                             ),
                           ),
                           Text(
-                            'Configurá garaje al frente, suite abajo, dormitorios arriba y escaleras coordinadas.',
-                            style: TextStyle(color: Colors.white70, fontSize: 11),
+                            isEn
+                                ? 'Configure front garage, ground suite, upper bedrooms and coordinated stairs.'
+                                : 'Configure garaje al frente, suite abajo, dormitorios arriba y escaleras coordinadas.',
+                            style: TextStyle(color: colors.textSecondary, fontSize: 11),
                           ),
                         ],
                       ),
                     ),
-                    Icon(Icons.chevron_right, color: Color(0xFF00E5FF), size: 18),
+                    Icon(Icons.chevron_right, color: colors.accent, size: 18),
                   ],
                 ),
               ),
@@ -147,13 +160,13 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                               padding: const EdgeInsets.all(14),
                               decoration: BoxDecoration(
                                 color: isSelected
-                                    ? const Color(0xFF00E5FF).withValues(alpha: 0.12)
-                                    : const Color(0xFF1E2D4A),
+                                    ? colors.accent.withValues(alpha: 0.12)
+                                    : colors.cardBg,
                                 borderRadius: BorderRadius.circular(8),
                                 border: Border.all(
                                   color: isSelected
-                                      ? const Color(0xFF00E5FF)
-                                      : const Color(0xFF233554),
+                                      ? colors.accent
+                                      : colors.borderSubtle,
                                   width: isSelected ? 1.8 : 1.0,
                                 ),
                               ),
@@ -162,7 +175,7 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                 children: [
                                   Radio<StarterLayoutType>(
                                     value: tpl.type,
-                                    activeColor: const Color(0xFF00E5FF),
+                                    activeColor: colors.accent,
                                   ),
                                 const SizedBox(width: 8),
                                 Expanded(
@@ -176,8 +189,8 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                         children: [
                                           Text(
                                             tpl.title,
-                                            style: const TextStyle(
-                                              color: Colors.white,
+                                            style: TextStyle(
+                                              color: colors.textPrimary,
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,
                                             ),
@@ -186,13 +199,13 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                             padding: const EdgeInsets.symmetric(
                                                 horizontal: 6, vertical: 2),
                                             decoration: BoxDecoration(
-                                              color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                                              color: colors.accent.withValues(alpha: 0.16),
                                               borderRadius: BorderRadius.circular(4),
                                             ),
                                             child: Text(
                                               tpl.tag,
-                                              style: const TextStyle(
-                                                color: Color(0xFF00E5FF),
+                                              style: TextStyle(
+                                                color: colors.accent,
                                                 fontSize: 10,
                                                 fontWeight: FontWeight.bold,
                                               ),
@@ -203,8 +216,8 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                       const SizedBox(height: 6),
                                       Text(
                                         tpl.description,
-                                        style: const TextStyle(
-                                          color: Colors.white70,
+                                        style: TextStyle(
+                                          color: colors.textSecondary,
                                           fontSize: 12,
                                           height: 1.3,
                                         ),
@@ -215,16 +228,25 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                                         runSpacing: 6,
                                         children: [
                                           _buildStatChip(
+                                            colors,
                                             Icons.bed,
-                                            '${tpl.bedroomsCount} Dormitorios',
+                                            isEn
+                                                ? '${tpl.bedroomsCount} Bedrooms'
+                                                : '${tpl.bedroomsCount} Dormitorios',
                                           ),
                                           _buildStatChip(
+                                            colors,
                                             Icons.bathtub,
-                                            '${tpl.bathroomsCount} Baños',
+                                            isEn
+                                                ? '${tpl.bathroomsCount} Bathrooms'
+                                                : '${tpl.bathroomsCount} Baños',
                                           ),
                                           _buildStatChip(
+                                            colors,
                                             Icons.chair,
-                                            'Amoblado inicial incluido',
+                                            isEn
+                                                ? 'Starter furniture included'
+                                                : 'Amoblado inicial incluido',
                                           ),
                                         ],
                                       ),
@@ -242,18 +264,20 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                       Container(
                         padding: const EdgeInsets.all(10),
                         decoration: BoxDecoration(
-                          color: Colors.amber.withValues(alpha: 0.12),
+                          color: colors.warning.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: Colors.amber.withValues(alpha: 0.4)),
+                          border: Border.all(color: colors.warning.withValues(alpha: 0.4)),
                         ),
-                        child: const Row(
+                        child: Row(
                           children: [
-                            Icon(Icons.info_outline, color: Colors.amber, size: 18),
-                            SizedBox(width: 8),
+                            Icon(Icons.info_outline, color: colors.warning, size: 18),
+                            const SizedBox(width: 8),
                             Expanded(
                               child: Text(
-                                'Atención: Aplicar esta distribución reemplazará los recintos existentes. Podrás deshacer la acción con el botón Deshacer (Undo).',
-                                style: TextStyle(color: Colors.amber, fontSize: 11),
+                                isEn
+                                    ? 'Notice: Applying this layout replaces existing rooms. You can revert with Undo.'
+                                    : 'Atención: Aplicar esta distribución reemplazará los recintos existentes. Se puede deshacer con el botón Deshacer (Undo).',
+                                style: TextStyle(color: colors.warning, fontSize: 11),
                               ),
                             ),
                           ],
@@ -274,18 +298,25 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
               children: [
                 TextButton(
                   onPressed: () => Navigator.of(context).pop(),
-                  child: const Text('Cancelar', style: TextStyle(color: Colors.white70)),
+                  child: Text(
+                    isEn ? 'Cancel' : 'Cancelar',
+                    style: TextStyle(color: colors.textSecondary),
+                  ),
                 ),
                 const SizedBox(width: 12),
                 ElevatedButton.icon(
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF00E5FF),
-                    foregroundColor: const Color(0xFF0A192F),
+                    backgroundColor: colors.accent,
+                    foregroundColor: Theme.of(context).brightness == Brightness.light
+                        ? Colors.white
+                        : const Color(0xFF0A192F),
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
                     textStyle: const TextStyle(fontWeight: FontWeight.bold),
                   ),
                   icon: const Icon(Icons.check, size: 18),
-                  label: const Text('Generar Esquema en el Lote'),
+                  label: Text(
+                    isEn ? 'Generate Lot Layout' : 'Generar Esquema en el Lote',
+                  ),
                   onPressed: () {
                     final selectedTpl = StarterLayoutTemplate.templates
                         .firstWhere((t) => t.type == _selectedType);
@@ -293,9 +324,11 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
                     Navigator.of(context).pop();
                     ScaffoldMessenger.maybeOf(context)?.showSnackBar(
                       SnackBar(
-                        backgroundColor: const Color(0xFF2E7D32),
+                        backgroundColor: colors.success,
                         content: Text(
-                          'Se generó el esquema "${selectedTpl.title}" con amoblamiento base.',
+                          isEn
+                              ? 'Layout "${selectedTpl.title}" generated with starter furniture.'
+                              : 'Se generó el esquema "${selectedTpl.title}" con amoblamiento base.',
                         ),
                       ),
                     );
@@ -309,15 +342,15 @@ class _StarterLayoutDialogState extends ConsumerState<StarterLayoutDialog> {
     );
   }
 
-  Widget _buildStatChip(IconData icon, String text) {
+  Widget _buildStatChip(AppColors colors, IconData icon, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 14, color: const Color(0xFF00E5FF)),
+        Icon(icon, size: 14, color: colors.accent),
         const SizedBox(width: 4),
         Text(
           text,
-          style: const TextStyle(color: Colors.white60, fontSize: 11),
+          style: TextStyle(color: colors.textMuted, fontSize: 11),
         ),
       ],
     );

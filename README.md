@@ -12,7 +12,7 @@ Trazzik is a cross-platform (**Web, Android, iOS, Desktop**) architectural desig
    # Set SUPABASE_URL and SUPABASE_ANON_KEY in .env
    flutter pub get
    ```
-2. **Verify Static Analysis & Test Suite (`110/110` passing):**
+2. **Verify Static Analysis & Test Suite (`130/130` passing):**
    ```bash
    flutter analyze --no-pub
    flutter test --no-pub -j 2
@@ -81,7 +81,7 @@ lib/
     ├── floors/                        # Floor domain model & SupabaseFloorRepository
     ├── lots/                          # Lot & ZoningZone domain models
     ├── modules/                       # Module, SubModule & FurnitureCatalog domain models
-    ├── plan_export/                   # 7-discipline TechnicalPlanPainter (incl. PL-3D), AutoCAD .DXF exporter, PL-CARP & PDF service
+    ├── plan_export/                   # 9-discipline TechnicalPlanPainter (presentation/painters), AutoCAD .DXF exporter, DoorWindowScheduleBuilder, PL-CARP & PDF service
     ├── projects/                      # Project domain model, LotSetupScreen & SupabaseProjectRepository
     ├── viewer_3d/                     # Building3DBuilder (multi-part 3D furniture), AxonometricCanvas3D (X/Y section cuts, 2700K night mode), glTF 2.0, Roomstyles & 60-day client links
     └── zoning_assistant/              # Starter templates & MultiStoryLayoutGenerator
@@ -101,13 +101,14 @@ All tables enforce **Row Level Security (RLS)** with covering foreign-key indexe
 | `20261019000004_add_project_image_url.sql` | Cover image support (`projects.image_url`). |
 | `20261109000005_finishes_fee_proposals_share_links_and_rls_hardening.sql` | First-class `modules.floor_material_id` & `modules.wall_finish_id` columns, `projects.fee_proposal_config`, `project_share_links` table, 10 covering FK indexes, and RLS policy hardening. |
 | `20261109000006_add_shared_project_rpcs.sql` | `get_shared_project_by_token(p_token)` and `update_shared_module_finishes(...)` RPCs for 60-day interactive 3D client sessions. |
+| `20261114000007_harden_shared_project_rpcs.sql` | Restricts public share projection (`id`, `name`, `description`, `image_url`, `created_at`, `updated_at`) and locks `update_shared_module_finishes` with `project_id` scoping (`l.project_id = v_project_id`), lock/status/type guards, and material ID allowlists. |
 
 ---
 
 ## Quality & Verification Checklist
 
 - [x] `flutter analyze --no-pub` reports **0 issues**.
-- [x] `flutter test --no-pub -j 2` passes **116/116 unit and widget tests** (geometry, 7 mandatory remodeling validation rules, multi-story generation, 2D `.select()` rebuild granularity, 3D outward normals & stratified depth sorting, multi-part 3D furniture & X/Y section cuts, 1-click Roomstyles, glTF 2.0 PBR & AutoCAD `.DXF` CAD export, BOQ `.CSV` export & custom finish deduplication, and multi-discipline PDF generation including `PL-3D`).
+- [x] `flutter test --no-pub -j 2` passes **130/130 unit and widget tests** (geometry, 7 mandatory remodeling validation rules, multi-story generation, 2D `.select()` rebuild granularity, 3D outward normals & stratified depth sorting, multi-part 3D furniture & X/Y section cuts, 1-click Roomstyles, glTF 2.0 PBR & AutoCAD `.DXF` CAD export, BOQ `.CSV` export & custom finish deduplication, and multi-discipline PDF generation including `PL-3D` and `PL-VAN`).
 - [x] Supabase Security & Performance Advisors report **0 `unindexed_foreign_keys`**, **0 `auth_rls_initplan`**, **0 `multiple_permissive_policies`**, and **0 `function_search_path_mutable`**.
 - [x] Full Dark Mode & Light Mode semantic contrast via `AppColors` and bilingual (`ES` / `EN`) UI support.
 

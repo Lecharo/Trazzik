@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
+import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/core/utils/file_export_helper.dart';
 import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
@@ -157,17 +159,20 @@ class _RenovationPlannerDialogState
       _recalculate();
     });
 
+    final isEn = ref.read(appLocaleProvider) == 'en';
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        backgroundColor: Color(0xFF00E5FF),
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        backgroundColor: const Color(0xFF00E5FF),
         content: Row(
           children: [
-            Icon(Icons.auto_awesome, color: Color(0xFF0A192F), size: 18),
-            SizedBox(width: 8),
+            const Icon(Icons.auto_awesome, color: Color(0xFF0A192F), size: 18),
+            const SizedBox(width: 8),
             Text(
-              '¡Instrucciones procesadas y plan recalculado según el plano!',
-              style: TextStyle(color: Color(0xFF0A192F), fontWeight: FontWeight.bold),
+              isEn
+                  ? 'Instructions parsed and plan recalculated from the floor plan!'
+                  : '¡Instrucciones procesadas y plan recalculado según el plano!',
+              style: const TextStyle(color: Color(0xFF0A192F), fontWeight: FontWeight.bold),
             ),
           ],
         ),
@@ -176,12 +181,15 @@ class _RenovationPlannerDialogState
   }
 
   Future<void> _exportPdf() async {
+    final isEn = ref.read(appLocaleProvider) == 'en';
     setState(() => _isExportingPdf = true);
     try {
       final state = ref.read(floorEditorProvider);
       final projectName = state.project?.name ?? 'Vivienda';
       final scopeName = _allHouseScope
-          ? 'Toda la Casa (${state.allFloors.length} pisos)'
+          ? (isEn
+              ? 'Whole House (${state.allFloors.length} floors)'
+              : 'Toda la Casa (${state.allFloors.length} pisos)')
           : state.floor.name;
 
       await RenovationPlanPdfService.exportAndSharePdf(
@@ -196,7 +204,9 @@ class _RenovationPlannerDialogState
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             backgroundColor: Colors.redAccent,
-            content: Text('Error al generar PDF: $e'),
+            content: Text(
+              isEn ? 'Error generating PDF: $e' : 'Error al generar PDF: $e',
+            ),
           ),
         );
       }
@@ -208,24 +218,37 @@ class _RenovationPlannerDialogState
   }
 
   void _copyShoppingListToClipboard() {
+    final isEn = ref.read(appLocaleProvider) == 'en';
     final buffer = StringBuffer();
-    buffer.writeln('PLAN DE COMPRAS Y MATERIALES - TRAZZIK');
-    buffer.writeln('Área total a intervenir: ${_plan.totalRenovatedArea.toStringAsFixed(2)} m²');
+    buffer.writeln(isEn
+        ? 'SHOPPING & MATERIALS PLAN - TRAZZIK'
+        : 'PLAN DE COMPRAS Y MATERIALES - TRAZZIK');
+    buffer.writeln(
+      '${isEn ? 'Total intervened area' : 'Área total a intervenir'}: ${_plan.totalRenovatedArea.toStringAsFixed(2)} m²',
+    );
     final bathSummary = _plan.halfBathroomCount > 0
-        ? '${_plan.fullBathroomCount} baños completos + ${_plan.halfBathroomCount} medio baño'
-        : '${_plan.bathroomCount} baños';
-    buffer.writeln('Baños a remodelar: $bathSummary');
+        ? (isEn
+            ? '${_plan.fullBathroomCount} full baths + ${_plan.halfBathroomCount} half bath'
+            : '${_plan.fullBathroomCount} baños completos + ${_plan.halfBathroomCount} medio baño')
+        : '${_plan.bathroomCount} ${isEn ? 'bathrooms' : 'baños'}';
+    buffer.writeln('${isEn ? 'Bathrooms' : 'Baños a remodelar'}: $bathSummary');
     buffer.writeln('------------------------------------------');
     for (final mat in _plan.materials) {
       final packaging = mat.packagingDetail != null ? ' (${mat.packagingDetail})' : '';
-      final destination = mat.targetRoomNames.isNotEmpty ? ' [Destino: ${mat.targetRoomNames.join(', ')}]' : '';
+      final destination = mat.targetRoomNames.isNotEmpty
+          ? ' [${isEn ? 'Target' : 'Destino'}: ${mat.targetRoomNames.join(', ')}]'
+          : '';
       buffer.writeln('• ${mat.name}: ${mat.quantity.toStringAsFixed(mat.quantity % 1 == 0 ? 0 : 2)} ${mat.unit}$packaging$destination');
-      buffer.writeln('  Rendimiento: ${mat.yieldFormula}');
+      buffer.writeln('  ${isEn ? 'Yield' : 'Rendimiento'}: ${mat.yieldFormula}');
     }
     buffer.writeln('------------------------------------------');
-    buffer.writeln('Tiempo estimado de ejecución:');
-    buffer.writeln('• Cuadrillas en paralelo: ${_plan.totalParallelDays} días hábiles.');
-    buffer.writeln('• Cuadrilla secuencial: ${_plan.totalSequentialDays} días hábiles.');
+    buffer.writeln(isEn ? 'Estimated execution timeline:' : 'Tiempo estimado de ejecución:');
+    buffer.writeln(
+      '• ${isEn ? 'Parallel crews' : 'Cuadrillas en paralelo'}: ${_plan.totalParallelDays} ${isEn ? 'business days' : 'días hábiles'}.',
+    );
+    buffer.writeln(
+      '• ${isEn ? 'Sequential crew' : 'Cuadrilla secuencial'}: ${_plan.totalSequentialDays} ${isEn ? 'business days' : 'días hábiles'}.',
+    );
 
     Clipboard.setData(ClipboardData(text: buffer.toString()));
 
@@ -237,14 +260,18 @@ class _RenovationPlannerDialogState
     });
 
     ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        backgroundColor: Color(0xFF2E7D32),
+      SnackBar(
+        duration: const Duration(seconds: 2),
+        backgroundColor: const Color(0xFF2E7D32),
         content: Row(
           children: [
-            Icon(Icons.check_circle, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('¡Lista de compras con trazabilidad por recinto copiada!'),
+            const Icon(Icons.check_circle, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Text(
+              isEn
+                  ? 'Room-traceable shopping list copied!'
+                  : '¡Lista de compras con trazabilidad por recinto copiada!',
+            ),
           ],
         ),
       ),
@@ -254,6 +281,8 @@ class _RenovationPlannerDialogState
   Future<void> _exportCsvToClipboard() async {
     final messenger = ScaffoldMessenger.of(context);
     final state = ref.read(floorEditorProvider);
+    final lang = ref.read(appLocaleProvider);
+    final isEn = lang == 'en';
     final projectName = state.project?.name ?? 'Vivienda Trazzik';
     final sourceModules = _getSourceModules();
     final scopedIds = _resolveScopedModuleIds(sourceModules);
@@ -262,6 +291,7 @@ class _RenovationPlannerDialogState
       rooms: sourceModules,
       includedRoomIds: scopedIds.isEmpty ? null : scopedIds,
       projectName: projectName,
+      lang: lang,
     );
     final safeName = projectName
         .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
@@ -282,10 +312,16 @@ class _RenovationPlannerDialogState
     }
 
     final desc = result.savedPath != null
-        ? '¡Cómputo BOQ (.CSV) guardado en ${result.savedPath} y copiado!'
+        ? (isEn
+            ? 'BOQ (.CSV) saved to ${result.savedPath} and copied!'
+            : '¡Cómputo BOQ (.CSV) guardado en ${result.savedPath} y copiado!')
         : (result.downloaded
-            ? '¡Cómputo BOQ y Cuadro de Acabados (.CSV) descargado!'
-            : '¡Cómputo BOQ y Cuadro de Acabados (.CSV) copiado!');
+            ? (isEn
+                ? 'BOQ & Finish Schedule (.CSV) downloaded!'
+                : '¡Cómputo BOQ y Cuadro de Acabados (.CSV) descargado!')
+            : (isEn
+                ? 'BOQ & Finish Schedule (.CSV) copied!'
+                : '¡Cómputo BOQ y Cuadro de Acabados (.CSV) copiado!'));
     messenger.showSnackBar(
       SnackBar(
         duration: const Duration(seconds: 3),
@@ -303,14 +339,18 @@ class _RenovationPlannerDialogState
 
   @override
   Widget build(BuildContext context) {
+    final colors = AppColors.of(context);
+    final isLight = Theme.of(context).brightness == Brightness.light;
+    final lang = ref.watch(appLocaleProvider);
+    final isEn = lang == 'en';
     final screenWidth = MediaQuery.of(context).size.width;
     final isMobile = screenWidth < 650;
 
     return Dialog(
-      backgroundColor: const Color(0xFF0F172A),
+      backgroundColor: colors.panelBg,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(16),
-        side: const BorderSide(color: Color(0xFF00E5FF), width: 1.2),
+        side: BorderSide(color: colors.accent, width: 1.2),
       ),
       insetPadding: EdgeInsets.symmetric(horizontal: isMobile ? 8 : 20, vertical: 16),
       child: ConstrainedBox(
@@ -327,21 +367,23 @@ class _RenovationPlannerDialogState
                   Container(
                     padding: const EdgeInsets.all(7),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF00E5FF).withValues(alpha: 0.12),
+                      color: colors.accent.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
+                      border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
                     ),
-                    child: const Icon(Icons.tune_rounded, color: Color(0xFF00E5FF), size: 18),
+                    child: Icon(Icons.tune_rounded, color: colors.accent, size: 18),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const Text(
-                          'PLANIFICADOR DE OBRA, MATERIALES Y CUADRILLA IA',
+                        Text(
+                          isEn
+                              ? 'AI WORK PLANNER, MATERIALS (BOQ) & CREWS'
+                              : 'PLANIFICADOR DE OBRA, MATERIALES Y CUADRILLA IA',
                           style: TextStyle(
-                            color: Colors.white,
+                            color: colors.textPrimary,
                             fontSize: 12.5,
                             fontWeight: FontWeight.bold,
                             letterSpacing: 0.5,
@@ -349,14 +391,16 @@ class _RenovationPlannerDialogState
                         ),
                         const SizedBox(height: 2),
                         Text(
-                          'Cómputo métrico por recinto con desperdicio técnico, especialistas y ruta crítica',
-                          style: TextStyle(color: Colors.white.withValues(alpha: 0.7), fontSize: 10),
+                          isEn
+                              ? 'Room-by-room material takeoff with technical waste, crews, and critical path'
+                              : 'Cómputo métrico por recinto con desperdicio técnico, especialistas y ruta crítica',
+                          style: TextStyle(color: colors.textSecondary, fontSize: 10),
                         ),
                       ],
                     ),
                   ),
                   IconButton(
-                    icon: const Icon(Icons.close, color: Colors.white54, size: 20),
+                    icon: Icon(Icons.close, color: colors.textMuted, size: 20),
                     onPressed: () => Navigator.of(context).pop(),
                   ),
                 ],
@@ -367,24 +411,26 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: colors.cardBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.35)),
+                  border: Border.all(color: colors.accent.withValues(alpha: 0.35)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.auto_awesome, color: Color(0xFF00E5FF), size: 16),
+                    Icon(Icons.auto_awesome, color: colors.accent, size: 16),
                     const SizedBox(width: 8),
                     Expanded(
                       child: TextField(
                         controller: _promptController,
-                        style: const TextStyle(color: Colors.white, fontSize: 11),
-                        decoration: const InputDecoration(
-                          hintText: 'Indicaciones a la IA: ej. pisos solo en sala, medio baño sin ducha, luces led...',
-                          hintStyle: TextStyle(color: Colors.white38, fontSize: 10.5),
+                        style: TextStyle(color: colors.textPrimary, fontSize: 11),
+                        decoration: InputDecoration(
+                          hintText: isEn
+                              ? 'AI scope prompt: e.g., floors only in living, half bath without shower, LED lights...'
+                              : 'Indicaciones a la IA: ej. pisos solo en sala, medio baño sin ducha, luces led...',
+                          hintStyle: TextStyle(color: colors.textMuted, fontSize: 10.5),
                           border: InputBorder.none,
                           isDense: true,
-                          contentPadding: EdgeInsets.symmetric(vertical: 6),
+                          contentPadding: const EdgeInsets.symmetric(vertical: 6),
                         ),
                         onSubmitted: (_) => _applyPromptInstructions(),
                       ),
@@ -395,18 +441,18 @@ class _RenovationPlannerDialogState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                          color: colors.accent.withValues(alpha: 0.16),
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(
-                              'Interpretar',
-                              style: TextStyle(color: Color(0xFF00E5FF), fontSize: 10, fontWeight: FontWeight.bold),
+                              isEn ? 'Parse' : 'Interpretar',
+                              style: TextStyle(color: colors.accent, fontSize: 10, fontWeight: FontWeight.bold),
                             ),
-                            SizedBox(width: 4),
-                            Icon(Icons.arrow_forward_ios, color: Color(0xFF00E5FF), size: 9),
+                            const SizedBox(width: 4),
+                            Icon(Icons.arrow_forward_ios, color: colors.accent, size: 9),
                           ],
                         ),
                       ),
@@ -420,9 +466,9 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF1E293B),
+                  color: colors.cardBg,
                   borderRadius: BorderRadius.circular(10),
-                  border: Border.all(color: Colors.white12),
+                  border: Border.all(color: colors.borderSubtle),
                 ),
                 child: Wrap(
                   spacing: 6,
@@ -432,9 +478,9 @@ class _RenovationPlannerDialogState
                     // Alcance
                     ChoiceChip(
                       avatar: const Icon(Icons.home, size: 13),
-                      label: const Text('Toda la Casa', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'Whole House' : 'Toda la Casa', style: const TextStyle(fontSize: 10)),
                       selected: _allHouseScope,
-                      selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.25),
+                      selectedColor: colors.accent.withValues(alpha: 0.25),
                       onSelected: (val) {
                         setState(() {
                           _allHouseScope = true;
@@ -444,9 +490,9 @@ class _RenovationPlannerDialogState
                     ),
                     ChoiceChip(
                       avatar: const Icon(Icons.layers, size: 13),
-                      label: const Text('Solo Este Piso', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'This Floor Only' : 'Solo Este Piso', style: const TextStyle(fontSize: 10)),
                       selected: !_allHouseScope,
-                      selectedColor: const Color(0xFF00E5FF).withValues(alpha: 0.25),
+                      selectedColor: colors.accent.withValues(alpha: 0.25),
                       onSelected: (val) {
                         setState(() {
                           _allHouseScope = false;
@@ -457,9 +503,9 @@ class _RenovationPlannerDialogState
                     const SizedBox(width: 4),
                     // Filtros de partida
                     FilterChip(
-                      label: const Text('Pisos', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'Floors' : 'Pisos', style: const TextStyle(fontSize: 10)),
                       selected: _renovateFloors,
-                      selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.25),
+                      selectedColor: colors.success.withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateFloors = v;
@@ -468,7 +514,7 @@ class _RenovationPlannerDialogState
                       },
                     ),
                     FilterChip(
-                      label: const Text('Baños', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'Bathrooms' : 'Baños', style: const TextStyle(fontSize: 10)),
                       selected: _renovateBathrooms,
                       selectedColor: const Color(0xFF29B6F6).withValues(alpha: 0.25),
                       onSelected: (v) {
@@ -479,9 +525,9 @@ class _RenovationPlannerDialogState
                       },
                     ),
                     FilterChip(
-                      label: const Text('Cocina', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'Kitchen' : 'Cocina', style: const TextStyle(fontSize: 10)),
                       selected: _renovateKitchen,
-                      selectedColor: const Color(0xFFFFB74D).withValues(alpha: 0.25),
+                      selectedColor: colors.warning.withValues(alpha: 0.25),
                       onSelected: (v) {
                         setState(() {
                           _renovateKitchen = v;
@@ -490,7 +536,7 @@ class _RenovationPlannerDialogState
                       },
                     ),
                     FilterChip(
-                      label: const Text('Pintura', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'Paint' : 'Pintura', style: const TextStyle(fontSize: 10)),
                       selected: _renovateWallsPaint,
                       selectedColor: const Color(0xFFAB47BC).withValues(alpha: 0.25),
                       onSelected: (v) {
@@ -502,7 +548,7 @@ class _RenovationPlannerDialogState
                     ),
                     FilterChip(
                       avatar: const Icon(Icons.lightbulb_outline, size: 12),
-                      label: const Text('Luces LED', style: TextStyle(fontSize: 10)),
+                      label: Text(isEn ? 'LED Lights' : 'Luces LED', style: const TextStyle(fontSize: 10)),
                       selected: _renovateLighting,
                       selectedColor: const Color(0xFFFFD54F).withValues(alpha: 0.25),
                       onSelected: (v) {
@@ -520,10 +566,12 @@ class _RenovationPlannerDialogState
                       child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                         decoration: BoxDecoration(
-                          color: _showGranularSettings ? const Color(0xFF00E5FF).withValues(alpha: 0.2) : Colors.white10,
+                          color: _showGranularSettings
+                              ? colors.accent.withValues(alpha: 0.2)
+                              : colors.surfaceSubtle,
                           borderRadius: BorderRadius.circular(6),
                           border: Border.all(
-                            color: _showGranularSettings ? const Color(0xFF00E5FF) : Colors.white24,
+                            color: _showGranularSettings ? colors.accent : colors.borderSubtle,
                             width: 0.8,
                           ),
                         ),
@@ -532,15 +580,15 @@ class _RenovationPlannerDialogState
                           children: [
                             Icon(
                               _showGranularSettings ? Icons.expand_less : Icons.room_preferences,
-                              color: _showGranularSettings ? const Color(0xFF00E5FF) : Colors.white70,
+                              color: _showGranularSettings ? colors.accent : colors.textSecondary,
                               size: 13,
                             ),
                             const SizedBox(width: 4),
                             Text(
-                              'Personalizar Recintos',
+                              isEn ? 'Customize Rooms' : 'Personalizar Recintos',
                               style: TextStyle(
                                 fontSize: 9.5,
-                                color: _showGranularSettings ? const Color(0xFF00E5FF) : Colors.white70,
+                                color: _showGranularSettings ? colors.accent : colors.textSecondary,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -555,33 +603,33 @@ class _RenovationPlannerDialogState
               // Panel Desplegable de Configuración Granular por Recinto
               if (_showGranularSettings) ...[
                 const SizedBox(height: 6),
-                _buildGranularSettingsPanel(),
+                _buildGranularSettingsPanel(colors, isEn),
               ],
 
               const SizedBox(height: 6),
 
               // Tarjeta Resumen KPI Adaptativa
-              _buildResponsiveKpiCard(),
+              _buildResponsiveKpiCard(colors, isEn),
               const SizedBox(height: 6),
 
               // Pestañas
               TabBar(
                 controller: _tabController,
-                indicatorColor: const Color(0xFF00E5FF),
-                labelColor: const Color(0xFF00E5FF),
-                unselectedLabelColor: Colors.white54,
+                indicatorColor: colors.accent,
+                labelColor: colors.accent,
+                unselectedLabelColor: colors.textMuted,
                 tabs: [
                   Tab(
                     icon: const Icon(Icons.shopping_cart_outlined, size: 15),
-                    text: 'Materiales (${_plan.materials.length})',
+                    text: '${isEn ? 'Materials' : 'Materiales'} (${_plan.materials.length})',
                   ),
                   Tab(
                     icon: const Icon(Icons.engineering_outlined, size: 15),
-                    text: 'Cuadrilla (${_isParallelMode ? _plan.parallelCrews.length : _plan.sequentialCrews.length})',
+                    text: '${isEn ? 'Crews' : 'Cuadrilla'} (${_isParallelMode ? _plan.parallelCrews.length : _plan.sequentialCrews.length})',
                   ),
                   Tab(
                     icon: const Icon(Icons.timeline_outlined, size: 15),
-                    text: 'Ruta Crítica (${_plan.phases.length})',
+                    text: '${isEn ? 'Critical Path' : 'Ruta Crítica'} (${_plan.phases.length})',
                   ),
                 ],
               ),
@@ -592,9 +640,9 @@ class _RenovationPlannerDialogState
                 child: TabBarView(
                   controller: _tabController,
                   children: [
-                    _buildMaterialsTab(),
-                    _buildCrewsTab(),
-                    _buildScheduleTab(),
+                    _buildMaterialsTab(colors, isEn),
+                    _buildCrewsTab(colors, isEn),
+                    _buildScheduleTab(colors, isLight, isEn),
                   ],
                 ),
               ),
@@ -602,7 +650,7 @@ class _RenovationPlannerDialogState
               const SizedBox(height: 8),
 
               // Footer con Exportar PDF, Copiar y Cerrar
-              _buildResponsiveFooter(),
+              _buildResponsiveFooter(colors, isLight, isEn),
             ],
           ),
         ),
@@ -610,7 +658,7 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildGranularSettingsPanel() {
+  Widget _buildGranularSettingsPanel(AppColors colors, bool isEn) {
     final modules = _getSourceModules().where((m) => !m.isOpening).toList();
 
     final bathrooms = modules.where((m) => m.isBathroom).toList();
@@ -619,18 +667,20 @@ class _RenovationPlannerDialogState
       padding: const EdgeInsets.all(8),
       constraints: const BoxConstraints(maxHeight: 160),
       decoration: BoxDecoration(
-        color: const Color(0xFF0F172A),
+        color: colors.cardBg,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.3)),
+        border: Border.all(color: colors.accent.withValues(alpha: 0.3)),
       ),
       child: SingleChildScrollView(
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             if (bathrooms.isNotEmpty) ...[
-              const Text(
-                'TIPO DE BAÑOS (DIFERENCIAR BAÑO COMPLETO VS MEDIO BAÑO SOCIAL):',
-                style: TextStyle(color: Color(0xFF29B6F6), fontSize: 9.5, fontWeight: FontWeight.bold),
+              Text(
+                isEn
+                    ? 'BATHROOM TYPE (FULL BATH VS GUEST HALF-BATH):'
+                    : 'TIPO DE BAÑOS (DIFERENCIAR BAÑO COMPLETO VS MEDIO BAÑO SOCIAL):',
+                style: TextStyle(color: colors.accent, fontSize: 9.5, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
               Wrap(
@@ -638,6 +688,7 @@ class _RenovationPlannerDialogState
                 runSpacing: 4,
                 children: bathrooms.map((b) {
                   final isHalf = RenovationPlannerEngine.isHalfBathroom(b, forcedHalfBathroomIds: _forcedHalfBathroomIds);
+                  final badgeColor = isHalf ? colors.warning : colors.accent;
                   return InkWell(
                     onTap: () {
                       setState(() {
@@ -653,10 +704,10 @@ class _RenovationPlannerDialogState
                     child: Container(
                       padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                       decoration: BoxDecoration(
-                        color: isHalf ? const Color(0xFFFFB74D).withValues(alpha: 0.2) : const Color(0xFF29B6F6).withValues(alpha: 0.2),
+                        color: badgeColor.withValues(alpha: 0.16),
                         borderRadius: BorderRadius.circular(6),
                         border: Border.all(
-                          color: isHalf ? const Color(0xFFFFB74D) : const Color(0xFF29B6F6),
+                          color: badgeColor,
                           width: 0.8,
                         ),
                       ),
@@ -666,14 +717,14 @@ class _RenovationPlannerDialogState
                           Icon(
                             isHalf ? Icons.wc : Icons.shower,
                             size: 13,
-                            color: isHalf ? const Color(0xFFFFB74D) : const Color(0xFF29B6F6),
+                            color: badgeColor,
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            '${b.name}: ${isHalf ? "Medio Baño (Sin ducha)" : "Completo (Con ducha)"}',
+                            '${b.name}: ${isHalf ? (isEn ? "Half Bath (No shower)" : "Medio Baño (Sin ducha)") : (isEn ? "Full (With shower)" : "Completo (Con ducha)")}',
                             style: TextStyle(
                               fontSize: 9.2,
-                              color: isHalf ? const Color(0xFFFFB74D) : const Color(0xFF29B6F6),
+                              color: badgeColor,
                               fontWeight: FontWeight.bold,
                             ),
                           ),
@@ -685,9 +736,11 @@ class _RenovationPlannerDialogState
               ),
               const SizedBox(height: 8),
             ],
-            const Text(
-              'RECINTOS SELECCIONADOS PARA PISOS / PINTURA / LUCES:',
-              style: TextStyle(color: Color(0xFF00E5FF), fontSize: 9.5, fontWeight: FontWeight.bold),
+            Text(
+              isEn
+                  ? 'ROOMS SELECTED FOR FLOORING / PAINT / LIGHTING:'
+                  : 'RECINTOS SELECCIONADOS PARA PISOS / PINTURA / LUCES:',
+              style: TextStyle(color: colors.accent, fontSize: 9.5, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 4),
             Wrap(
@@ -698,7 +751,7 @@ class _RenovationPlannerDialogState
                 return FilterChip(
                   label: Text('${m.name} (${m.area.toStringAsFixed(1)}m²)', style: const TextStyle(fontSize: 9)),
                   selected: hasFloors,
-                  selectedColor: const Color(0xFF4CAF50).withValues(alpha: 0.25),
+                  selectedColor: colors.success.withValues(alpha: 0.25),
                   onSelected: (selected) {
                     setState(() {
                       final allIds = modules.map((r) => r.id).toSet();
@@ -732,22 +785,24 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildResponsiveKpiCard() {
+  Widget _buildResponsiveKpiCard(AppColors colors, bool isEn) {
     final bathSummary = _plan.halfBathroomCount > 0
-        ? '${_plan.fullBathroomCount} completo(s) + ${_plan.halfBathroomCount} medio baño'
-        : '${_plan.bathroomCount} baños';
+        ? (isEn
+            ? '${_plan.fullBathroomCount} full + ${_plan.halfBathroomCount} half bath'
+            : '${_plan.fullBathroomCount} completo(s) + ${_plan.halfBathroomCount} medio baño')
+        : '${_plan.bathroomCount} ${isEn ? 'bathrooms' : 'baños'}';
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            const Color(0xFF00E5FF).withValues(alpha: 0.12),
-            const Color(0xFF1E293B),
+            colors.accent.withValues(alpha: 0.12),
+            colors.cardBg,
           ],
         ),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: const Color(0xFF00E5FF).withValues(alpha: 0.4)),
+        border: Border.all(color: colors.accent.withValues(alpha: 0.4)),
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -763,25 +818,29 @@ class _RenovationPlannerDialogState
                 children: [
                   Text(
                     '${_plan.totalRenovatedArea.toStringAsFixed(2)} m²',
-                    style: const TextStyle(
-                      color: Color(0xFF00E5FF),
+                    style: TextStyle(
+                      color: colors.accent,
                       fontSize: 14.5,
                       fontWeight: FontWeight.bold,
                     ),
                   ),
                   Text(
-                    '(${_plan.selectedRoomNames.length} recintos | $bathSummary)',
-                    style: const TextStyle(color: Colors.white70, fontSize: 10),
+                    '(${_plan.selectedRoomNames.length} ${isEn ? 'rooms' : 'recintos'} | $bathSummary)',
+                    style: TextStyle(color: colors.textSecondary, fontSize: 10),
                   ),
                 ],
               ),
               const SizedBox(height: 2),
               Text(
                 _isParallelMode
-                    ? '⚡ Modo Acelerado: ${_plan.totalParallelDays} días (${_plan.daysSaved} d de ahorro / ${_plan.timeReductionPercent.toStringAsFixed(0)}% más rápido)'
-                    : '⏳ Modo Secuencial: ${_plan.totalSequentialDays} días con 1 sola cuadrilla',
+                    ? (isEn
+                        ? '⚡ Accelerated Mode: ${_plan.totalParallelDays} days (${_plan.daysSaved}d saved / ${_plan.timeReductionPercent.toStringAsFixed(0)}% faster)'
+                        : '⚡ Modo Acelerado: ${_plan.totalParallelDays} días (${_plan.daysSaved} d de ahorro / ${_plan.timeReductionPercent.toStringAsFixed(0)}% más rápido)')
+                    : (isEn
+                        ? '⏳ Sequential Mode: ${_plan.totalSequentialDays} days with 1 crew'
+                        : '⏳ Modo Secuencial: ${_plan.totalSequentialDays} días con 1 sola cuadrilla'),
                 style: TextStyle(
-                  color: _isParallelMode ? const Color(0xFF4CAF50) : const Color(0xFFFFB74D),
+                  color: _isParallelMode ? colors.success : colors.warning,
                   fontSize: 10.2,
                   fontWeight: FontWeight.bold,
                 ),
@@ -792,9 +851,9 @@ class _RenovationPlannerDialogState
           final toggleButton = Container(
             padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 2),
             decoration: BoxDecoration(
-              color: const Color(0xFF0F172A),
+              color: colors.panelBg,
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Colors.white24),
+              border: Border.all(color: colors.borderSubtle),
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -805,15 +864,15 @@ class _RenovationPlannerDialogState
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                     decoration: BoxDecoration(
-                      color: !_isParallelMode ? const Color(0xFFFFB74D).withValues(alpha: 0.3) : Colors.transparent,
+                      color: !_isParallelMode ? colors.warning.withValues(alpha: 0.22) : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '1 Cuadrilla',
+                      isEn ? '1 Crew' : '1 Cuadrilla',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: !_isParallelMode ? FontWeight.bold : FontWeight.normal,
-                        color: !_isParallelMode ? const Color(0xFFFFB74D) : Colors.white60,
+                        color: !_isParallelMode ? colors.warning : colors.textMuted,
                       ),
                     ),
                   ),
@@ -824,15 +883,15 @@ class _RenovationPlannerDialogState
                   child: Container(
                     padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
                     decoration: BoxDecoration(
-                      color: _isParallelMode ? const Color(0xFF00E5FF).withValues(alpha: 0.3) : Colors.transparent,
+                      color: _isParallelMode ? colors.accent.withValues(alpha: 0.22) : Colors.transparent,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      'Paralelo ⚡',
+                      isEn ? 'Parallel ⚡' : 'Paralelo ⚡',
                       style: TextStyle(
                         fontSize: 9.5,
                         fontWeight: _isParallelMode ? FontWeight.bold : FontWeight.normal,
-                        color: _isParallelMode ? const Color(0xFF00E5FF) : Colors.white60,
+                        color: _isParallelMode ? colors.accent : colors.textMuted,
                       ),
                     ),
                   ),
@@ -864,7 +923,7 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildResponsiveFooter() {
+  Widget _buildResponsiveFooter(AppColors colors, bool isLight, bool isEn) {
     return Wrap(
       alignment: WrapAlignment.spaceBetween,
       crossAxisAlignment: WrapCrossAlignment.center,
@@ -876,19 +935,24 @@ class _RenovationPlannerDialogState
           children: [
             ElevatedButton.icon(
               style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFF00E5FF),
-                foregroundColor: const Color(0xFF0A192F),
+                backgroundColor: colors.accent,
+                foregroundColor: isLight ? Colors.white : const Color(0xFF0A192F),
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               ),
               icon: _isExportingPdf
-                  ? const SizedBox(
+                  ? SizedBox(
                       width: 14,
                       height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Color(0xFF0A192F)),
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: isLight ? Colors.white : const Color(0xFF0A192F),
+                      ),
                     )
                   : const Icon(Icons.picture_as_pdf_rounded, size: 16),
               label: Text(
-                _isExportingPdf ? 'Generando...' : 'Descargar Plan PDF',
+                _isExportingPdf
+                    ? (isEn ? 'Generating...' : 'Generando...')
+                    : (isEn ? 'Download Plan PDF' : 'Descargar Plan PDF'),
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 11),
               ),
               onPressed: _isExportingPdf ? null : _exportPdf,
@@ -897,21 +961,23 @@ class _RenovationPlannerDialogState
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(
-                  color: _showCopiedBadge ? const Color(0xFF4CAF50) : const Color(0xFF00E5FF),
+                  color: _showCopiedBadge ? colors.success : colors.accent,
                   width: 1.1,
                 ),
-                foregroundColor: Colors.white,
+                foregroundColor: colors.textPrimary,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               ),
               icon: Icon(
                 _showCopiedBadge ? Icons.check : Icons.copy_rounded,
                 size: 15,
-                color: _showCopiedBadge ? const Color(0xFF4CAF50) : const Color(0xFF00E5FF),
+                color: _showCopiedBadge ? colors.success : colors.accent,
               ),
               label: Text(
-                _showCopiedBadge ? '¡Copiado!' : 'Copiar Lista',
+                _showCopiedBadge
+                    ? (isEn ? 'Copied!' : '¡Copiado!')
+                    : (isEn ? 'Copy List' : 'Copiar Lista'),
                 style: TextStyle(
-                  color: _showCopiedBadge ? const Color(0xFF4CAF50) : Colors.white,
+                  color: _showCopiedBadge ? colors.success : colors.textPrimary,
                   fontSize: 11,
                 ),
               ),
@@ -921,27 +987,23 @@ class _RenovationPlannerDialogState
             OutlinedButton.icon(
               style: OutlinedButton.styleFrom(
                 side: BorderSide(
-                  color: _showCsvCopiedBadge
-                      ? const Color(0xFF10B981)
-                      : const Color(0xFF38BDF8),
+                  color: _showCsvCopiedBadge ? colors.success : colors.accent,
                   width: 1.1,
                 ),
-                foregroundColor: Colors.white,
+                foregroundColor: colors.textPrimary,
                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
               ),
               icon: Icon(
                 _showCsvCopiedBadge ? Icons.check : Icons.table_chart_outlined,
                 size: 15,
-                color: _showCsvCopiedBadge
-                    ? const Color(0xFF10B981)
-                    : const Color(0xFF38BDF8),
+                color: _showCsvCopiedBadge ? colors.success : colors.accent,
               ),
               label: Text(
-                _showCsvCopiedBadge ? '¡CSV Copiado!' : 'Exportar .CSV',
+                _showCsvCopiedBadge
+                    ? (isEn ? 'CSV Copied!' : '¡CSV Copiado!')
+                    : (isEn ? 'Export .CSV' : 'Exportar .CSV'),
                 style: TextStyle(
-                  color: _showCsvCopiedBadge
-                      ? const Color(0xFF10B981)
-                      : Colors.white,
+                  color: _showCsvCopiedBadge ? colors.success : colors.textPrimary,
                   fontSize: 11,
                 ),
               ),
@@ -951,23 +1013,25 @@ class _RenovationPlannerDialogState
         ),
         TextButton(
           style: TextButton.styleFrom(
-            backgroundColor: Colors.white10,
-            foregroundColor: Colors.white,
+            backgroundColor: colors.surfaceSubtle,
+            foregroundColor: colors.textPrimary,
             padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
           ),
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cerrar', style: TextStyle(fontSize: 11)),
+          child: Text(isEn ? 'Close' : 'Cerrar', style: const TextStyle(fontSize: 11)),
         ),
       ],
     );
   }
 
-  Widget _buildMaterialsTab() {
+  Widget _buildMaterialsTab(AppColors colors, bool isEn) {
     if (_plan.materials.isEmpty) {
-      return const Center(
+      return Center(
         child: Text(
-          'No hay partidas de materiales para los filtros seleccionados.',
-          style: TextStyle(color: Colors.white54, fontSize: 12),
+          isEn
+              ? 'No material items for the selected filters.'
+              : 'No hay partidas de materiales para los filtros seleccionados.',
+          style: TextStyle(color: colors.textMuted, fontSize: 12),
         ),
       );
     }
@@ -980,9 +1044,9 @@ class _RenovationPlannerDialogState
           margin: const EdgeInsets.only(bottom: 7),
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: colors.cardBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: colors.borderSubtle),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -990,10 +1054,10 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF00E5FF).withValues(alpha: 0.1),
+                  color: colors.accent.withValues(alpha: 0.1),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(mat.icon, color: const Color(0xFF00E5FF), size: 16),
+                child: Icon(mat.icon, color: colors.accent, size: 16),
               ),
               const SizedBox(width: 9),
               Expanded(
@@ -1006,8 +1070,8 @@ class _RenovationPlannerDialogState
                         Expanded(
                           child: Text(
                             mat.name,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: colors.textPrimary,
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1017,13 +1081,13 @@ class _RenovationPlannerDialogState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF00E5FF).withValues(alpha: 0.2),
+                            color: colors.accent.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '${mat.quantity.toStringAsFixed(mat.quantity % 1 == 0 ? 0 : 2)} ${mat.unit}',
-                            style: const TextStyle(
-                              color: Color(0xFF00E5FF),
+                            style: TextStyle(
+                              color: colors.accent,
                               fontSize: 10.5,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1036,13 +1100,13 @@ class _RenovationPlannerDialogState
                       Row(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Icon(Icons.place_outlined, color: Color(0xFF00E5FF), size: 12),
+                          Icon(Icons.place_outlined, color: colors.accent, size: 12),
                           const SizedBox(width: 3),
                           Expanded(
                             child: Text(
-                              'Destino: ${mat.targetRoomNames.join(', ')}',
-                              style: const TextStyle(
-                                color: Color(0xFF80D8FF),
+                              '${isEn ? 'Target' : 'Destino'}: ${mat.targetRoomNames.join(', ')}',
+                              style: TextStyle(
+                                color: colors.accent,
                                 fontSize: 9.8,
                                 fontWeight: FontWeight.w500,
                               ),
@@ -1056,20 +1120,20 @@ class _RenovationPlannerDialogState
                     if (mat.packagingDetail != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        'Presentación: ${mat.packagingDetail}',
-                        style: const TextStyle(color: Color(0xFF81D4FA), fontSize: 9.6),
+                        '${isEn ? 'Packaging' : 'Presentación'}: ${mat.packagingDetail}',
+                        style: TextStyle(color: colors.textSecondary, fontSize: 9.6),
                       ),
                     ],
                     const SizedBox(height: 2),
                     Text(
                       '• ${mat.yieldFormula}',
-                      style: const TextStyle(color: Colors.white70, fontSize: 9.6),
+                      style: TextStyle(color: colors.textSecondary, fontSize: 9.6),
                     ),
                     if (mat.purchaseTip != null) ...[
                       const SizedBox(height: 2),
                       Text(
-                        '💡 Tip técnico: ${mat.purchaseTip}',
-                        style: const TextStyle(color: Color(0xFFFFB74D), fontSize: 9.4, fontStyle: FontStyle.italic),
+                        '💡 ${isEn ? 'Tip' : 'Tip técnico'}: ${mat.purchaseTip}',
+                        style: TextStyle(color: colors.warning, fontSize: 9.4, fontStyle: FontStyle.italic),
                       ),
                     ],
                   ],
@@ -1082,7 +1146,7 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildCrewsTab() {
+  Widget _buildCrewsTab(AppColors colors, bool isEn) {
     final crews = _isParallelMode ? _plan.parallelCrews : _plan.sequentialCrews;
 
     return ListView.builder(
@@ -1093,9 +1157,9 @@ class _RenovationPlannerDialogState
           margin: const EdgeInsets.only(bottom: 7),
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: colors.cardBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: Colors.white10),
+            border: Border.all(color: colors.borderSubtle),
           ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1103,10 +1167,10 @@ class _RenovationPlannerDialogState
               Container(
                 padding: const EdgeInsets.all(7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF4CAF50).withValues(alpha: 0.12),
+                  color: colors.success.withValues(alpha: 0.12),
                   borderRadius: BorderRadius.circular(6),
                 ),
-                child: Icon(crew.icon, color: const Color(0xFF4CAF50), size: 18),
+                child: Icon(crew.icon, color: colors.success, size: 18),
               ),
               const SizedBox(width: 9),
               Expanded(
@@ -1119,8 +1183,8 @@ class _RenovationPlannerDialogState
                         Expanded(
                           child: Text(
                             crew.roleName,
-                            style: const TextStyle(
-                              color: Colors.white,
+                            style: TextStyle(
+                              color: colors.textPrimary,
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1130,13 +1194,13 @@ class _RenovationPlannerDialogState
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
-                            color: const Color(0xFF4CAF50).withValues(alpha: 0.2),
+                            color: colors.success.withValues(alpha: 0.16),
                             borderRadius: BorderRadius.circular(4),
                           ),
                           child: Text(
                             '${crew.headcount} op. • ${crew.estimatedDays} d',
-                            style: const TextStyle(
-                              color: Color(0xFF4CAF50),
+                            style: TextStyle(
+                              color: colors.success,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,
                             ),
@@ -1147,13 +1211,13 @@ class _RenovationPlannerDialogState
                     const SizedBox(height: 3),
                     Text(
                       crew.scopeDescription,
-                      style: const TextStyle(color: Colors.white70, fontSize: 10),
+                      style: TextStyle(color: colors.textSecondary, fontSize: 10),
                     ),
                     if (crew.equipmentNeeded.isNotEmpty) ...[
                       const SizedBox(height: 2),
                       Text(
-                        '🛠️ Herramientas: ${crew.equipmentNeeded.join(', ')}',
-                        style: const TextStyle(color: Colors.white54, fontSize: 9.2),
+                        '🛠️ ${isEn ? 'Tools' : 'Herramientas'}: ${crew.equipmentNeeded.join(', ')}',
+                        style: TextStyle(color: colors.textMuted, fontSize: 9.2),
                       ),
                     ],
                   ],
@@ -1166,7 +1230,7 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildScheduleTab() {
+  Widget _buildScheduleTab(AppColors colors, bool isLight, bool isEn) {
     return ListView.builder(
       itemCount: _plan.phases.length,
       itemBuilder: (context, idx) {
@@ -1177,12 +1241,12 @@ class _RenovationPlannerDialogState
           margin: const EdgeInsets.only(bottom: 7),
           padding: const EdgeInsets.all(9),
           decoration: BoxDecoration(
-            color: const Color(0xFF1E293B),
+            color: colors.cardBg,
             borderRadius: BorderRadius.circular(8),
             border: Border.all(
               color: phase.canParallelize && _isParallelMode
-                  ? const Color(0xFF00E5FF).withValues(alpha: 0.3)
-                  : Colors.white10,
+                  ? colors.accent.withValues(alpha: 0.35)
+                  : colors.borderSubtle,
             ),
           ),
           child: Column(
@@ -1192,29 +1256,33 @@ class _RenovationPlannerDialogState
                 children: [
                   CircleAvatar(
                     radius: 9,
-                    backgroundColor: const Color(0xFF00E5FF),
+                    backgroundColor: colors.accent,
                     child: Text(
                       '${phase.phaseNumber}',
-                      style: const TextStyle(fontSize: 9.5, fontWeight: FontWeight.bold, color: Color(0xFF0A192F)),
+                      style: TextStyle(
+                        fontSize: 9.5,
+                        fontWeight: FontWeight.bold,
+                        color: isLight ? Colors.white : const Color(0xFF0A192F),
+                      ),
                     ),
                   ),
                   const SizedBox(width: 7),
                   Expanded(
                     child: Text(
                       phase.title,
-                      style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.bold),
+                      style: TextStyle(color: colors.textPrimary, fontSize: 11, fontWeight: FontWeight.bold),
                     ),
                   ),
                   const SizedBox(width: 6),
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
                     decoration: BoxDecoration(
-                      color: Colors.white10,
+                      color: colors.surfaceSubtle,
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
-                      '$days días',
-                      style: const TextStyle(color: Color(0xFF00E5FF), fontSize: 9.5, fontWeight: FontWeight.bold),
+                      '$days ${isEn ? 'days' : 'días'}',
+                      style: TextStyle(color: colors.accent, fontSize: 9.5, fontWeight: FontWeight.bold),
                     ),
                   ),
                 ],
@@ -1222,17 +1290,17 @@ class _RenovationPlannerDialogState
               const SizedBox(height: 4),
               Text(
                 phase.description,
-                style: const TextStyle(color: Colors.white70, fontSize: 10),
+                style: TextStyle(color: colors.textSecondary, fontSize: 10),
               ),
               const SizedBox(height: 3),
               Row(
                 children: [
-                  const Icon(Icons.person_pin, size: 11, color: Colors.white54),
+                  Icon(Icons.person_pin, size: 11, color: colors.textMuted),
                   const SizedBox(width: 4),
                   Expanded(
                     child: Text(
-                      'Ejecuta: ${phase.specialists.join(' + ')}',
-                      style: const TextStyle(color: Colors.white54, fontSize: 9),
+                      '${isEn ? 'Crew' : 'Ejecuta'}: ${phase.specialists.join(' + ')}',
+                      style: TextStyle(color: colors.textMuted, fontSize: 9),
                     ),
                   ),
                 ],
@@ -1240,8 +1308,8 @@ class _RenovationPlannerDialogState
               if (phase.canParallelize) ...[
                 const SizedBox(height: 2),
                 Text(
-                  '⚡ Paralelo: ${phase.parallelTip}',
-                  style: const TextStyle(color: Color(0xFF4CAF50), fontSize: 9, fontStyle: FontStyle.italic),
+                  '⚡ ${isEn ? 'Parallel' : 'Paralelo'}: ${phase.parallelTip}',
+                  style: TextStyle(color: colors.success, fontSize: 9, fontStyle: FontStyle.italic),
                 ),
               ],
             ],

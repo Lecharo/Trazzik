@@ -13,7 +13,7 @@ import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/plan_export/domain/door_window_schedule_builder.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
-import 'package:trazzik/features/plan_export/domain/technical_plan_painter.dart';
+import 'package:trazzik/features/plan_export/presentation/painters/technical_plan_painter.dart';
 import 'package:trazzik/features/projects/domain/project.dart';
 
 /// Servicio generador de Láminas Técnicas Arquitectónicas en formato PDF.

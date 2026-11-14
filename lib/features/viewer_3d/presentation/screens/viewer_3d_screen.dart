@@ -245,10 +245,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       backgroundColor: const Color(0xFF0F172A),
       appBar: AppBar(
         backgroundColor: const Color(0xFF1E293B),
+        foregroundColor: Colors.white,
         elevation: 2,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Color(0xFF00E5FF)),
-          tooltip: 'Volver al Editor 2D',
+          tooltip: lang == 'es' ? 'Volver al Editor 2D' : 'Back to 2D Editor',
           onPressed: () {
             if (Navigator.of(context).canPop()) {
               Navigator.of(context).pop();
@@ -262,7 +263,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         title: isMobile
             ? Text(
                 lang == 'es' ? 'Maqueta 3D' : '3D Model',
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                style: const TextStyle(
+                  fontSize: 15,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.white,
+                ),
               )
             : Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -275,15 +280,19 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                       Flexible(
                         child: Text(
                           lang == 'es' ? 'Maqueta Axonométrica 3D' : '3D Axonometric Model',
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white,
+                          ),
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
                     ],
                   ),
                   Text(
-                    '$projectName  •  ${floors.length} niveles apilados',
-                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    '$projectName  •  ${floors.length} ${lang == 'es' ? 'niveles apilados' : 'stacked floors'}',
+                    style: const TextStyle(fontSize: 11, color: Colors.white70),
                     overflow: TextOverflow.ellipsis,
                   ),
                 ],
@@ -322,7 +331,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                     ...floors.map(
                       (f) => DropdownMenuItem<String?>(
                         value: f.id,
-                        child: Text(f.name, overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          f.name,
+                          style: const TextStyle(color: Colors.white),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                     ),
                   ],

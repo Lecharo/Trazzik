@@ -270,34 +270,26 @@ class FinishMaterialCatalog {
     final type = mod.moduleType.toUpperCase();
     final name = mod.name.toUpperCase();
 
-    if (type.contains('BEDROOM') ||
+    if (mod.isBedroom ||
         type.contains('DRESSING') ||
         type.contains('STUDIO') ||
         type.contains('OFFICE') ||
-        name.contains('DORMITORIO') ||
-        name.contains('HABITACI') ||
         name.contains('ESTUDIO')) {
       return floors[0]; // European Oak Wood
     }
-    if (type.contains('BATH') || name.contains('BAÑO') || name.contains('BANO')) {
+    if (mod.isBathroom) {
       return floors[2]; // Calacatta Marble
     }
-    if (type.contains('KITCHEN') || name.contains('COCINA')) {
+    if (mod.isKitchen) {
       return floors[5]; // Hydraulic Mosaic
     }
-    if (type.contains('GARDEN') ||
-        type.contains('PATIO') ||
-        name.contains('JARD') ||
-        name.contains('PATIO')) {
+    if (mod.isOutdoorUnpaved) {
       return floors[7]; // Natural Grass
     }
-    if (type.contains('TERRACE') ||
-        type.contains('DECK') ||
-        name.contains('TERRAZA') ||
-        name.contains('BALC')) {
+    if (mod.isTerraceOrBalcony) {
       return floors[6]; // Outdoor Deck
     }
-    if (type.contains('GARAGE') || name.contains('GARAJE') || name.contains('COCHERA')) {
+    if (mod.isGarage) {
       return floors[4]; // Polished Concrete
     }
     return floors[3]; // Urban Grey Porcelain (Living/Dining/Corridors default)
@@ -412,12 +404,7 @@ class ArchitecturalStylePack {
     if (mod.isOutdoorUnpaved) {
       return ('floor_natural_grass', livingWallId);
     }
-    final upperType = mod.moduleType.toUpperCase();
-    final upperName = mod.name.toUpperCase();
-    if (upperType.contains('TERRACE') ||
-        upperType.contains('DECK') ||
-        upperName.contains('TERRAZA') ||
-        upperName.contains('BALC')) {
+    if (mod.isTerraceOrBalcony) {
       return ('floor_outdoor_deck', livingWallId);
     }
     if (mod.isWetCore) {

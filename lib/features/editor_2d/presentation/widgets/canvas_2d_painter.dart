@@ -13,6 +13,7 @@ import 'package:trazzik/features/zoning_assistant/domain/zoning_engine.dart';
 /// grid, zoning bands, walls, spaces, openings, and interior furniture.
 class Canvas2DPainter extends CustomPainter {
   final FloorEditorState state;
+  final String lang;
 
   static final Map<Object, TextPainter> _textPainterCache = <Object, TextPainter>{};
 
@@ -43,7 +44,7 @@ class Canvas2DPainter extends CustomPainter {
     return tp;
   }
 
-  Canvas2DPainter(this.state);
+  Canvas2DPainter(this.state, {this.lang = 'es'});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1478,20 +1479,29 @@ class Canvas2DPainter extends CustomPainter {
     }
 
     // Ergonomic passage clearance evaluation (only certify near-orthogonal spans)
+    final isEn = lang == 'en';
     final isNearOrtho = dx <= 0.12 || dy <= 0.12 || dist < 0.01;
     final String verdict;
     final Color verdictColor;
     if (!isNearOrtho) {
-      verdict = '⟋ MEDICIÓN DIAGONAL • Traza recto para verificar paso';
+      verdict = isEn
+          ? '⟋ DIAGONAL MEASURE • Draw straight to verify clearance'
+          : '⟋ MEDICIÓN DIAGONAL • Trace en línea recta para verificar paso';
       verdictColor = const Color(0xFF38BDF8);
     } else if (dist >= 0.90) {
-      verdict = '✓ PASO NORMATIVO / ACCESIBLE (≥ 0.90 m)';
+      verdict = isEn
+          ? '✓ ACCESSIBLE / CODE CLEARANCE (≥ 0.90 m)'
+          : '✓ PASO NORMATIVO / ACCESIBLE (≥ 0.90 m)';
       verdictColor = const Color(0xFF00E676);
     } else if (dist >= 0.60) {
-      verdict = '⚠ PASO SECUNDARIO AJUSTADO (0.60–0.89 m)';
+      verdict = isEn
+          ? '⚠ NARROW SECONDARY PASSAGE (0.60–0.89 m)'
+          : '⚠ PASO SECUNDARIO AJUSTADO (0.60–0.89 m)';
       verdictColor = const Color(0xFFFFB300);
     } else {
-      verdict = '✗ OBSTRUCCIÓN / PASO INSUFICIENTE (< 0.60 m)';
+      verdict = isEn
+          ? '✗ OBSTRUCTION / INSUFFICIENT CLEARANCE (< 0.60 m)'
+          : '✗ OBSTRUCCIÓN / PASO INSUFICIENTE (< 0.60 m)';
       verdictColor = const Color(0xFFFF5252);
     }
 
@@ -1504,7 +1514,7 @@ class Canvas2DPainter extends CustomPainter {
       text: TextSpan(
         children: [
           TextSpan(
-            text: 'LÁSER: ${dist.toStringAsFixed(2)} m  ',
+            text: '${isEn ? 'LASER' : 'LÁSER'}: ${dist.toStringAsFixed(2)} m  ',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 11,
@@ -1557,6 +1567,7 @@ class Canvas2DPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant Canvas2DPainter oldDelegate) {
+    if (oldDelegate.lang != lang) return true;
     final prev = oldDelegate.state;
     if (identical(prev, state)) return false;
     return !identical(prev.floor, state.floor) ||

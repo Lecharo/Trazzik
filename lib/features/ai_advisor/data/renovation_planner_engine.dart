@@ -104,8 +104,7 @@ class RenovationPlannerEngine {
     // 4. Mapeo por recinto según nombres del proyecto
     for (final room in allRooms) {
       final rNameNorm = _normalizeText(room.name);
-      final rType = room.moduleType.toUpperCase();
-      final isBath = rType.contains('BATH') || rNameNorm.contains('bano');
+      final isBath = room.isBathroom;
 
       // Buscar si el recinto está nombrado en el texto
       final isMentioned = cleanPrompt.contains(rNameNorm) ||
@@ -332,7 +331,7 @@ class RenovationPlannerEngine {
               'Área útil: ${genericFloorArea.toStringAsFixed(2)}m² + ${floorTileWastePercent.toStringAsFixed(0)}% desperdicio por recortes y zócalos',
           targetRoomNames: genericRoomNames,
           purchaseTip:
-              'Asegurate de que todas las cajas tengan el mismo número de lote y tono (tono y calibre idénticos).',
+              'Asegúrese de que todas las cajas tengan el mismo número de lote y tono (tono y calibre idénticos).',
         ));
       }
 
@@ -370,7 +369,7 @@ class RenovationPlannerEngine {
         unit: 'bultos (25 kg)',
         yieldFormula: 'Rendimiento estándar: 5.0 kg/m² con llana dentada de 8 a 10 mm (1 bulto cada 5 m²)',
         targetRoomNames: floorRoomNames,
-        purchaseTip: 'Si vas a instalar porcelanato, comprá adhesivo flexible tipo Porcelánico o C2.',
+        purchaseTip: 'Si va a instalar porcelanato, utilice adhesivo flexible tipo Porcelánico o C2.',
       ));
 
       final groutBagsKg = math.max(1, (floorArea / 3.5).ceil());
@@ -383,7 +382,7 @@ class RenovationPlannerEngine {
         packagingDetail: '${(groutBagsKg / 2.0).ceil()} bolsa(s) de 2 kg',
         yieldFormula: 'Rendimiento medio: 0.30 kg/m² para junta de 2 mm a 3 mm',
         targetRoomNames: floorRoomNames,
-        purchaseTip: 'Elegí boquilla antihongos con tecnología hidrófuga para zonas de alto tránsito y humedad.',
+        purchaseTip: 'Elija boquilla antihongos con tecnología hidrófuga para zonas de alto tránsito y humedad.',
       ));
 
       final perimeterMeters = floorRooms.fold(0.0, (sum, r) => sum + r.geometry.perimeter);
@@ -419,7 +418,7 @@ class RenovationPlannerEngine {
         packagingDetail: 'Taza cerámica, tanque ahorrador y herrajes ($totalBCount baños)',
         yieldFormula: '1 combo de alta eficiencia (< 4.8 L/descarga) por cada baño',
         targetRoomNames: allBathNames,
-        purchaseTip: 'Verificá que la distancia a pared del desagüe sea de 30.5 cm (12 pulgadas estándar).',
+        purchaseTip: 'Verifique que la distancia a pared del desagüe sea de 30.5 cm (12 pulgadas estándar).',
       ));
 
       addMaterial(MaterialItem(
@@ -431,7 +430,7 @@ class RenovationPlannerEngine {
         packagingDetail: 'Mueble hidrófugo + pozuelo + espejo',
         yieldFormula: '1 mueble suspendido o de pedestal con pozuelo por cada baño',
         targetRoomNames: allBathNames,
-        purchaseTip: 'En baños pequeños (menores a 2.5 m²), preferí muebles flotantes para ganar amplitud visual.',
+        purchaseTip: 'En baños pequeños (menores a 2.5 m²), prefiera muebles flotantes para ganar amplitud visual.',
       ));
 
       addMaterial(MaterialItem(
@@ -443,7 +442,7 @@ class RenovationPlannerEngine {
         packagingDetail: 'Monocontrol con aireador espumante',
         yieldFormula: '1 grifería ahorradora por cada punto de lavamanos',
         targetRoomNames: allBathNames,
-        purchaseTip: 'Elegí acabado cromo o negro mate resistente a la corrosión con cartucho cerámico.',
+        purchaseTip: 'Elija acabado cromo o negro mate resistente a la corrosión con cartucho cerámico.',
       ));
 
       addMaterial(MaterialItem(
@@ -455,7 +454,7 @@ class RenovationPlannerEngine {
         packagingDetail: 'Mangueras trenzadas 1/2", sifón 2", válvula paso y teflón',
         yieldFormula: '1 kit técnico de instalación por cada punto sanitario',
         targetRoomNames: allBathNames,
-        purchaseTip: 'Usá mangueras flexibles trenzadas en acero inoxidable con empaques cónicos de caucho.',
+        purchaseTip: 'Use mangueras flexibles trenzadas en acero inoxidable con empaques cónicos de caucho.',
       ));
 
       // DUCHAS, IMPERMEABILIZANTE Y ENCHAPE VERTICAL: ÚNICAMENTE PARA BAÑOS COMPLETOS
@@ -469,7 +468,7 @@ class RenovationPlannerEngine {
           packagingDetail: 'Mezclador empotrado + regadera ($fullBCount ducha(s) completa(s))',
           yieldFormula: '1 sistema de ducha por cada baño completo (excluye medio baño)',
           targetRoomNames: fullBathNames,
-          purchaseTip: 'Revisá la presión de agua de la casa (si es baja presión, evitá regaderas ultraplanas gigantes).',
+          purchaseTip: 'Revise la presión de agua de la vivienda (si es baja presión, evite regaderas ultraplanas gigantes).',
         ));
 
         addMaterial(MaterialItem(
@@ -514,7 +513,7 @@ class RenovationPlannerEngine {
         packagingDetail: 'Poceta acero AISI 304 con canastilla',
         yieldFormula: '1 lavaplatos de empotrar o submontar por cocina',
         targetRoomNames: kNames,
-        purchaseTip: 'Optá por acero AISI 304 con almohadillas fonoabsorbentes en el fondo.',
+        purchaseTip: 'Opte por acero AISI 304 con almohadillas fonoabsorbentes en el fondo.',
       ));
 
       addMaterial(MaterialItem(
@@ -635,28 +634,12 @@ class RenovationPlannerEngine {
         packagingDetail: 'Luminarias ultraplanas con driver incluido',
         yieldFormula: '1 panel cada 3.5 m² para iluminación uniforme (150 a 200 Lux)',
         targetRoomNames: lightingRoomNames,
-        purchaseTip: 'Elegí 3000K (cálida) para dormitorios y sala; 4000K (neutra) para baños y cocina.',
+        purchaseTip: 'Elija 3000K (cálida) para dormitorios y sala; 4000K (neutra) para baños y cocina.',
       ));
-
-      bool isSemiOpenOutdoor(Module r) {
-        if (r.isOutdoorUnpaved) return true;
-        final t = r.moduleType.toUpperCase();
-        final n = r.name.toUpperCase();
-        return t == 'TERRACE' ||
-            t == 'BALCONY' ||
-            t == 'PATIO' ||
-            t == 'PORCH' ||
-            t == 'GARAGE' ||
-            n.contains('TERRAZA') ||
-            n.contains('BALCÓN') ||
-            n.contains('BALCON') ||
-            n.contains('PATIO') ||
-            n.contains('PORCHE');
-      }
 
       // Cielorrasos Drywall únicamente en recintos interiores cubiertos
       final interiorCeilingRooms =
-          lightingRooms.where((r) => !isSemiOpenOutdoor(r)).toList();
+          lightingRooms.where((r) => !r.isSemiOpenOutdoor).toList();
       final wetCeilingRooms =
           interiorCeilingRooms.where((r) => r.isWetCore).toList();
       final dryCeilingRooms =
@@ -683,7 +666,7 @@ class RenovationPlannerEngine {
             ? 'Dimensionado para ${coveLinearM.toStringAsFixed(1)} ml de foseado LED (rollos de 5 m)'
             : 'Iluminación arquitectónica indirecta bajo mesón y espejos',
         targetRoomNames: lightingRoomNames,
-        purchaseTip: 'Preferí tiras LED COB para que no se noten los puntos individuales de luz en el difusor.',
+        purchaseTip: 'Prefiera tiras LED COB para que no se noten los puntos individuales de luz en el difusor.',
       ));
 
       final cableSpools = math.max(1, ((lightingArea * 1.5) / 100.0).ceil());
@@ -715,7 +698,7 @@ class RenovationPlannerEngine {
               'Área de baños/cocina/lavadero + 10% desperdicio (1 placa = 2.98 m²)',
           targetRoomNames: wetCeilingRooms.map((r) => r.name).toList(),
           purchaseTip:
-              'En baños y cocinas instalá siempre placa RH verde antihumedad con dilatación plástica perimetral.',
+              'En baños y cocinas instale siempre placa RH verde antihumedad con dilatación plástica perimetral.',
         ));
       }
 
@@ -1045,7 +1028,9 @@ class RenovationPlannerEngine {
     required List<Module> rooms,
     Set<String>? includedRoomIds,
     String projectName = 'Proyecto Trazzik',
+    String lang = 'es',
   }) {
+    final isEn = lang == 'en';
     final sb = StringBuffer();
     String esc(String v) {
       if (v.contains(',') || v.contains('"') || v.contains('\n')) {
@@ -1054,15 +1039,17 @@ class RenovationPlannerEngine {
       return v;
     }
 
-    sb.writeln('PROYECTO,${esc(projectName)}');
-    sb.writeln('AREA INTERVENIDA M2,${plan.totalRenovatedArea.toStringAsFixed(2)}');
-    sb.writeln('DIAS PARALELO,${plan.totalParallelDays}');
-    sb.writeln('DIAS SECUENCIAL,${plan.totalSequentialDays}');
+    sb.writeln('${isEn ? 'PROJECT' : 'PROYECTO'},${esc(projectName)}');
+    sb.writeln('${isEn ? 'INTERVENED AREA M2' : 'AREA INTERVENIDA M2'},${plan.totalRenovatedArea.toStringAsFixed(2)}');
+    sb.writeln('${isEn ? 'PARALLEL DAYS' : 'DIAS PARALELO'},${plan.totalParallelDays}');
+    sb.writeln('${isEn ? 'SEQUENTIAL DAYS' : 'DIAS SECUENCIAL'},${plan.totalSequentialDays}');
     sb.writeln('');
 
     // 1. Room-by-Room Area & Finish Schedule
-    sb.writeln('CUADRO DE AMBIENTES Y ACABADOS');
-    sb.writeln('AMBIENTE,TIPO,AREA_M2,ACABADO_PISO,ACABADO_MURO,ESTADO');
+    sb.writeln(isEn ? 'ROOM AND FINISH SCHEDULE' : 'CUADRO DE AMBIENTES Y ACABADOS');
+    sb.writeln(isEn
+        ? 'ROOM,TYPE,AREA_M2,FLOOR_FINISH,WALL_FINISH,STATUS'
+        : 'AMBIENTE,TIPO,AREA_M2,ACABADO_PISO,ACABADO_MURO,ESTADO');
     for (final r in rooms) {
       if (r.isOpening ||
           r.isStairs ||
@@ -1078,16 +1065,16 @@ class RenovationPlannerEngine {
       final floorMat = FinishMaterialCatalog.resolveFloorForModule(r);
       final wallMat = FinishMaterialCatalog.resolveWallForModule(r);
       sb.writeln(
-        '${esc(r.name)},${esc(r.moduleType)},${r.area.toStringAsFixed(2)},${esc(floorMat.nameEs)},${esc(wallMat.nameEs)},${esc(r.status.name)}',
+        '${esc(r.name)},${esc(r.moduleType)},${r.area.toStringAsFixed(2)},${esc(floorMat.label(lang))},${esc(wallMat.label(lang))},${esc(r.status.name)}',
       );
     }
     sb.writeln('');
 
     // 2. Itemized BOQ Materials
-    sb.writeln('COMPUTO METRICO DE MATERIALES (BOQ)');
-    sb.writeln(
-      'ID,CATEGORIA,INSUMO,CANTIDAD,UNIDAD,PRESENTACION,COSTO_UNIT_COP,COSTO_TOTAL_COP,AMBIENTES_DESTINO',
-    );
+    sb.writeln(isEn ? 'BILL OF QUANTITIES (BOQ)' : 'COMPUTO METRICO DE MATERIALES (BOQ)');
+    sb.writeln(isEn
+        ? 'ID,CATEGORY,ITEM,QUANTITY,UNIT,PACKAGING,UNIT_COST_COP,TOTAL_COST_COP,TARGET_ROOMS'
+        : 'ID,CATEGORIA,INSUMO,CANTIDAD,UNIDAD,PRESENTACION,COSTO_UNIT_COP,COSTO_TOTAL_COP,AMBIENTES_DESTINO');
     for (final m in plan.materials) {
       final qtyStr = m.quantity.toStringAsFixed(m.quantity % 1 == 0 ? 0 : 2);
       final unitCop = m.estimatedUnitCostCop?.toStringAsFixed(0) ?? '';
@@ -1099,8 +1086,10 @@ class RenovationPlannerEngine {
     sb.writeln('');
 
     // 3. Specialist Crews & Execution Phases
-    sb.writeln('CRONOGRAMA Y RUTA CRITICA');
-    sb.writeln('FASE,TITULO,DIAS_PARALELO,DIAS_SECUENCIAL,ESPECIALISTAS');
+    sb.writeln(isEn ? 'SCHEDULE AND CRITICAL PATH' : 'CRONOGRAMA Y RUTA CRITICA');
+    sb.writeln(isEn
+        ? 'PHASE,TITLE,PARALLEL_DAYS,SEQUENTIAL_DAYS,SPECIALISTS'
+        : 'FASE,TITULO,DIAS_PARALELO,DIAS_SECUENCIAL,ESPECIALISTAS');
     for (final p in plan.phases) {
       sb.writeln(
         '${p.phaseNumber},${esc(p.title)},${p.estimatedDaysParallel},${p.estimatedDaysSequential},${esc(p.specialists.join(' + '))}',

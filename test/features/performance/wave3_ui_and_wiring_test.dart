@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
+import 'package:trazzik/features/ai_advisor/presentation/widgets/architectural_audit_dialog.dart';
+import 'package:trazzik/features/ai_advisor/presentation/widgets/renovation_planner_dialog.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/properties/property_controls.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_app_bar.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -10,6 +13,7 @@ import 'package:trazzik/features/lots/domain/zoning_type.dart';
 import 'package:trazzik/features/lots/domain/zoning_zone.dart';
 import 'package:trazzik/features/zoning_assistant/domain/multi_story_brief.dart';
 import 'package:trazzik/features/zoning_assistant/domain/multi_story_layout_generator.dart';
+import 'package:trazzik/features/zoning_assistant/presentation/widgets/starter_layout_dialog.dart';
 
 void main() {
   group('Wave 3 UI, Theme & Control Wiring Tests', () {
@@ -113,7 +117,7 @@ void main() {
         expect(floors, hasLength(2));
         final pb = floors.first;
         final garages = pb.modules
-            .where((m) => m.moduleType.toUpperCase() == 'GARAGE')
+            .where((m) => m.isGarage)
             .toList();
         expect(garages, hasLength(1));
 
@@ -175,6 +179,67 @@ void main() {
         await tester.tap(find.byIcon(Icons.more_vert));
         await tester.pumpAndSettle();
         expect(find.textContaining('180°'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'Light Mode dialogs use AppColors.light and honor appLocaleProvider EN strings',
+      (tester) async {
+        tester.view.physicalSize = const Size(1400, 900);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(() {
+          tester.view.resetPhysicalSize();
+          tester.view.resetDevicePixelRatio();
+        });
+
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+        container.read(appLocaleProvider.notifier).setLocale('en');
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: AppTheme.lightTheme,
+              home: const Scaffold(body: StarterLayoutDialog()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final starterDlg = tester.widget<Dialog>(find.byType(Dialog));
+        expect(starterDlg.backgroundColor, equals(AppColors.light.panelBg));
+        expect(find.text('Starter Layout Assistant'), findsOneWidget);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: AppTheme.lightTheme,
+              home: const Scaffold(body: ArchitecturalAuditDialog()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final auditDlg = tester.widget<Dialog>(find.byType(Dialog));
+        expect(auditDlg.backgroundColor, equals(AppColors.light.panelBg));
+        expect(find.text('AI ARCHITECTURAL AUDIT & ADVISORY'), findsOneWidget);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: MaterialApp(
+              theme: AppTheme.lightTheme,
+              home: const Scaffold(body: RenovationPlannerDialog()),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final plannerDlg = tester.widget<Dialog>(find.byType(Dialog));
+        expect(plannerDlg.backgroundColor, equals(AppColors.light.panelBg));
+        expect(
+          find.text('AI WORK PLANNER, MATERIALS (BOQ) & CREWS'),
+          findsOneWidget,
+        );
       },
     );
   });

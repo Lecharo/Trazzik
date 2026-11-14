@@ -92,10 +92,9 @@ class ValidationEngine {
         }
 
         // Caso especial: Baño o depósito bajo escalera (integración espacial multinivel en planta baja)
-        final isUnderStairsSpace = (modA.moduleType.toUpperCase() == 'STAIRS' &&
-                (modB.moduleType.toUpperCase() == 'BATHROOM' || modB.moduleType.toUpperCase() == 'STORAGE')) ||
-            (modB.moduleType.toUpperCase() == 'STAIRS' &&
-                (modA.moduleType.toUpperCase() == 'BATHROOM' || modA.moduleType.toUpperCase() == 'STORAGE'));
+        final isUnderStairsSpace = (modA.isStairs &&
+                (modB.isBathroom || modB.isStorage)) ||
+            (modB.isStairs && (modA.isBathroom || modA.isStorage));
 
         if (isUnderStairsSpace) {
           issues.add(

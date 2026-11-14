@@ -1203,7 +1203,7 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
           context,
           active
               ? (lang == 'es'
-                  ? 'Regla Láser 2D activa: arrastrá o tocá 2 puntos en el lienzo.'
+                  ? 'Regla Láser 2D activa: arrastre o toque 2 puntos en el lienzo.'
                   : '2D Laser Measure active: drag or tap 2 points on canvas.')
               : (lang == 'es'
                   ? 'Regla Láser 2D desactivada.'

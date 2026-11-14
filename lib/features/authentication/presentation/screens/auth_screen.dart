@@ -68,7 +68,7 @@ class _AuthScreenState extends ConsumerState<AuthScreen> {
             ScaffoldMessenger.of(context).showSnackBar(
               const SnackBar(
                 content: Text(
-                  'Cuenta creada. Si tenés confirmación por email activa en Supabase, revisá tu correo.',
+                  'Cuenta creada. Si tiene confirmación por email activa en Supabase, revise su correo.',
                 ),
                 backgroundColor: Color(0xFF00E5FF),
               ),

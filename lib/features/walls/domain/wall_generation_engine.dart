@@ -80,7 +80,7 @@ class WallGenerationEngine {
 
   static bool isPergolaCarport(Module m) {
     final lowerName = m.name.toLowerCase();
-    return m.moduleType.toUpperCase().contains('GARAGE') &&
+    return m.isGarage &&
         (lowerName.contains('semicubierto') || lowerName.contains('pérgola'));
   }
 

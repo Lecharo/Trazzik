@@ -55,8 +55,8 @@ class AppStrings {
       'address': 'Dirección / Barrio / Comuna',
       'save_project': 'Guardar Proyecto',
       'cancel': 'Cancelar',
-      'no_projects': 'No tenés proyectos creados todavía',
-      'no_projects_hint': 'Creá tu primer proyecto para definir el lote y comenzar a diseñar.',
+      'no_projects': 'No tiene proyectos creados todavía',
+      'no_projects_hint': 'Cree su primer proyecto para definir el lote y comenzar a diseñar.',
       'create_first_project': 'Crear Primer Proyecto',
       'edit_project': 'Editar Proyecto',
       'edit_project_title': 'Modificar Datos del Proyecto',
@@ -96,7 +96,7 @@ class AppStrings {
 
       // Lot & Building Setup
       'lot_setup_title': 'Parámetros del Terreno y Edificación',
-      'lot_setup_subtitle': 'Ingresá las medidas reales en metros y retiros normativos.',
+      'lot_setup_subtitle': 'Ingrese las medidas reales en metros y retiros normativos.',
       'dimensions_section': 'DIMENSIONES DEL LOTE',
       'lot_width': 'Ancho del Lote (m)',
       'lot_depth': 'Fondo del Lote (m)',
@@ -136,7 +136,7 @@ class AppStrings {
       'proposed_built_area': 'Área Construida Propuesta',
       'available_expansion': 'Disponible para Ampliación',
       'selected_element': 'ELEMENTO SELECCIONADO',
-      'no_selection_hint': 'Hacé clic en un espacio para ver o editar sus parámetros.',
+      'no_selection_hint': 'Haga clic en un espacio para ver o editar sus parámetros.',
       'mark_as_demolish': 'Marcar como A DEMOLER',
       'move_in_meters': 'Mover en metros:',
       'remodeling_transition': 'TRANSICIÓN DE REMODELACIÓN',

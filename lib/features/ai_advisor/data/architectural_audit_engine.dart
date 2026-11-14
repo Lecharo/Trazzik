@@ -71,7 +71,6 @@ class ArchitecturalAuditEngine {
 
     for (final m in modules) {
       if (!m.isHabitableRoom) continue;
-      final t = m.moduleType.toUpperCase();
       totalHabitable++;
 
       final bb = m.geometry.boundingBox;
@@ -88,17 +87,15 @@ class ArchitecturalAuditEngine {
 
       // O tiene una ventana asignada
       final hasWindow = openings.any((op) {
-        final opType = op.moduleType.toUpperCase();
-        if (!opType.contains('WINDOW')) return false;
+        if (!op.isWindow) return false;
         final opBB = op.geometry.boundingBox;
         return opBB.intersects(bb);
       });
 
       // O es un Comedor/Sala integrado en concepto abierto contiguo a un ambiente social con luz exterior
-      final isIntegratedSocialOpen = (t == 'DINING_ROOM' || t == 'LIVING_ROOM') && modules.any((other) {
+      final isIntegratedSocialOpen = (m.isDiningRoom || m.isLivingRoom) && modules.any((other) {
         if (other.id == m.id) return false;
-        final ot = other.moduleType.toUpperCase();
-        if (ot != 'LIVING_ROOM' && ot != 'DINING_ROOM' && ot != 'LIVING_DINING') return false;
+        if (!other.isLivingRoom && !other.isDiningRoom) return false;
         final ob = other.geometry.boundingBox;
         final isAdjacent = (bb.minX - ob.maxX).abs() <= 0.25 ||
             (bb.maxX - ob.minX).abs() <= 0.25 ||
@@ -116,8 +113,7 @@ class ArchitecturalAuditEngine {
               (ob.maxY - pb.minY).abs() <= 0.15;
         });
         final otherWindow = openings.any((op) {
-          final opType = op.moduleType.toUpperCase();
-          if (!opType.contains('WINDOW')) return false;
+          if (!op.isWindow) return false;
           return op.geometry.boundingBox.intersects(ob);
         });
 
@@ -247,10 +243,10 @@ class ArchitecturalAuditEngine {
             'Verificar antes de demoler si los tabiques contienen instalaciones de gas o electricidad que requieran desvío previo.',
       ));
 
-      strategicTips.add('En reformas, priorizá siempre abrir muros no portantes antes de tocar paredes medianeras o columnas.');
-      strategicTips.add('Si conservás baños existentes, podés ahorrar hasta un 30% del costo total de la remodelación.');
+      strategicTips.add('En reformas, priorice siempre abrir muros no portantes antes de tocar paredes medianeras o columnas.');
+      strategicTips.add('Si conserva baños existentes, puede ahorrar hasta un 30% del costo total de la remodelación.');
     } else {
-      strategicTips.add('Asegurá que la circulación principal tenga un ancho libre mínimo de 0.90 m para paso cómodo de personas y muebles.');
+      strategicTips.add('Asegure que la circulación principal tenga un ancho libre mínimo de 0.90 m para paso cómodo de personas y muebles.');
       strategicTips.add('En lotes angostos (ej. 3 a 5 m de frente), la ventilación cruzada y los patios internos son vitales.');
     }
 

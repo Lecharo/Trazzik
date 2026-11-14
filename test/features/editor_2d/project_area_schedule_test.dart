@@ -1,3 +1,4 @@
+import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -203,6 +204,12 @@ void main() {
 
       // Verificar que Canvas2DPainter pinta el Calco y la Regla Láser sin excepciones
       final painter = Canvas2DPainter(state);
+      final recorder = ui.PictureRecorder();
+      final canvas = Canvas(recorder);
+      expect(() => painter.paint(canvas, const Size(800, 600)), returnsNormally);
+      final picture = recorder.endRecording();
+      expect(picture, isNotNull);
+      picture.dispose();
       expect(() => painter.shouldRepaint(Canvas2DPainter(state)), returnsNormally);
     });
   });

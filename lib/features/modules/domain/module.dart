@@ -236,6 +236,52 @@ class Module {
         n.contains('CIRCULACION');
   }();
 
+  late final bool isGarage = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t.contains('GARAGE') ||
+        n.contains('GARAJE') ||
+        n.contains('COCHERA');
+  }();
+
+  late final bool isStorage = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t == 'STORAGE' ||
+        n.contains('DEPÓSITO') ||
+        n.contains('DEPOSITO') ||
+        n.contains('BODEGA');
+  }();
+
+  late final bool isLivingRoom = () {
+    final t = moduleType.toUpperCase();
+    return t == 'LIVING_ROOM' || t == 'LIVING_DINING';
+  }();
+
+  late final bool isDiningRoom = () {
+    final t = moduleType.toUpperCase();
+    return t == 'DINING_ROOM' || t == 'LIVING_DINING';
+  }();
+
+  late final bool isTerraceOrBalcony = () {
+    final t = moduleType.toUpperCase();
+    final n = name.toUpperCase();
+    return t == 'TERRACE' ||
+        t == 'BALCONY' ||
+        t == 'DECK' ||
+        t == 'PATIO' ||
+        t == 'PORCH' ||
+        n.contains('TERRAZA') ||
+        n.contains('BALCÓN') ||
+        n.contains('BALCON') ||
+        n.contains('PATIO') ||
+        n.contains('PORCHE');
+  }();
+
+  /// Semi-open or exterior zones excluded from interior drywall ceiling takeoffs.
+  late final bool isSemiOpenOutdoor =
+      isOutdoorUnpaved || isGarage || isTerraceOrBalcony;
+
   /// Compact architectural room code used in 2D and 3D badges.
   late final String shortCode = compactRoomCode(name);
 

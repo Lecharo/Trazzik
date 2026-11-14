@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
+import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/canvas_2d_painter.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
@@ -300,7 +301,10 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         child: ClipRect(
           child: CustomPaint(
             size: Size.infinite,
-            painter: Canvas2DPainter(editorState),
+            painter: Canvas2DPainter(
+              editorState,
+              lang: ref.watch(appLocaleProvider),
+            ),
           ),
         ),
       ),
