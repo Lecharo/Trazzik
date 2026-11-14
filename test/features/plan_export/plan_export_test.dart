@@ -240,16 +240,49 @@ void main() {
       );
 
       expect(dxf, contains('SECTION'));
-      expect(dxf, contains('\$INSUNITS'));
+      expect(dxf, contains('AC1009'));
+      expect(dxf, isNot(contains('\$INSUNITS')));
+      expect(dxf, contains('LTYPE'));
+      expect(dxf, contains('CONTINUOUS'));
       expect(dxf, contains('A-LOT'));
       expect(dxf, contains('A-WALL-EXIST'));
       expect(dxf, contains('A-WALL-DEMO'));
       expect(dxf, contains('A-WALL-NEW'));
       expect(dxf, contains('A-ROOM'));
+      expect(dxf, contains('A-ROOM-DEMO'));
       expect(dxf, contains('A-ANNO-TEXT'));
       expect(dxf, contains('SALA DE ESTAR'));
       expect(dxf, contains('COMEDOR'));
       expect(dxf, endsWith('EOF\n'));
+
+      // Fallback auto-walls when floor.walls is empty + A-ROOM-DEMO + newline sanitization
+      final wallFreeFloor = Floor(
+        id: 'fl_empty_walls',
+        buildingId: 'bld_01',
+        floorNumber: 1,
+        name: 'Piso Demo',
+        boundary: Polygon2D.fromRect(0, 0, 8, 8),
+        maxAllowedArea: 100.0,
+        modules: [
+          Module(
+            id: 'm_demo',
+            floorId: 'fl_empty_walls',
+            name: 'Baño\nAntiguo\r\n999',
+            moduleType: 'BATHROOM',
+            geometry: Polygon2D.fromRect(1, 1, 2.5, 2.5),
+            status: ElementStatus.toDemolish,
+          ),
+        ],
+        walls: const [],
+      );
+      final demoDxf = DxfExporterService.exportFloorToDxf(
+        floor: wallFreeFloor,
+        lot: testLot,
+      );
+      expect(demoDxf, contains('LINE'));
+      expect(demoDxf, contains('A-WALL-EXIST'));
+      expect(demoDxf, contains('BANO ANTIGUO 999'));
+      expect(demoDxf, isNot(contains('BANO\nANTIGUO')));
     });
   });
 }

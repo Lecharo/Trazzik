@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
+import 'package:trazzik/core/utils/file_export_helper.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
@@ -91,6 +91,19 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
         bytes: pdfBytes,
         filename: 'trazzik_render_3d_$safeName.pdf',
       );
+    } catch (_) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            backgroundColor: Colors.redAccent,
+            content: Text(
+              lang == 'es'
+                  ? 'No se pudo generar o compartir la lámina PL-3D.'
+                  : 'Could not generate or share the PL-3D sheet.',
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isExportingPdf = false);
@@ -113,44 +126,78 @@ class _Render3dStudioDialogState extends ConsumerState<Render3dStudioDialog> {
 
   Future<void> _exportGltfModel(String lang) async {
     final projectName = widget.project?.name ?? 'Trazzik_3D_Model';
+    final safeName = projectName
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .toLowerCase();
     final facesToExport = _resolveGltfFaces();
     final gltfJson = GltfExporterService.exportToGltfJson(
       faces: facesToExport,
       projectName: projectName,
     );
-    await Clipboard.setData(ClipboardData(text: gltfJson));
+    final result = await exportTextFile(
+      fileName: 'trazzik_$safeName.gltf',
+      content: gltfJson,
+      mimeType: 'model/gltf+json',
+    );
     if (!mounted) return;
     setState(() => _gltfCopied = true);
+    final String msg;
+    if (result.savedPath != null) {
+      msg = lang == 'es'
+          ? 'Modelo glTF 2.0 guardado en ${result.savedPath} y copiado (${facesToExport.length} caras).'
+          : 'glTF 2.0 model saved to ${result.savedPath} and copied (${facesToExport.length} faces).';
+    } else if (result.downloaded) {
+      msg = lang == 'es'
+          ? 'Archivo glTF 2.0 descargado y copiado al portapapeles (${facesToExport.length} caras).'
+          : 'glTF 2.0 file downloaded and copied to clipboard (${facesToExport.length} faces).';
+    } else {
+      msg = lang == 'es'
+          ? 'Modelo glTF 2.0 (.gltf) copiado al portapapeles (${facesToExport.length} caras).'
+          : 'glTF 2.0 (.gltf) model copied to clipboard (${facesToExport.length} faces).';
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF0F766E),
-        content: Text(
-          lang == 'es'
-              ? 'Modelo glTF 2.0 (.gltf) generado y copiado al portapapeles (${facesToExport.length} caras).'
-              : 'glTF 2.0 (.gltf) model generated and copied to clipboard (${facesToExport.length} faces).',
-        ),
+        content: Text(msg),
       ),
     );
   }
 
   Future<void> _exportDxfPlan(String lang) async {
     final projectName = widget.project?.name ?? 'Trazzik_CAD_Plan';
+    final safeName = projectName
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .toLowerCase();
     final dxfContent = DxfExporterService.exportFloorToDxf(
       floor: widget.activeFloor,
       lot: widget.lot,
       projectName: projectName,
     );
-    await Clipboard.setData(ClipboardData(text: dxfContent));
+    final result = await exportTextFile(
+      fileName: 'trazzik_${safeName}_p${widget.activeFloor.floorNumber}.dxf',
+      content: dxfContent,
+      mimeType: 'application/dxf',
+    );
     if (!mounted) return;
     setState(() => _dxfCopied = true);
+    final String msg;
+    if (result.savedPath != null) {
+      msg = lang == 'es'
+          ? 'Plano CAD (.DXF) de ${widget.activeFloor.name} guardado en ${result.savedPath} y copiado.'
+          : 'CAD Plan (.DXF) for ${widget.activeFloor.name} saved to ${result.savedPath} and copied.';
+    } else if (result.downloaded) {
+      msg = lang == 'es'
+          ? 'Plano CAD Vectorial (.DXF) de ${widget.activeFloor.name} descargado con capas AIA.'
+          : 'Vector CAD Plan (.DXF) for ${widget.activeFloor.name} downloaded with AIA layers.';
+    } else {
+      msg = lang == 'es'
+          ? 'Plano CAD Vectorial (.DXF) de ${widget.activeFloor.name} copiado al portapapeles con capas AIA.'
+          : 'Vector CAD Plan (.DXF) for ${widget.activeFloor.name} copied to clipboard with AIA layers.';
+    }
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         backgroundColor: const Color(0xFF1D4ED8),
-        content: Text(
-          lang == 'es'
-              ? 'Plano CAD Vectorial (.DXF) de ${widget.activeFloor.name} copiado al portapapeles con capas AIA.'
-              : 'Vector CAD Plan (.DXF) for ${widget.activeFloor.name} copied to clipboard with AIA layers.',
-        ),
+        content: Text(msg),
       ),
     );
   }

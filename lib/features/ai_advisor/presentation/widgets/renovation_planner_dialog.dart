@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/utils/file_export_helper.dart';
 import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/ai_advisor/presentation/services/renovation_plan_pdf_service.dart';
@@ -212,7 +213,8 @@ class _RenovationPlannerDialogState
     );
   }
 
-  void _exportCsvToClipboard() {
+  Future<void> _exportCsvToClipboard() async {
+    final messenger = ScaffoldMessenger.of(context);
     final state = ref.read(floorEditorProvider);
     final projectName = state.project?.name ?? 'Vivienda Trazzik';
     final csv = RenovationPlannerEngine.exportPlanToCsv(
@@ -220,24 +222,38 @@ class _RenovationPlannerDialogState
       rooms: _getSourceModules(),
       projectName: projectName,
     );
-    Clipboard.setData(ClipboardData(text: csv));
+    final safeName = projectName
+        .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+        .toLowerCase();
+    final result = await exportTextFile(
+      fileName: 'trazzik_boq_$safeName.csv',
+      content: csv,
+      mimeType: 'text/csv;charset=utf-8',
+    );
 
-    setState(() => _showCsvCopiedBadge = true);
-    Future.delayed(const Duration(seconds: 3), () {
-      if (mounted) {
-        setState(() => _showCsvCopiedBadge = false);
-      }
-    });
+    if (mounted) {
+      setState(() => _showCsvCopiedBadge = true);
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) {
+          setState(() => _showCsvCopiedBadge = false);
+        }
+      });
+    }
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        duration: Duration(seconds: 2),
-        backgroundColor: Color(0xFF0F766E),
+    final desc = result.savedPath != null
+        ? '¡Cómputo BOQ (.CSV) guardado en ${result.savedPath} y copiado!'
+        : (result.downloaded
+            ? '¡Cómputo BOQ y Cuadro de Acabados (.CSV) descargado!'
+            : '¡Cómputo BOQ y Cuadro de Acabados (.CSV) copiado!');
+    messenger.showSnackBar(
+      SnackBar(
+        duration: const Duration(seconds: 3),
+        backgroundColor: const Color(0xFF0F766E),
         content: Row(
           children: [
-            Icon(Icons.table_chart_outlined, color: Colors.white, size: 18),
-            SizedBox(width: 8),
-            Text('¡Cómputo BOQ y Cuadro de Acabados en formato .CSV (Excel) copiado!'),
+            const Icon(Icons.table_chart_outlined, color: Colors.white, size: 18),
+            const SizedBox(width: 8),
+            Expanded(child: Text(desc)),
           ],
         ),
       ),

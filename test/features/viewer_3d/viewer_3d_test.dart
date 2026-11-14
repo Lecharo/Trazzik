@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -538,6 +539,143 @@ void main() {
       final accessors = decoded['accessors'] as List<dynamic>;
       expect(accessors, hasLength(4)); // POSITION, NORMAL, COLOR_0, INDICES
       expect((accessors[0] as Map<String, dynamic>)['count'], greaterThan(20));
+
+      // Verify right-handed (x, z, +y) orientation, exact Float32 bounds, and CCW outward winding
+      final b64 = uri.split(',').last;
+      final bytes = base64Decode(b64);
+      final bufferViews = decoded['bufferViews'] as List<dynamic>;
+      final posView = bufferViews[0] as Map<String, dynamic>;
+      final normView = bufferViews[1] as Map<String, dynamic>;
+      final idxView = bufferViews[3] as Map<String, dynamic>;
+
+      final bd = ByteData.sublistView(bytes);
+      final posOff = posView['byteOffset'] as int;
+      final normOff = normView['byteOffset'] as int;
+      final idxOff = idxView['byteOffset'] as int;
+      final idxCount = (accessors[3] as Map<String, dynamic>)['count'] as int;
+      final vertCount = (accessors[0] as Map<String, dynamic>)['count'] as int;
+
+      Point3D readVec3(int baseOff, int idx) {
+        final o = baseOff + idx * 12;
+        return Point3D(
+          bd.getFloat32(o, Endian.little),
+          bd.getFloat32(o + 4, Endian.little),
+          bd.getFloat32(o + 8, Endian.little),
+        );
+      }
+
+      double minX = double.infinity, minY = double.infinity, minZ = double.infinity;
+      double maxX = double.negativeInfinity, maxY = double.negativeInfinity, maxZ = double.negativeInfinity;
+      for (int i = 0; i < vertCount; i++) {
+        final p = readVec3(posOff, i);
+        if (p.x < minX) minX = p.x;
+        if (p.y < minY) minY = p.y;
+        if (p.z < minZ) minZ = p.z;
+        if (p.x > maxX) maxX = p.x;
+        if (p.y > maxY) maxY = p.y;
+        if (p.z > maxZ) maxZ = p.z;
+      }
+      final accMin = ((accessors[0] as Map<String, dynamic>)['min'] as List<dynamic>)
+          .cast<num>()
+          .map((n) => n.toDouble())
+          .toList();
+      final accMax = ((accessors[0] as Map<String, dynamic>)['max'] as List<dynamic>)
+          .cast<num>()
+          .map((n) => n.toDouble())
+          .toList();
+      expect(accMin[0], closeTo(minX, 1e-6));
+      expect(accMin[1], closeTo(minY, 1e-6));
+      expect(accMin[2], closeTo(minZ, 1e-6));
+      expect(accMax[0], closeTo(maxX, 1e-6));
+      expect(accMax[1], closeTo(maxY, 1e-6));
+      expect(accMax[2], closeTo(maxZ, 1e-6));
+      // South (+Y in 2D = 20m lot) stays +Z in glTF (no chiral mirror flip)
+      expect(accMax[2], closeTo(20.0, 1e-4));
+
+      for (int t = 0; t + 2 < idxCount; t += 3) {
+        final i0 = bd.getUint32(idxOff + t * 4, Endian.little);
+        final i1 = bd.getUint32(idxOff + (t + 1) * 4, Endian.little);
+        final i2 = bd.getUint32(idxOff + (t + 2) * 4, Endian.little);
+        final p0 = readVec3(posOff, i0);
+        final p1 = readVec3(posOff, i1);
+        final p2 = readVec3(posOff, i2);
+        final n0 = readVec3(normOff, i0);
+        final e1 = p1 - p0;
+        final e2 = p2 - p0;
+        final cx = e1.y * e2.z - e1.z * e2.y;
+        final cy = e1.z * e2.x - e1.x * e2.z;
+        final cz = e1.x * e2.y - e1.y * e2.x;
+        final dot = cx * n0.x + cy * n0.y + cz * n0.z;
+        expect(dot, greaterThan(0.0));
+      }
+    });
+
+    test('GltfExporterService triangula polígonos cóncavos en L, separa BLEND para vidrio y maneja escena vacía', () {
+      // Concave L-shape polygon on top plane z=0 (notch in top-right [3..6] x [3..6])
+      final lFace = Face3D(
+        vertices: const [
+          Point3D(0, 0, 0),
+          Point3D(6, 0, 0),
+          Point3D(6, 3, 0),
+          Point3D(3, 3, 0),
+          Point3D(3, 6, 0),
+          Point3D(0, 6, 0),
+        ],
+        baseColor: Colors.white,
+        layer: FaceLayer3D.floorFinish,
+      );
+      final glassFace = Face3D(
+        vertices: const [
+          Point3D(1, 1, 0),
+          Point3D(2, 1, 0),
+          Point3D(2, 1, 2),
+          Point3D(1, 1, 2),
+        ],
+        baseColor: const Color(0x8899DDFF),
+        layer: FaceLayer3D.openingPanel,
+      );
+
+      final gltf = jsonDecode(
+        GltfExporterService.exportToGltfJson(
+          faces: [lFace, glassFace],
+          projectName: 'Concave & Glass',
+        ),
+      ) as Map<String, dynamic>;
+
+      final materials = gltf['materials'] as List<dynamic>;
+      expect(materials, hasLength(2));
+      expect((materials[1] as Map<String, dynamic>)['alphaMode'], equals('BLEND'));
+
+      // Check L-shape triangles never bridge inside the concave notch (gx>3.1 && gz>3.1)
+      final uri = ((gltf['buffers'] as List<dynamic>).first as Map<String, dynamic>)['uri'] as String;
+      final bytes = base64Decode(uri.split(',').last);
+      final bd = ByteData.sublistView(bytes);
+      final bvs = gltf['bufferViews'] as List<dynamic>;
+      final posOff = (bvs[0] as Map<String, dynamic>)['byteOffset'] as int;
+      final opaqueIdxOff = (bvs[3] as Map<String, dynamic>)['byteOffset'] as int;
+      final opaqueIdxCount = ((gltf['accessors'] as List<dynamic>)[3] as Map<String, dynamic>)['count'] as int;
+      expect(opaqueIdxCount, equals(12)); // 4 triangles for 6-vertex L polygon
+      for (int t = 0; t < opaqueIdxCount; t += 3) {
+        final i0 = bd.getUint32(opaqueIdxOff + t * 4, Endian.little);
+        final i1 = bd.getUint32(opaqueIdxOff + (t + 1) * 4, Endian.little);
+        final i2 = bd.getUint32(opaqueIdxOff + (t + 2) * 4, Endian.little);
+        final cx = (bd.getFloat32(posOff + i0 * 12, Endian.little) +
+                bd.getFloat32(posOff + i1 * 12, Endian.little) +
+                bd.getFloat32(posOff + i2 * 12, Endian.little)) /
+            3.0;
+        final cz = (bd.getFloat32(posOff + i0 * 12 + 8, Endian.little) +
+                bd.getFloat32(posOff + i1 * 12 + 8, Endian.little) +
+                bd.getFloat32(posOff + i2 * 12 + 8, Endian.little)) /
+            3.0;
+        expect(cx > 3.05 && cz > 3.05, isFalse);
+      }
+
+      // Empty scene still produces valid glTF 2.0 root without empty accessors
+      final emptyGltf = jsonDecode(
+        GltfExporterService.exportToGltfJson(faces: const []),
+      ) as Map<String, dynamic>;
+      expect((emptyGltf['asset'] as Map<String, dynamic>)['version'], equals('2.0'));
+      expect(emptyGltf.containsKey('accessors'), isFalse);
     });
 
     test('Building3DBuilder genera mobiliario multi-pieza (patas de mesa, mampara de ducha, respaldo de cama), cotas 3D y modo nocturno 2700K', () {

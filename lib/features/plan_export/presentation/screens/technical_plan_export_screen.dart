@@ -1,11 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:pdf/pdf.dart';
 import 'package:printing/printing.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
+import 'package:trazzik/core/utils/file_export_helper.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/plan_export/domain/dxf_exporter_service.dart';
 import 'package:trazzik/features/plan_export/domain/plan_export_options.dart';
@@ -148,22 +149,39 @@ class _TechnicalPlanExportScreenState
                 ? 'Exportar Plano Vectorial AutoCAD (.DXF)'
                 : 'Export AutoCAD Vector Plan (.DXF)',
             onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
               final state = ref.read(floorEditorProvider);
               final dxf = DxfExporterService.exportFloorToDxf(
                 floor: state.floor,
                 lot: state.lot,
                 projectName: _options.projectName,
               );
-              await Clipboard.setData(ClipboardData(text: dxf));
-              if (!context.mounted) return;
-              ScaffoldMessenger.of(context).showSnackBar(
+              final safeName = _options.projectName
+                  .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
+                  .toLowerCase();
+              final result = await exportTextFile(
+                fileName: 'trazzik_${safeName}_p${state.floor.floorNumber}.dxf',
+                content: dxf,
+                mimeType: 'application/dxf',
+              );
+              final String msg;
+              if (result.savedPath != null) {
+                msg = lang == 'es'
+                    ? 'Plano CAD (.DXF) guardado en ${result.savedPath} y copiado con capas AIA.'
+                    : 'CAD Plan (.DXF) saved to ${result.savedPath} and copied with AIA layers.';
+              } else if (result.downloaded) {
+                msg = lang == 'es'
+                    ? 'Plano CAD Vectorial (.DXF) descargado con capas AIA.'
+                    : 'Vector CAD Plan (.DXF) downloaded with AIA layers.';
+              } else {
+                msg = lang == 'es'
+                    ? 'Plano CAD Vectorial (.DXF) copiado al portapapeles con capas AIA.'
+                    : 'Vector CAD Plan (.DXF) copied to clipboard with AIA layers.';
+              }
+              messenger.showSnackBar(
                 SnackBar(
                   backgroundColor: const Color(0xFF0F766E),
-                  content: Text(
-                    lang == 'es'
-                        ? 'Plano CAD Vectorial (.DXF) copiado al portapapeles con capas AIA.'
-                        : 'Vector CAD Plan (.DXF) copied to clipboard with AIA layers.',
-                  ),
+                  content: Text(msg),
                 ),
               );
             },
