@@ -14,6 +14,7 @@ import 'package:trazzik/features/fee_proposal/presentation/widgets/architect_fee
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/plan_export/presentation/screens/technical_plan_export_screen.dart';
 import 'package:trazzik/features/projects/presentation/screens/lot_setup_screen.dart';
+import 'package:trazzik/features/projects/presentation/widgets/project_json_io_dialog.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
 import 'package:trazzik/features/zoning_assistant/presentation/widgets/multi_story_brief_dialog.dart';
 import 'package:trazzik/features/zoning_assistant/presentation/widgets/starter_layout_dialog.dart';
@@ -951,6 +952,17 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
             : 'Architect Fee Proposal (PDF)',
       ),
       const PopupMenuDivider(),
+      _menuItem(
+        'export_json',
+        Icons.download_outlined,
+        lang == 'es' ? 'Exportar Proyecto (.json)' : 'Export Project (.json)',
+      ),
+      _menuItem(
+        'import_json',
+        Icons.upload_file_outlined,
+        lang == 'es' ? 'Importar Proyecto (.json)' : 'Import Project (.json)',
+      ),
+      const PopupMenuDivider(),
       ..._buildSharedTransformAndResetItems(lang, verboseLabels: true),
     ];
   }
@@ -1020,6 +1032,16 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         'export_pdf',
         Icons.picture_as_pdf,
         lang == 'es' ? 'Exportar Lámina PDF' : 'Export Technical Plan (PDF)',
+      ),
+      _menuItem(
+        'export_json',
+        Icons.download_outlined,
+        lang == 'es' ? 'Exportar Proyecto (.json)' : 'Export Project (.json)',
+      ),
+      _menuItem(
+        'import_json',
+        Icons.upload_file_outlined,
+        lang == 'es' ? 'Importar Proyecto (.json)' : 'Import Project (.json)',
       ),
       const PopupMenuDivider(),
       _menuItem(
@@ -1159,6 +1181,12 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
           screen: const TechnicalPlanExportScreen(),
           optionName: 'Lámina Técnica (PDF)',
         );
+        break;
+      case 'export_json':
+        ProjectJsonIoDialog.exportCurrentProject(context, ref, lang: lang);
+        break;
+      case 'import_json':
+        ProjectJsonIoDialog.showImport(context, ref);
         break;
       case 'demarcate_walls':
         EditorDialogs.showDemarcateWallsDialog(

@@ -4,10 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
-import 'package:trazzik/features/floors/domain/floor.dart';
-import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/projects/data/supabase_project_repository.dart';
-import 'package:trazzik/features/projects/domain/project.dart';
+import 'package:trazzik/features/projects/domain/project_json_bundle.dart';
 import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
 
 /// Helper and dialog for opening a 60-day interactive 3D client share link or code.
@@ -27,6 +25,24 @@ class SharedProjectOpener {
     return trimmed;
   }
 
+  /// Hydrates `floorEditorProvider` from a `{project, lot, floors}` payload map
+  /// (used by both 60-day shared links and local `.json` project imports).
+  static ProjectJsonBundle? hydrateProjectPayload(
+    WidgetRef ref,
+    Map<String, dynamic> payload,
+  ) {
+    final bundle = ProjectJsonBundle.tryFromPayload(payload);
+    if (bundle == null) return null;
+
+    ref.read(floorEditorProvider.notifier).loadProjectData(
+          lot: bundle.lot,
+          floor: bundle.floors.first,
+          allFloors: bundle.floors,
+          project: bundle.project,
+        );
+    return bundle;
+  }
+
   /// Fetches the shared project payload from Supabase, hydrates `floorEditorProvider`,
   /// and returns the hydrated metadata (`allowFinishSelection`, `token`, `projectName`),
   /// or `null` if the token is invalid or expired.
@@ -40,39 +56,14 @@ class SharedProjectOpener {
         .getSharedProjectByToken(token);
     if (payload == null) return null;
 
-    final projectRaw = payload['project'];
-    final lotRaw = payload['lot'];
-    final floorsRaw = payload['floors'];
-    if (projectRaw is! Map || lotRaw is! Map || floorsRaw is! List) {
-      return null;
-    }
-
-    final projectMap = Map<String, dynamic>.from(projectRaw);
-    final lotMap = Map<String, dynamic>.from(lotRaw);
-    lotMap['boundary'] = lotMap['boundary_polygon'] ?? lotMap['boundary'];
-    lotMap['zones'] = lotMap['zoning_zones'] ?? const [];
-
-    final lot = Lot.fromJson(lotMap);
-    final project = Project.fromJson(projectMap, lot: lot);
-    final floors = floorsRaw
-        .whereType<Map>()
-        .map((f) => Floor.fromJson(Map<String, dynamic>.from(f)))
-        .toList();
-
-    if (floors.isEmpty) return null;
-
-    ref.read(floorEditorProvider.notifier).loadProjectData(
-          lot: lot,
-          floor: floors.first,
-          allFloors: floors,
-          project: project,
-        );
+    final bundle = hydrateProjectPayload(ref, payload);
+    if (bundle == null) return null;
 
     final allowFinishes = payload['allow_finish_selection'] != false;
     return (
       allowFinishSelection: allowFinishes,
       token: token,
-      projectName: project.name,
+      projectName: bundle.project.name,
     );
   }
 }

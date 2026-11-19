@@ -12,6 +12,7 @@ import 'package:trazzik/features/projects/domain/project.dart';
 import 'package:trazzik/features/projects/presentation/notifiers/projects_list_notifier.dart';
 import 'package:trazzik/features/projects/presentation/screens/lot_setup_screen.dart';
 import 'package:trazzik/features/projects/presentation/widgets/project_form_dialog.dart';
+import 'package:trazzik/features/projects/presentation/widgets/project_json_io_dialog.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link_dialog.dart';
 
 class ProjectsListScreen extends ConsumerStatefulWidget {
@@ -200,6 +201,21 @@ class _ProjectsListScreenState extends ConsumerState<ProjectsListScreen> {
           ],
         ),
         actions: [
+          IconButton(
+            tooltip: lang == 'es'
+                ? 'Importar proyecto local (.json)'
+                : 'Import local project (.json)',
+            icon: const Icon(
+              Icons.upload_file_outlined,
+              size: 20,
+              color: Color(0xFF10B981),
+            ),
+            onPressed: () => ProjectJsonIoDialog.showImport(
+              context,
+              ref,
+              navigateToEditorOnSuccess: true,
+            ),
+          ),
           IconButton(
             tooltip: lang == 'es'
                 ? 'Abrir código o enlace 3D de cliente'
