@@ -8,6 +8,7 @@ import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/core/validation/validation_engine.dart';
+import 'package:trazzik/features/ai_advisor/domain/renovation_budget_config.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/mvp_floor_seed.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
@@ -1399,6 +1400,22 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(
       clearSelection: true,
       clearSubModuleSelection: true,
+    );
+  }
+
+  void updateRenovationBudgetConfig(RenovationBudgetConfig config) {
+    final currentProject = state.project ??
+        Project(
+          id: state.lot.projectId.isNotEmpty
+              ? state.lot.projectId
+              : 'local_project',
+          name: 'Proyecto Trazzik',
+          ownerId: 'local',
+          lot: state.lot,
+        );
+    state = state.copyWith(
+      project: currentProject.copyWith(renovationBudgetConfig: config),
+      hasUnsavedChanges: true,
     );
   }
 

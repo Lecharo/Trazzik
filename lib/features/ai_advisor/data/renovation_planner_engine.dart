@@ -2,12 +2,54 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
+import 'package:trazzik/features/ai_advisor/domain/renovation_budget_config.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
+import 'package:trazzik/features/walls/domain/wall.dart';
 
 /// Motor técnico de cómputo métrico, compras y planificación de cuadrillas para remodelación.
 class RenovationPlannerEngine {
+  /// Standard Colombian reference unit prices in COP (overridable per project).
+  static const Map<String, double> defaultUnitPricesCop = <String, double>{
+    'mat_demolition_walls': 42000,
+    'mat_demolition_floors': 28000,
+    'mat_debris_removal': 135000,
+    'mat_masonry_new_walls': 115000,
+    'mat_plaster_new_walls': 38000,
+    'mat_floor_tiles': 78000,
+    'mat_adhesive_floor': 38000,
+    'mat_grout_floor': 16000,
+    'mat_skirting_tiles': 24000,
+    'mat_sanitary_combo': 620000,
+    'mat_vanity_sink': 780000,
+    'mat_faucet_sink': 210000,
+    'mat_plumbing_supplies': 95000,
+    'mat_shower_set': 340000,
+    'mat_waterproofing_shower': 48000,
+    'mat_wall_tiles_bath': 72000,
+    'mat_sink_kitchen': 490000,
+    'mat_faucet_kitchen': 290000,
+    'mat_backsplash_kitchen': 86000,
+    'mat_paint_walls': 145000,
+    'mat_stucco_walls': 42000,
+    'mat_led_panels': 36000,
+    'mat_led_strips': 95000,
+    'mat_electrical_cable': 260000,
+    'mat_drywall_ceiling_rh': 89000,
+    'mat_drywall_ceiling_std': 74000,
+    'mat_drywall_led_cove': 68000,
+  };
+
+  /// Default daily labor rates per worker in COP (Bogotá reference, configurable per project).
+  static const Map<String, double> defaultCrewDailyRatesCop = <String, double>{
+    'crew_mason': 185000,
+    'crew_tiler': 190000,
+    'crew_plumber': 200000,
+    'crew_electrician': 200000,
+    'crew_painter': 170000,
+    'crew_helper': 115000,
+  };
   /// Detecta si un módulo corresponde a un medio baño (baño social / sin ducha).
   static bool isHalfBathroom(Module m, {Set<String>? forcedHalfBathroomIds}) {
     if (forcedHalfBathroomIds != null && forcedHalfBathroomIds.contains(m.id)) {
@@ -161,7 +203,9 @@ class RenovationPlannerEngine {
   static RenovationPlanResult generatePlan({
     required List<Module> allRooms,
     List<Floor>? floors,
+    List<Wall>? walls,
     Map<String, double>? floorHeightsByFloorId,
+    RenovationBudgetConfig? budgetConfig,
     RenovationPlanConfig? config,
     Set<String>? selectedModuleIds,
     bool renovateFloors = true,
@@ -267,38 +311,23 @@ class RenovationPlannerEngine {
     final lightingRoomNames = lightingRooms.map((r) => r.name).toList();
 
     final materials = <MaterialItem>[];
+    final unitOverrides = budgetConfig?.unitPriceOverridesCop ?? const {};
+    final crewRateOverrides = budgetConfig?.crewDailyRatesCop ?? const {};
 
-    // Standard Colombian reference unit COP catalog for itemized BOQ fallback pricing
-    const standardUnitPricesCop = <String, double>{
-      'mat_floor_tiles': 78000,
-      'mat_adhesive_floor': 38000,
-      'mat_grout_floor': 16000,
-      'mat_skirting_tiles': 24000,
-      'mat_sanitary_combo': 620000,
-      'mat_vanity_sink': 780000,
-      'mat_faucet_sink': 210000,
-      'mat_plumbing_supplies': 95000,
-      'mat_shower_set': 340000,
-      'mat_waterproofing_shower': 48000,
-      'mat_wall_tiles_bath': 72000,
-      'mat_sink_kitchen': 490000,
-      'mat_faucet_kitchen': 290000,
-      'mat_backsplash_kitchen': 86000,
-      'mat_paint_walls': 145000,
-      'mat_stucco_walls': 42000,
-      'mat_led_panels': 36000,
-      'mat_led_strips': 95000,
-      'mat_electrical_cable': 260000,
-      'mat_drywall_ceiling_rh': 89000,
-      'mat_drywall_ceiling_std': 74000,
-      'mat_drywall_led_cove': 68000,
-    };
+    double crewRateFor(String roleKey) =>
+        crewRateOverrides[roleKey] ??
+        defaultCrewDailyRatesCop[roleKey] ??
+        160000.0;
 
     void addMaterial(MaterialItem item) {
-      final unitCop =
-          item.estimatedUnitCostCop ?? standardUnitPricesCop[item.id];
-      final totalCop = item.estimatedTotalCostCop ??
-          (unitCop != null ? (unitCop * item.quantity) : null);
+      final overrideCop = unitOverrides[item.id];
+      final unitCop = overrideCop ??
+          item.estimatedUnitCostCop ??
+          defaultUnitPricesCop[item.id];
+      final totalCop = overrideCop != null
+          ? (overrideCop * item.quantity)
+          : (item.estimatedTotalCostCop ??
+              (unitCop != null ? (unitCop * item.quantity) : null));
       materials.add(MaterialItem(
         id: item.id,
         name: item.name,
@@ -312,6 +341,119 @@ class RenovationPlannerEngine {
         packagingDetail: item.packagingDetail,
         estimatedUnitCostCop: unitCop,
         estimatedTotalCostCop: totalCop,
+        isCustom: item.isCustom,
+      ));
+    }
+
+    // 1.5 DEMOLICIÓN Y MAMPOSTERÍA DE MUROS NUEVOS (desde Floor.walls y recintos toDemolish)
+    final allWalls = walls ??
+        (floors != null
+            ? floors.expand((f) => f.walls).toList()
+            : const <Wall>[]);
+    final demolishWalls =
+        allWalls.where((w) => w.status == ElementStatus.toDemolish).toList();
+    final newWalls =
+        allWalls.where((w) => w.status == ElementStatus.isNew).toList();
+    final demolishRooms = allRooms
+        .where(
+          (m) =>
+              m.status == ElementStatus.toDemolish &&
+              !m.isOpening &&
+              !m.isStairs &&
+              !m.isOutdoorUnpaved,
+        )
+        .toList();
+
+    final demoWallM2 = ((demolishWalls.fold(
+                  0.0,
+                  (sum, w) => sum + (w.length * w.height),
+                )) *
+                100)
+            .round() /
+        100.0;
+    final demoFloorM2 =
+        ((demolishRooms.fold(0.0, (sum, m) => sum + m.area)) * 100).round() /
+            100.0;
+    final newWallM2 = ((newWalls.fold(
+                  0.0,
+                  (sum, w) => sum + (w.length * w.height),
+                )) *
+                100)
+            .round() /
+        100.0;
+
+    if (demoWallM2 > 0) {
+      addMaterial(MaterialItem(
+        id: 'mat_demolition_walls',
+        name: 'Demolición de Muros y Tabiques Existentes',
+        category: MaterialCategory.demolition,
+        quantity: demoWallM2,
+        unit: 'm²',
+        packagingDetail:
+            '${demolishWalls.length} muro(s) marcados para demoler',
+        yieldFormula:
+            'Suma de longitud × altura real de cada muro en estado Demoler (${demoWallM2.toStringAsFixed(2)} m²)',
+        purchaseTip:
+            'Verificar muros estructurales/portantes antes de iniciar demolición y apuntalar si aplica.',
+      ));
+    }
+
+    if (demoFloorM2 > 0) {
+      addMaterial(MaterialItem(
+        id: 'mat_demolition_floors',
+        name: 'Desmonte de Pisos / Enchapes en Zonas a Demoler',
+        category: MaterialCategory.demolition,
+        quantity: demoFloorM2,
+        unit: 'm²',
+        packagingDetail: '${demolishRooms.length} recinto(s) en demolición',
+        yieldFormula:
+            'Área neta de recintos marcados para demoler (${demoFloorM2.toStringAsFixed(2)} m²)',
+        targetRoomNames: demolishRooms.map((r) => r.name).toList(),
+      ));
+    }
+
+    if (demoWallM2 > 0 || demoFloorM2 > 0) {
+      final rawDebrisM3 = (demoWallM2 * 0.18) + (demoFloorM2 * 0.08);
+      final debrisM3 = math.max(1.0, (rawDebrisM3 * 2).ceil() / 2.0);
+      addMaterial(MaterialItem(
+        id: 'mat_debris_removal',
+        name: 'Retiro y Disposición Certificada de Escombros (RCD)',
+        category: MaterialCategory.demolition,
+        quantity: debrisM3,
+        unit: 'm³',
+        packagingDetail:
+            '${(debrisM3 / 5.0).ceil()} viaje(s) de volqueta / lonas de escombros',
+        yieldFormula:
+            'Factor de esponjamiento estimado: 0.18 m³/m² de muro + 0.08 m³/m² de piso demolido',
+        purchaseTip:
+            'En Bogotá solicitar certificado de disposición RCD en escombrera autorizada.',
+      ));
+    }
+
+    if (newWallM2 > 0) {
+      final plasterM2 = ((newWallM2 * 2.0) * 100).round() / 100.0;
+      addMaterial(MaterialItem(
+        id: 'mat_masonry_new_walls',
+        name: 'Mampostería en Bloque #4/#5 para Muros Nuevos',
+        category: MaterialCategory.masonry,
+        quantity: newWallM2,
+        unit: 'm²',
+        wastePercentage: 5.0,
+        packagingDetail:
+            '${newWalls.length} muro(s) nuevos • aprox. ${(newWallM2 * 13.5).ceil()} bloques + mortero de pega',
+        yieldFormula:
+            'Suma de longitud × altura real de muros en estado Nuevo (${newWallM2.toStringAsFixed(2)} m²)',
+      ));
+      addMaterial(MaterialItem(
+        id: 'mat_plaster_new_walls',
+        name: 'Pañete / Revoque Ambas Caras en Muros Nuevos',
+        category: MaterialCategory.masonry,
+        quantity: plasterM2,
+        unit: 'm²',
+        packagingDetail:
+            '${plasterM2.toStringAsFixed(2)} m² totales (2 caras de muro)',
+        yieldFormula:
+            '2 × área de muros nuevos (${newWallM2.toStringAsFixed(2)} m² × 2 caras) con mortero 1:4',
       ));
     }
 
@@ -762,6 +904,26 @@ class RenovationPlannerEngine {
       }
     }
 
+    // 6.5 PARTIDAS MANUALES PERSONALIZADAS DEL PROYECTO
+    if (budgetConfig != null && budgetConfig.customItems.isNotEmpty) {
+      for (final custom in budgetConfig.customItems) {
+        addMaterial(MaterialItem(
+          id: custom.id,
+          name: custom.name,
+          category: custom.category,
+          quantity: custom.quantity,
+          unit: custom.unit,
+          packagingDetail: custom.phaseName,
+          yieldFormula: (custom.notes != null && custom.notes!.trim().isNotEmpty)
+              ? custom.notes!.trim()
+              : 'Partida manual personalizada (${custom.phaseName})',
+          estimatedUnitCostCop: custom.unitCostCop,
+          estimatedTotalCostCop: custom.totalCostCop,
+          isCustom: true,
+        ));
+      }
+    }
+
     // 7. PLANIFICACIÓN DE CUADRILLAS (SECUENCIAL VS PARALELO)
     final bNum = candidateBathrooms.length;
     final kNum = kitchens.length;
@@ -770,6 +932,9 @@ class RenovationPlannerEngine {
     final effectiveKitchenCount = doKitchen ? kNum : 0;
     final fArea = doFloors ? floorArea : 0.0;
 
+    final masonryDaysTotal = newWallM2 > 0
+        ? math.max(1, (newWallM2 / 7.5).ceil())
+        : 0;
     final tilerDaysTotal = doFloors
         ? math.max(
             2,
@@ -791,15 +956,37 @@ class RenovationPlannerEngine {
         : 0;
     final electricianDaysTotal =
         doLighting ? math.max(1, (lightingArea / 25.0).ceil()) : 0;
-    final demolitionDaysTotal =
-        math.max(1, (fArea / 20.0).ceil() + effectiveBathCount);
+    final demolitionDaysTotal = math.max(
+      1,
+      (fArea / 20.0).ceil() +
+          effectiveBathCount +
+          (demoWallM2 > 0 ? (demoWallM2 / 12.0).ceil() : 0),
+    );
 
     final sequentialCrews = <SpecialistCrew>[
+      if (masonryDaysTotal > 0)
+        SpecialistCrew(
+          roleKey: 'crew_mason',
+          roleName: 'Oficial de Obra Negra / Mampostería',
+          headcount: 1,
+          estimatedDays: masonryDaysTotal,
+          dailyRateCop: crewRateFor('crew_mason'),
+          scopeDescription:
+              'Levantamiento de ${newWallM2.toStringAsFixed(1)} m² de muros nuevos, dovelas, pañete y filos.',
+          equipmentNeeded: [
+            'Palustre y llana de madera',
+            'Plomada y codal de aluminio',
+            'Mezcladora o batea de mortero',
+          ],
+          icon: Icons.view_quilt_outlined,
+        ),
       if (tilerDaysTotal > 0)
         SpecialistCrew(
+          roleKey: 'crew_tiler',
           roleName: 'Oficial Enchapador / Solador',
           headcount: 1,
           estimatedDays: tilerDaysTotal,
+          dailyRateCop: crewRateFor('crew_tiler'),
           scopeDescription:
               'Nivelación de piso, colocación de cerámica, fraguado de juntas y pegado de zócalos.',
           equipmentNeeded: [
@@ -812,9 +999,11 @@ class RenovationPlannerEngine {
         ),
       if (plumberDaysTotal > 0)
         SpecialistCrew(
+          roleKey: 'crew_plumber',
           roleName: 'Técnico Plomero / Fontanero',
           headcount: 1,
           estimatedDays: plumberDaysTotal,
+          dailyRateCop: crewRateFor('crew_plumber'),
           scopeDescription:
               'Adecuación de redes de agua fría/caliente, desagües, montaje de sanitarios y lavamanos ($effectiveBathCount baños, $effectiveFullBathCount con ducha).',
           equipmentNeeded: [
@@ -827,9 +1016,11 @@ class RenovationPlannerEngine {
         ),
       if (doLighting)
         SpecialistCrew(
+          roleKey: 'crew_electrician',
           roleName: 'Técnico Electricista / Iluminación LED',
           headcount: 1,
           estimatedDays: electricianDaysTotal,
+          dailyRateCop: crewRateFor('crew_electrician'),
           scopeDescription:
               'Trazado de circuitos, alambrado en tubería conduit, conexión de drivers y montaje de luminarias LED.',
           equipmentNeeded: [
@@ -842,9 +1033,11 @@ class RenovationPlannerEngine {
         ),
       if (hasPaintOrWallWork)
         SpecialistCrew(
+          roleKey: 'crew_painter',
           roleName: 'Oficial Pintor',
           headcount: 1,
           estimatedDays: painterDaysTotal,
+          dailyRateCop: crewRateFor('crew_painter'),
           scopeDescription:
               'Resane de grietas, aplicación de estuco plástico y acabado vertical en muros y techos.',
           equipmentNeeded: [
@@ -855,9 +1048,11 @@ class RenovationPlannerEngine {
           icon: Icons.brush,
         ),
       SpecialistCrew(
+        roleKey: 'crew_helper',
         roleName: 'Ayudante de Obra General',
         headcount: 1,
         estimatedDays: math.max(demolitionDaysTotal, (tilerDaysTotal * 0.8).ceil()),
+        dailyRateCop: crewRateFor('crew_helper'),
         scopeDescription:
             'Demolición, cargue y desalojo de escombros, preparación de mezclas y limpieza general continua.',
         equipmentNeeded: [
@@ -883,11 +1078,27 @@ class RenovationPlannerEngine {
     const parallelAyudantes = 2;
 
     final parallelCrews = <SpecialistCrew>[
+      if (masonryDaysTotal > 0)
+        SpecialistCrew(
+          roleKey: 'crew_mason',
+          roleName: 'Oficiales de Obra Negra / Mampostería',
+          headcount: masonryDaysTotal >= 4 ? 2 : 1,
+          estimatedDays: masonryDaysTotal >= 4
+              ? math.max(1, (masonryDaysTotal / 2).ceil())
+              : masonryDaysTotal,
+          dailyRateCop: crewRateFor('crew_mason'),
+          scopeDescription:
+              'Ejecución acelerada de ${newWallM2.toStringAsFixed(1)} m² de muros nuevos y pañete.',
+          equipmentNeeded: ['Codales, niveles láser y mezcladora'],
+          icon: Icons.view_quilt_outlined,
+        ),
       if (tilerDaysTotal > 0)
         SpecialistCrew(
+          roleKey: 'crew_tiler',
           roleName: 'Oficiales Enchapadores (Frente Dividido)',
           headcount: parallelTilerCount,
           estimatedDays: parallelTilerDays,
+          dailyRateCop: crewRateFor('crew_tiler'),
           scopeDescription:
               '$parallelTilerCount enchapadores en simultáneo (uno en baños y otro avanzando en pisos de zonas sociales y dormitorios).',
           equipmentNeeded: [
@@ -898,9 +1109,11 @@ class RenovationPlannerEngine {
         ),
       if (plumberDaysTotal > 0)
         SpecialistCrew(
+          roleKey: 'crew_plumber',
           roleName: 'Técnicos Plomeros en Paralelo',
           headcount: parallelPlumberCount,
           estimatedDays: parallelPlumberDays,
+          dailyRateCop: crewRateFor('crew_plumber'),
           scopeDescription:
               '$parallelPlumberCount plomeros interviniendo puntos húmedos a la vez para acortar tiempos de corte de agua.',
           equipmentNeeded: ['Herramientas dobles de fontanería'],
@@ -908,25 +1121,31 @@ class RenovationPlannerEngine {
         ),
       if (doLighting)
         SpecialistCrew(
+          roleKey: 'crew_electrician',
           roleName: 'Técnico Electricista (Frente Ágil)',
           headcount: 1,
           estimatedDays: electricianDaysTotal,
+          dailyRateCop: crewRateFor('crew_electrician'),
           scopeDescription:
               'Acompaña la obra canalizando ductos antes del estuco e instalando lámparas al finalizar.',
           icon: Icons.lightbulb,
         ),
       if (hasPaintOrWallWork)
         SpecialistCrew(
+          roleKey: 'crew_painter',
           roleName: 'Oficiales Pintores (2 operarios)',
           headcount: 2,
           estimatedDays: math.max(1, (painterDaysTotal / 2).ceil()),
+          dailyRateCop: crewRateFor('crew_painter'),
           scopeDescription: '2 pintores estucando y aplicando rodillo a la par.',
           icon: Icons.brush,
         ),
       SpecialistCrew(
+        roleKey: 'crew_helper',
         roleName: 'Ayudantes de Obra (2 operarios)',
         headcount: parallelAyudantes,
         estimatedDays: math.max(1, parallelTilerDays),
+        dailyRateCop: crewRateFor('crew_helper'),
         scopeDescription:
             'Evitan que los oficiales paren por falta de mezcla o acumulación de escombros.',
         icon: Icons.handyman,
@@ -1045,17 +1264,20 @@ class RenovationPlannerEngine {
       totalSequentialDays: totalSeq,
       totalParallelDays: totalPar,
       selectedRoomNames: selectedRoomNames,
+      expenses: budgetConfig?.expenses ?? const [],
     );
   }
 
   /// Exports a structured RFC-4180 `.csv` spreadsheet containing the room finish
-  /// schedule, itemized BOQ material takeoff, and specialist crew timeline for Excel / Google Sheets.
+  /// schedule, itemized BOQ material takeoff, labor budget, actual expenses,
+  /// and specialist crew timeline for Excel / Google Sheets.
   static String exportPlanToCsv({
     required RenovationPlanResult plan,
     required List<Module> rooms,
     Set<String>? includedRoomIds,
     String projectName = 'Proyecto Trazzik',
     String lang = 'es',
+    bool parallelMode = true,
   }) {
     final isEn = lang == 'en';
     final sb = StringBuffer();
@@ -1066,10 +1288,22 @@ class RenovationPlannerEngine {
       return v;
     }
 
+    final laborTotal = parallelMode
+        ? plan.totalParallelLaborCostCop
+        : plan.totalSequentialLaborCostCop;
+    final budgetTotal = plan.totalBudgetCop(parallelMode: parallelMode);
+    final remaining = plan.remainingBalanceCop(parallelMode: parallelMode);
+
     sb.writeln('${isEn ? 'PROJECT' : 'PROYECTO'},${esc(projectName)}');
     sb.writeln('${isEn ? 'INTERVENED AREA M2' : 'AREA INTERVENIDA M2'},${plan.totalRenovatedArea.toStringAsFixed(2)}');
     sb.writeln('${isEn ? 'PARALLEL DAYS' : 'DIAS PARALELO'},${plan.totalParallelDays}');
     sb.writeln('${isEn ? 'SEQUENTIAL DAYS' : 'DIAS SECUENCIAL'},${plan.totalSequentialDays}');
+    sb.writeln('${isEn ? 'MATERIALS BUDGET COP' : 'PRESUPUESTO MATERIALES COP'},${plan.totalMaterialsCostCop.toStringAsFixed(0)}');
+    sb.writeln('${isEn ? 'LABOR BUDGET COP' : 'PRESUPUESTO MANO DE OBRA COP'},${laborTotal.toStringAsFixed(0)}');
+    sb.writeln('${isEn ? 'TOTAL BUDGET COP' : 'PRESUPUESTO TOTAL COP'},${budgetTotal.toStringAsFixed(0)}');
+    sb.writeln('${isEn ? 'EXECUTED (PAID) COP' : 'EJECUTADO (PAGADO) COP'},${plan.totalExecutedCop.toStringAsFixed(0)}');
+    sb.writeln('${isEn ? 'IN PROGRESS COP' : 'EN PROCESO COP'},${plan.totalInProgressCop.toStringAsFixed(0)}');
+    sb.writeln('${isEn ? 'REMAINING BALANCE COP' : 'SALDO RESTANTE COP'},${remaining.toStringAsFixed(0)}');
     sb.writeln('');
 
     // 1. Room-by-Room Area & Finish Schedule
@@ -1112,7 +1346,20 @@ class RenovationPlannerEngine {
     }
     sb.writeln('');
 
-    // 3. Specialist Crews & Execution Phases
+    // 3. Specialist Crews (Labor Cost COP)
+    final activeCrews = parallelMode ? plan.parallelCrews : plan.sequentialCrews;
+    sb.writeln(isEn ? 'LABOR AND CREWS (COP)' : 'MANO DE OBRA Y CUADRILLAS (COP)');
+    sb.writeln(isEn
+        ? 'ROLE,WORKERS,DAYS,DAILY_RATE_COP,TOTAL_COP'
+        : 'ROL,OPERARIOS,DIAS,TARIFA_DIA_COP,TOTAL_COP');
+    for (final c in activeCrews) {
+      sb.writeln(
+        '${esc(c.roleName)},${c.headcount},${c.estimatedDays},${c.dailyRateCop.toStringAsFixed(0)},${c.totalLaborCostCop.toStringAsFixed(0)}',
+      );
+    }
+    sb.writeln('');
+
+    // 4. Execution Phases
     sb.writeln(isEn ? 'SCHEDULE AND CRITICAL PATH' : 'CRONOGRAMA Y RUTA CRITICA');
     sb.writeln(isEn
         ? 'PHASE,TITLE,PARALLEL_DAYS,SEQUENTIAL_DAYS,SPECIALISTS'
@@ -1121,6 +1368,23 @@ class RenovationPlannerEngine {
       sb.writeln(
         '${p.phaseNumber},${esc(p.title)},${p.estimatedDaysParallel},${p.estimatedDaysSequential},${esc(p.specialists.join(' + '))}',
       );
+    }
+
+    // 5. Actual Expenses Tracking
+    if (plan.expenses.isNotEmpty) {
+      sb.writeln('');
+      sb.writeln(isEn
+          ? 'ACTUAL EXPENSES TRACKING (BUDGET VS EXECUTED)'
+          : 'GASTOS REALES EJECUTADOS (PRESUPUESTO VS REAL)');
+      sb.writeln(isEn
+          ? 'DATE,ITEM,PHASE,VENDOR_OR_NOTE,STATUS,AMOUNT_COP'
+          : 'FECHA,PARTIDA,FASE,PROVEEDOR_NOTA,ESTADO,MONTO_COP');
+      for (final e in plan.expenses) {
+        final dateStr = e.date.toIso8601String().split('T').first;
+        sb.writeln(
+          '$dateStr,${esc(e.linkedLabel)},${esc(e.phaseName)},${esc(e.vendorOrNote)},${esc(e.status.label(lang))},${e.amountCop.toStringAsFixed(0)}',
+        );
+      }
     }
 
     return sb.toString();

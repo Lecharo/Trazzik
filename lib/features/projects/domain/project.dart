@@ -1,3 +1,4 @@
+import 'package:trazzik/features/ai_advisor/domain/renovation_budget_config.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
 
 enum ProjectRole { owner, editor, viewer }
@@ -42,6 +43,7 @@ class Project {
   final String? imageUrl;
   final Lot? lot;
   final List<ProjectMember> members;
+  final RenovationBudgetConfig? renovationBudgetConfig;
   final DateTime createdAt;
   final DateTime updatedAt;
 
@@ -57,6 +59,7 @@ class Project {
     this.imageUrl,
     this.lot,
     this.members = const [],
+    this.renovationBudgetConfig,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : createdAt = createdAt ?? DateTime.now(),
@@ -72,6 +75,7 @@ class Project {
     String? imageUrl,
     Lot? lot,
     List<ProjectMember>? members,
+    RenovationBudgetConfig? renovationBudgetConfig,
   }) {
     return Project(
       id: id,
@@ -85,6 +89,8 @@ class Project {
       imageUrl: imageUrl ?? this.imageUrl,
       lot: lot ?? this.lot,
       members: members ?? this.members,
+      renovationBudgetConfig:
+          renovationBudgetConfig ?? this.renovationBudgetConfig,
       createdAt: createdAt,
       updatedAt: DateTime.now(),
     );
@@ -100,24 +106,34 @@ class Project {
         'city': city,
         'address': address,
         'image_url': imageUrl,
+        if (renovationBudgetConfig != null && !renovationBudgetConfig!.isEmpty)
+          'renovation_budget_config': renovationBudgetConfig!.toJson(),
         'created_at': createdAt.toIso8601String(),
         'updated_at': updatedAt.toIso8601String(),
       };
 
-  factory Project.fromJson(Map<String, dynamic> json, {Lot? lot}) => Project(
-        id: json['id']?.toString() ?? '',
-        name: json['name']?.toString() ?? 'Proyecto',
-        description: json['description'] as String?,
-        ownerId: json['owner_id']?.toString() ?? '',
-        country: json['country'] as String?,
-        stateProvince: json['state_province'] as String?,
-        city: json['city'] as String?,
-        address: json['address'] as String?,
-        imageUrl: json['image_url'] as String?,
-        lot: lot,
-        createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
-            DateTime.now(),
-        updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
-            DateTime.now(),
-      );
+  factory Project.fromJson(Map<String, dynamic> json, {Lot? lot}) {
+    final rawBudget = json['renovation_budget_config'];
+    return Project(
+      id: json['id']?.toString() ?? '',
+      name: json['name']?.toString() ?? 'Proyecto',
+      description: json['description'] as String?,
+      ownerId: json['owner_id']?.toString() ?? '',
+      country: json['country'] as String?,
+      stateProvince: json['state_province'] as String?,
+      city: json['city'] as String?,
+      address: json['address'] as String?,
+      imageUrl: json['image_url'] as String?,
+      lot: lot,
+      renovationBudgetConfig: rawBudget is Map
+          ? RenovationBudgetConfig.fromJson(
+              Map<String, dynamic>.from(rawBudget),
+            )
+          : null,
+      createdAt: DateTime.tryParse(json['created_at']?.toString() ?? '') ??
+          DateTime.now(),
+      updatedAt: DateTime.tryParse(json['updated_at']?.toString() ?? '') ??
+          DateTime.now(),
+    );
+  }
 }
