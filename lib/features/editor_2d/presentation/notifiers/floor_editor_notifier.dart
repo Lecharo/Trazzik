@@ -1295,6 +1295,118 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     updateWall(wall.copyWith(thickness: thickness));
   }
 
+  void setWallStatus(String wallId, ElementStatus status) {
+    final wall = state.floor.walls.where((w) => w.id == wallId).firstOrNull;
+    if (wall == null) return;
+    updateWall(wall.copyWith(status: status));
+  }
+
+  /// Splits an existing wall into two collinear segments at [fraction] (default midpoint 0.5)
+  /// so remodeling demolition or new partition openings can target part of a wall.
+  void splitWall(String wallId, {double fraction = 0.5}) {
+    final idx = state.floor.walls.indexWhere((w) => w.id == wallId);
+    if (idx < 0) return;
+    final wall = state.floor.walls[idx];
+    if (wall.length < 0.40) return;
+
+    final t = fraction.clamp(0.15, 0.85).toDouble();
+    final mid = Point2D(
+      _roundMillimeter(
+        wall.startPoint.x + (wall.endPoint.x - wall.startPoint.x) * t,
+      ),
+      _roundMillimeter(
+        wall.startPoint.y + (wall.endPoint.y - wall.startPoint.y) * t,
+      ),
+    );
+    const uuid = Uuid();
+    final firstHalf = Wall(
+      id: uuid.v4(),
+      floorId: wall.floorId,
+      startPoint: wall.startPoint,
+      endPoint: mid,
+      thickness: wall.thickness,
+      height: wall.height,
+      status: wall.status,
+    );
+    final secondHalf = Wall(
+      id: uuid.v4(),
+      floorId: wall.floorId,
+      startPoint: mid,
+      endPoint: wall.endPoint,
+      thickness: wall.thickness,
+      height: wall.height,
+      status: wall.status,
+    );
+
+    final updatedWalls = List<Wall>.from(state.floor.walls);
+    updatedWalls.replaceRange(idx, idx + 1, [firstHalf, secondHalf]);
+    _applyFloorChange(state.floor.copyWith(walls: updatedWalls));
+    state = state.copyWith(
+      selectedWallId: firstHalf.id,
+      clearSelection: true,
+      clearSubModuleSelection: true,
+    );
+  }
+
+  /// Adds a manual wall segment on the active floor inheriting [Floor.heightMeters].
+  Wall? addManualWall(
+    Point2D start,
+    Point2D end, {
+    double thickness = 0.12,
+    ElementStatus status = ElementStatus.isNew,
+  }) {
+    final len = start.distanceTo(end);
+    if (len < 0.15) return null;
+    const uuid = Uuid();
+    final created = Wall(
+      id: uuid.v4(),
+      floorId: state.floor.id,
+      startPoint: Point2D(_roundMillimeter(start.x), _roundMillimeter(start.y)),
+      endPoint: Point2D(_roundMillimeter(end.x), _roundMillimeter(end.y)),
+      thickness: thickness,
+      height: state.floor.heightMeters,
+      status: status,
+    );
+    final updatedWalls = [...state.floor.walls, created];
+    _applyFloorChange(state.floor.copyWith(walls: updatedWalls));
+    state = state.copyWith(
+      selectedWallId: created.id,
+      clearSelection: true,
+      clearSubModuleSelection: true,
+    );
+    return created;
+  }
+
+  void toggleDrawWallMode() {
+    final next = !state.isDrawWallMode;
+    state = state.copyWith(
+      isDrawWallMode: next,
+      isLaserMeasureActive: next ? false : state.isLaserMeasureActive,
+      clearLaserMeasure: next,
+      clearDraftWall: true,
+    );
+  }
+
+  void setDraftWallPoints(Point2D? start, Point2D? end) {
+    state = state.copyWith(
+      draftWallStart: start,
+      draftWallEnd: end,
+      clearDraftWall: start == null && end == null,
+    );
+  }
+
+  void commitDraftWall({
+    double thickness = 0.12,
+    ElementStatus status = ElementStatus.isNew,
+  }) {
+    final start = state.draftWallStart;
+    final end = state.draftWallEnd;
+    if (start != null && end != null && start.distanceTo(end) >= 0.15) {
+      addManualWall(start, end, thickness: thickness, status: status);
+    }
+    state = state.copyWith(clearDraftWall: true);
+  }
+
   void setModuleStatus(String moduleId, ElementStatus status) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
     if (mod == null || mod.isLocked) return;

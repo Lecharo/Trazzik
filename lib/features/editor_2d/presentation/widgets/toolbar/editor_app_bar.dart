@@ -940,6 +940,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
             : '2D Laser Measure & Clearance',
       ),
       _menuItem(
+        'draw_wall',
+        Icons.edit_road_outlined,
+        lang == 'es'
+            ? 'Dibujar Muro Manual (Arrastrar 2D)'
+            : 'Draw Manual Wall (Drag 2D)',
+      ),
+      _menuItem(
         'multi_story',
         Icons.cottage_outlined,
         lang == 'es' ? 'Programa Vivienda 2 Pisos' : '2-Story Brief Wizard',
@@ -1090,6 +1097,13 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
             : '2D Laser Measure & Clearance',
       ),
       _menuItem(
+        'draw_wall',
+        Icons.edit_road_outlined,
+        lang == 'es'
+            ? 'Dibujar Muro Manual (Arrastrar 2D)'
+            : 'Draw Manual Wall (Drag 2D)',
+      ),
+      _menuItem(
         'multi_story',
         Icons.cottage_outlined,
         lang == 'es' ? 'Programa Vivienda 2 Pisos' : '2-Story Brief Wizard',
@@ -1236,6 +1250,20 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
               : (lang == 'es'
                   ? 'Regla Láser 2D desactivada.'
                   : '2D Laser Measure disabled.'),
+        );
+        break;
+      case 'draw_wall':
+        notifier.toggleDrawWallMode();
+        final drawing = ref.read(floorEditorProvider).isDrawWallMode;
+        _showOrientationSnackBar(
+          context,
+          drawing
+              ? (lang == 'es'
+                  ? 'Modo Muro Manual activo: arrastra en el plano 2D para trazar un muro nuevo.'
+                  : 'Manual Wall mode active: drag on the 2D canvas to draw a new wall.')
+              : (lang == 'es'
+                  ? 'Modo Muro Manual desactivado.'
+                  : 'Manual Wall mode disabled.'),
         );
         break;
       case 'multi_story':

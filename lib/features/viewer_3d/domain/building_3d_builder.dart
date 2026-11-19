@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/bounding_box_2d.dart';
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
@@ -19,9 +20,10 @@ class Building3DBuilder {
     double explodedFactor = 0.0, // 0.0 (unido) a 1.0 (máxima separación)
     String? soloFloorId,
     bool showLotGround = true,
-    double wallHeight = 1.20, // Altura de corte tipo maqueta arquitectónica (1.20m por defecto, o 2.60m completo)
+    double wallHeight = 1.20, // Altura de corte tipo maqueta arquitectónica (1.20m por defecto, o altura real de piso)
     bool includeShadows = true,
     SunPreset3D sunPreset = SunPreset3D.studioNoon,
+    RemodelViewMode3D viewMode = RemodelViewMode3D.all,
   }) {
     final faces = <Face3D>[];
 
@@ -56,8 +58,11 @@ class Building3DBuilder {
       // 2. Losa estructural de entrepiso (0.18m de espesor)
       _buildSlab(faces, floor, elevationZ, floorIndex: i);
 
-      // 3. Pavimentos, carpinterías, escaleras y mobiliario por recinto
-      for (final mod in floor.modules) {
+      // 3. Pavimentos, carpinterías, escaleras y mobiliario por recinto (filtrados por modo Antes / Después)
+      final visibleModules = floor.modules
+          .where((m) => viewMode.includesStatus(m.status))
+          .toList();
+      for (final mod in visibleModules) {
         if (mod.isOpening) {
           _buildOpening3D(
             faces,
@@ -75,7 +80,13 @@ class Building3DBuilder {
             floorIndex: i,
           );
         } else {
-          _buildRoomFloor(faces, mod, elevationZ, floorIndex: i);
+          _buildRoomFloor(
+            faces,
+            mod,
+            elevationZ,
+            floorIndex: i,
+            viewMode: viewMode,
+          );
         }
 
         // 3.1 Mobiliario y artefactos interiores extruidos en 3D
@@ -106,7 +117,7 @@ class Building3DBuilder {
 
       // 3.2 Garajes semicubiertos / pérgolas
       for (final garage
-          in floor.modules.where(WallGenerationEngine.isPergolaCarport)) {
+          in visibleModules.where(WallGenerationEngine.isPergolaCarport)) {
         _buildPergolaCarport3D(
           faces,
           garage,
@@ -120,10 +131,14 @@ class Building3DBuilder {
       final hasExplicitWalls = floor.walls.isNotEmpty;
       final effectiveWalls = hasExplicitWalls
           ? floor.walls
-          : WallGenerationEngine.generateWallsForFloor(floor);
+              .where((w) => viewMode.includesStatus(w.status))
+              .toList()
+          : WallGenerationEngine.generateWallsForFloor(
+              floor.copyWith(modules: visibleModules),
+            );
       final wallLabel = hasExplicitWalls ? 'Muro' : 'Muro Exterior';
       final roomModules =
-          floor.modules.where((m) => !m.isOpening && !m.isStairs).toList();
+          visibleModules.where((m) => !m.isOpening && !m.isStairs).toList();
       for (final wall in effectiveWalls) {
         final effectiveWallH = math.min(wall.height, wallHeight);
         if (includeShadows) {
@@ -145,6 +160,7 @@ class Building3DBuilder {
           label: wallLabel,
           roomModules: roomModules,
           floorIndex: i,
+          viewMode: viewMode,
         );
       }
     }
@@ -219,14 +235,23 @@ class Building3DBuilder {
     Module mod,
     double elevationZ, {
     required int floorIndex,
+    RemodelViewMode3D viewMode = RemodelViewMode3D.all,
   }) {
     final verts = _ensureCounterClockwiseXY(mod.geometry.vertices);
     if (verts.length < 3) return;
 
     final finish = FinishMaterialCatalog.resolveFloorForModule(mod);
-    final floorColor = mod.floorMaterialId != null
+    Color floorColor = mod.floorMaterialId != null
         ? finish.baseColor.withValues(alpha: 0.92)
         : _getColorForModuleType(mod.moduleType);
+
+    if (viewMode == RemodelViewMode3D.comparison) {
+      if (mod.status == ElementStatus.toDemolish) {
+        floorColor = const Color(0x88EF5350);
+      } else if (mod.status == ElementStatus.isNew) {
+        floorColor = const Color(0xAA10B981);
+      }
+    }
 
     final bb = mod.geometry.boundingBox;
     final dimSubLabel = (bb.width >= 1.1 && bb.height >= 1.1)
@@ -358,6 +383,7 @@ class Building3DBuilder {
     double thickness = 0.15,
     Color wallColor = const Color(0xFFECEFF1), // Blanco marfil técnico
     Color topCapColor = const Color(0xFFCFD8DC),
+    bool forceOverrideColor = false,
     String? label,
     List<Module> roomModules = const [],
     int floorIndex = 0,
@@ -389,10 +415,10 @@ class Building3DBuilder {
           )
         : null;
 
-    final finishA = roomSideA != null
+    final finishA = (!forceOverrideColor && roomSideA != null)
         ? FinishMaterialCatalog.resolveWallForModule(roomSideA)
         : null;
-    final finishB = roomSideB != null
+    final finishB = (!forceOverrideColor && roomSideB != null)
         ? FinishMaterialCatalog.resolveWallForModule(roomSideB)
         : null;
 
@@ -485,10 +511,26 @@ class Building3DBuilder {
     String label = 'Muro',
     List<Module> roomModules = const [],
     int floorIndex = 0,
+    RemodelViewMode3D viewMode = RemodelViewMode3D.all,
   }) {
     final len = wall.startPoint.distanceTo(wall.endPoint);
     if (len < 0.08) return;
     final h = overrideHeight ?? wall.height;
+
+    Color resolvedWallColor = const Color(0xFFECEFF1);
+    Color resolvedTopCapColor = const Color(0xFFCFD8DC);
+    bool forceOverrideColor = false;
+    if (viewMode == RemodelViewMode3D.comparison) {
+      if (wall.status == ElementStatus.toDemolish) {
+        resolvedWallColor = const Color(0x99EF5350);
+        resolvedTopCapColor = const Color(0xCCD32F2F);
+        forceOverrideColor = true;
+      } else if (wall.status == ElementStatus.isNew) {
+        resolvedWallColor = const Color(0xFF10B981);
+        resolvedTopCapColor = const Color(0xFF059669);
+        forceOverrideColor = true;
+      }
+    }
 
     if (roomModules.length <= 1 || len <= 0.40) {
       _buildWallSegment3D(
@@ -498,6 +540,9 @@ class Building3DBuilder {
         elevationZ: elevationZ,
         height: h,
         thickness: wall.thickness,
+        wallColor: resolvedWallColor,
+        topCapColor: resolvedTopCapColor,
+        forceOverrideColor: forceOverrideColor,
         label: label,
         roomModules: roomModules,
         floorIndex: floorIndex,
@@ -591,6 +636,9 @@ class Building3DBuilder {
         elevationZ: elevationZ,
         height: h,
         thickness: wall.thickness,
+        wallColor: resolvedWallColor,
+        topCapColor: resolvedTopCapColor,
+        forceOverrideColor: forceOverrideColor,
         label: i == 0 ? label : null,
         roomModules: roomModules,
         floorIndex: floorIndex,

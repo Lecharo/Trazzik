@@ -147,6 +147,12 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
         final clickPoint = Point2D(metersX, metersY);
 
+        if (editorState.isDrawWallMode) {
+          final snapped = notifier.snapToNearestVertexOrGrid(clickPoint);
+          notifier.setDraftWallPoints(snapped, snapped);
+          return;
+        }
+
         if (editorState.isLaserMeasureActive) {
           final snapped = notifier.snapToNearestVertexOrGrid(clickPoint);
           notifier.setLaserMeasurePoints(snapped, snapped);
@@ -212,6 +218,21 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         }
       },
       onPanUpdate: (details) {
+        if (editorState.isDrawWallMode) {
+          final localPos = details.localPosition;
+          final curMetersX =
+              (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
+          final curMetersY =
+              (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
+          final snappedEnd = notifier.snapToNearestVertexOrGrid(
+            Point2D(curMetersX, curMetersY),
+            snapRadiusMeters: (12.0 / editorState.zoom).clamp(0.12, 0.45),
+          );
+          final startPt = editorState.draftWallStart ?? snappedEnd;
+          notifier.setDraftWallPoints(startPt, snappedEnd);
+          return;
+        }
+
         if (editorState.isLaserMeasureActive) {
           final localPos = details.localPosition;
           final curMetersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
@@ -256,13 +277,39 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           notifier.updatePan(details.delta);
         }
       },
-      onPanEnd: (_) => _finishDragGesture(notifier),
-      onPanCancel: () => _finishDragGesture(notifier),
+      onPanEnd: (_) {
+        if (editorState.isDrawWallMode) {
+          notifier.commitDraftWall();
+          return;
+        }
+        _finishDragGesture(notifier);
+      },
+      onPanCancel: () {
+        if (editorState.isDrawWallMode) {
+          notifier.setDraftWallPoints(null, null);
+          return;
+        }
+        _finishDragGesture(notifier);
+      },
       onTapUp: (details) {
         final localPos = details.localPosition;
         final metersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
         final clickPoint = Point2D(metersX, metersY);
+
+        if (editorState.isDrawWallMode) {
+          final snapped = notifier.snapToNearestVertexOrGrid(
+            clickPoint,
+            snapRadiusMeters: (12.0 / editorState.zoom).clamp(0.12, 0.45),
+          );
+          if (editorState.draftWallStart == null) {
+            notifier.setDraftWallPoints(snapped, snapped);
+          } else {
+            notifier.setDraftWallPoints(editorState.draftWallStart, snapped);
+            notifier.commitDraftWall();
+          }
+          return;
+        }
 
         if (editorState.isLaserMeasureActive) {
           final snapped = notifier.snapToNearestVertexOrGrid(

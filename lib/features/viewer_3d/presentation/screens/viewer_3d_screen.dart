@@ -51,6 +51,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   SunPreset3D _sunPreset = SunPreset3D.studioNoon;
   SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
   double _sectionCutRatio = 0.65;
+  RemodelViewMode3D _remodelViewMode = RemodelViewMode3D.after;
   BoxConstraints? _lastConstraints;
   String? _selectedModuleId;
   String? _selectedModuleFloorId;
@@ -75,6 +76,55 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   String? _cachedSelectedFloorId;
   double? _cachedWallHeight;
   SunPreset3D? _cachedSunPreset;
+  RemodelViewMode3D? _cachedRemodelViewMode;
+
+  Widget _buildRemodelModeButton({
+    required RemodelViewMode3D mode,
+    required Key buttonKey,
+    required IconData icon,
+    required Color activeColor,
+    required String lang,
+  }) {
+    final isSelected = _remodelViewMode == mode;
+    return InkWell(
+      key: buttonKey,
+      borderRadius: BorderRadius.circular(7),
+      onTap: () => setState(() => _remodelViewMode = mode),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+        decoration: BoxDecoration(
+          color: isSelected
+              ? activeColor.withValues(alpha: 0.22)
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(7),
+          border: Border.all(
+            color: isSelected
+                ? activeColor.withValues(alpha: 0.7)
+                : Colors.transparent,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              icon,
+              size: 13,
+              color: isSelected ? activeColor : Colors.white60,
+            ),
+            const SizedBox(width: 4),
+            Text(
+              mode.shortLabel(lang),
+              style: TextStyle(
+                color: isSelected ? Colors.white : Colors.white70,
+                fontSize: 10.5,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   double _resolveWallHeight(List<Floor> floors) {
     if (!_isFullWallHeight) return 1.20;
@@ -110,7 +160,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         identical(_cachedLot, lot) &&
         _cachedSelectedFloorId == _selectedFloorId &&
         _cachedWallHeight == effectiveWallHeight &&
-        _cachedSunPreset == _sunPreset;
+        _cachedSunPreset == _sunPreset &&
+        _cachedRemodelViewMode == _remodelViewMode;
     if (canReuse) {
       return _cachedFaces!;
     }
@@ -123,6 +174,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       showLotGround: true,
       wallHeight: effectiveWallHeight,
       sunPreset: _sunPreset,
+      viewMode: _remodelViewMode,
     );
     _cachedFaces = built;
     _cachedFloors = List<Floor>.unmodifiable(floors);
@@ -130,6 +182,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     _cachedSelectedFloorId = _selectedFloorId;
     _cachedWallHeight = effectiveWallHeight;
     _cachedSunPreset = _sunPreset;
+    _cachedRemodelViewMode = _remodelViewMode;
     return built;
   }
 
@@ -829,6 +882,117 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   onPanChanged: (np) => _panOffset = np,
                 ),
               ),
+
+          // 1.5. Selector flotante en vivo: Antes / Después / Comparativo Obra
+          Positioned(
+            top: 12,
+            left: 12,
+            right: 12,
+            child: IgnorePointer(
+              ignoring: false,
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.90),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(
+                          color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+                        ),
+                      ),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildRemodelModeButton(
+                              mode: RemodelViewMode3D.before,
+                              buttonKey: const Key('remodel_mode_before'),
+                              icon: Icons.history,
+                              activeColor: const Color(0xFFF59E0B),
+                              lang: lang,
+                            ),
+                            _buildRemodelModeButton(
+                              mode: RemodelViewMode3D.after,
+                              buttonKey: const Key('remodel_mode_after'),
+                              icon: Icons.auto_awesome,
+                              activeColor: const Color(0xFF00E5FF),
+                              lang: lang,
+                            ),
+                            _buildRemodelModeButton(
+                              mode: RemodelViewMode3D.comparison,
+                              buttonKey: const Key('remodel_mode_comparison'),
+                              icon: Icons.compare_arrows,
+                              activeColor: const Color(0xFF10B981),
+                              lang: lang,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    if (_remodelViewMode == RemodelViewMode3D.comparison) ...[
+                      const SizedBox(height: 5),
+                      Container(
+                        key: const Key('remodel_comparison_legend'),
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.white12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: const Color(0xCCEF5350),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              lang == 'es' ? 'Demoler' : 'Demolish',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+                            Container(
+                              width: 9,
+                              height: 9,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF10B981),
+                                borderRadius: BorderRadius.circular(2),
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Text(
+                              lang == 'es' ? 'Obra Nueva' : 'New Build',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ),
 
           // 2. Control flotante: Despiece Vertical / Maqueta Explotada (se oculta mientras se edita un recinto en móvil)
           if (_selectedFloorId == null && floors.length > 1 && (!isMobile || _selectedModuleId == null))

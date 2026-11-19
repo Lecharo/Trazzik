@@ -75,6 +75,9 @@ class FloorEditorState {
   final bool isLaserMeasureActive;
   final Point2D? laserStart;
   final Point2D? laserEnd;
+  final bool isDrawWallMode;
+  final Point2D? draftWallStart;
+  final Point2D? draftWallEnd;
   final BlueprintUnderlayConfig blueprintUnderlay;
   final Map<String, BlueprintUnderlayConfig> blueprintUnderlaysByFloor;
 
@@ -101,6 +104,9 @@ class FloorEditorState {
     this.isLaserMeasureActive = false,
     this.laserStart,
     this.laserEnd,
+    this.isDrawWallMode = false,
+    this.draftWallStart,
+    this.draftWallEnd,
     this.blueprintUnderlay = const BlueprintUnderlayConfig(),
     this.blueprintUnderlaysByFloor = const {},
   });
@@ -166,6 +172,10 @@ class FloorEditorState {
     Point2D? laserStart,
     Point2D? laserEnd,
     bool clearLaserMeasure = false,
+    bool? isDrawWallMode,
+    Point2D? draftWallStart,
+    Point2D? draftWallEnd,
+    bool clearDraftWall = false,
     BlueprintUnderlayConfig? blueprintUnderlay,
     Map<String, BlueprintUnderlayConfig>? blueprintUnderlaysByFloor,
   }) {
@@ -192,6 +202,9 @@ class FloorEditorState {
       isLaserMeasureActive: isLaserMeasureActive ?? this.isLaserMeasureActive,
       laserStart: clearLaserMeasure ? null : (laserStart ?? this.laserStart),
       laserEnd: clearLaserMeasure ? null : (laserEnd ?? this.laserEnd),
+      isDrawWallMode: isDrawWallMode ?? this.isDrawWallMode,
+      draftWallStart: clearDraftWall ? null : (draftWallStart ?? this.draftWallStart),
+      draftWallEnd: clearDraftWall ? null : (draftWallEnd ?? this.draftWallEnd),
       blueprintUnderlay: blueprintUnderlay ?? this.blueprintUnderlay,
       blueprintUnderlaysByFloor:
           blueprintUnderlaysByFloor ?? this.blueprintUnderlaysByFloor,

@@ -122,6 +122,13 @@ class Canvas2DPainter extends CustomPainter {
       _drawLaserMeasureOverlay(canvas, zoom);
     }
 
+    // 7.6. Vista previa de muro manual en trazado 2D
+    if (state.isDrawWallMode &&
+        state.draftWallStart != null &&
+        state.draftWallEnd != null) {
+      _drawDraftWallOverlay(canvas, zoom);
+    }
+
     canvas.restore();
 
     // 8. Brújula / Indicador de Orientación Norte
@@ -1565,6 +1572,42 @@ class Canvas2DPainter extends CustomPainter {
     );
   }
 
+  void _drawDraftWallOverlay(Canvas canvas, double zoom) {
+    final p1 = state.draftWallStart!;
+    final p2 = state.draftWallEnd!;
+    final o1 = Offset(p1.x * zoom, p1.y * zoom);
+    final o2 = Offset(p2.x * zoom, p2.y * zoom);
+    final len = p1.distanceTo(p2);
+
+    final wallPaint = Paint()
+      ..color = const Color(0xFF10B981)
+      ..strokeWidth = math.max(4.0, 0.12 * zoom)
+      ..strokeCap = StrokeCap.round
+      ..style = PaintingStyle.stroke;
+    canvas.drawLine(o1, o2, wallPaint);
+
+    final nodePaint = Paint()..color = const Color(0xFF34D399);
+    canvas.drawCircle(o1, 4.5, nodePaint);
+    canvas.drawCircle(o2, 4.5, nodePaint);
+
+    if (len >= 0.10) {
+      final mid = Offset((o1.dx + o2.dx) / 2, (o1.dy + o2.dy) / 2 - 14);
+      final tp = TextPainter(
+        text: TextSpan(
+          text: '${len.toStringAsFixed(2)} m',
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 11,
+            fontWeight: FontWeight.bold,
+            backgroundColor: Color(0xCC065F46),
+          ),
+        ),
+        textDirection: TextDirection.ltr,
+      )..layout();
+      tp.paint(canvas, Offset(mid.dx - tp.width / 2, mid.dy - tp.height / 2));
+    }
+  }
+
   @override
   bool shouldRepaint(covariant Canvas2DPainter oldDelegate) {
     if (oldDelegate.lang != lang) return true;
@@ -1582,6 +1625,9 @@ class Canvas2DPainter extends CustomPainter {
         prev.isLaserMeasureActive != state.isLaserMeasureActive ||
         prev.laserStart != state.laserStart ||
         prev.laserEnd != state.laserEnd ||
+        prev.isDrawWallMode != state.isDrawWallMode ||
+        prev.draftWallStart != state.draftWallStart ||
+        prev.draftWallEnd != state.draftWallEnd ||
         prev.blueprintUnderlay != state.blueprintUnderlay;
   }
 }

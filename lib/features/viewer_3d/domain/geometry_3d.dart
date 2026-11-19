@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 
 /// Semantic render layer within a floor to guarantee deterministic painter ordering
@@ -251,5 +252,43 @@ class Face3D {
       (coolBase.g * 255.0 * brightness).round().clamp(0, 255),
       (coolBase.b * 255.0 * brightness).round().clamp(0, 255),
     );
+  }
+}
+
+/// Live remodeling filter mode for 3D Before / After / Comparison visualization.
+enum RemodelViewMode3D {
+  all,
+  before,
+  after,
+  comparison;
+
+  bool includesStatus(ElementStatus status) {
+    switch (this) {
+      case RemodelViewMode3D.all:
+      case RemodelViewMode3D.comparison:
+        return true;
+      case RemodelViewMode3D.before:
+        return status == ElementStatus.existing ||
+            status == ElementStatus.preserved ||
+            status == ElementStatus.toDemolish;
+      case RemodelViewMode3D.after:
+        return status == ElementStatus.existing ||
+            status == ElementStatus.preserved ||
+            status == ElementStatus.isNew;
+    }
+  }
+
+  String shortLabel(String lang) {
+    final isEn = lang == 'en';
+    switch (this) {
+      case RemodelViewMode3D.all:
+        return isEn ? 'All' : 'Todo';
+      case RemodelViewMode3D.before:
+        return isEn ? 'Before' : 'Antes';
+      case RemodelViewMode3D.after:
+        return isEn ? 'After' : 'Después';
+      case RemodelViewMode3D.comparison:
+        return isEn ? 'Compare' : 'Comparativo';
+    }
   }
 }
