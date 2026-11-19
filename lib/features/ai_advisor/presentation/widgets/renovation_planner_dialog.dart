@@ -8,6 +8,7 @@ import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart'
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/ai_advisor/presentation/services/renovation_plan_pdf_service.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
 class RenovationPlannerDialog extends ConsumerStatefulWidget {
@@ -65,13 +66,16 @@ class _RenovationPlannerDialogState
     super.dispose();
   }
 
-  List<Module> _getSourceModules() {
+  List<Floor> _getSourceFloors() {
     final state = ref.read(floorEditorProvider);
     if (_allHouseScope && state.allFloors.isNotEmpty) {
-      return state.allFloors.expand((f) => f.modules).toList();
-    } else {
-      return state.floor.modules;
+      return state.allFloors;
     }
+    return [state.floor];
+  }
+
+  List<Module> _getSourceModules() {
+    return _getSourceFloors().expand((f) => f.modules).toList();
   }
 
   Set<String> _resolveScopedModuleIds(List<Module> sourceModules) {
@@ -111,8 +115,10 @@ class _RenovationPlannerDialogState
   }
 
   void _recalculate() {
-    final sourceModules = _getSourceModules();
+    final sourceFloors = _getSourceFloors();
+    final sourceModules = sourceFloors.expand((f) => f.modules).toList();
     final scopedIds = _resolveScopedModuleIds(sourceModules);
+    final activeFloorHeight = ref.read(floorEditorProvider).floor.heightMeters;
 
     final config = RenovationPlanConfig(
       renovateFloors: _renovateFloors,
@@ -130,6 +136,8 @@ class _RenovationPlannerDialogState
 
     _plan = RenovationPlannerEngine.generatePlan(
       allRooms: sourceModules,
+      floors: sourceFloors,
+      floorHeightMeters: activeFloorHeight,
       selectedModuleIds: scopedIds.isEmpty ? null : scopedIds,
       config: config,
     );

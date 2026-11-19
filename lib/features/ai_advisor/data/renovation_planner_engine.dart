@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
 /// Motor técnico de cómputo métrico, compras y planificación de cuadrillas para remodelación.
@@ -159,6 +160,8 @@ class RenovationPlannerEngine {
 
   static RenovationPlanResult generatePlan({
     required List<Module> allRooms,
+    List<Floor>? floors,
+    Map<String, double>? floorHeightsByFloorId,
     RenovationPlanConfig? config,
     Set<String>? selectedModuleIds,
     bool renovateFloors = true,
@@ -177,6 +180,25 @@ class RenovationPlannerEngine {
   }) {
     final safeBoxCoverage = math.max(0.1, boxTileCoverageM2);
     final safeFloorHeight = math.max(1.80, floorHeightMeters);
+    final resolvedFloorHeights = <String, double>{
+      if (floors != null)
+        for (final f in floors) f.id: math.max(1.80, f.heightMeters),
+      if (floorHeightsByFloorId != null)
+        for (final e in floorHeightsByFloorId.entries)
+          e.key: math.max(1.80, e.value),
+    };
+    double heightForRoom(Module room) =>
+        resolvedFloorHeights[room.floorId] ?? safeFloorHeight;
+    String describeHeights(List<Module> rooms) {
+      if (rooms.isEmpty) return '${safeFloorHeight.toStringAsFixed(2)} m';
+      final heights = rooms.map(heightForRoom).toList();
+      final minH = heights.reduce(math.min);
+      final maxH = heights.reduce(math.max);
+      if ((maxH - minH).abs() < 1e-3) {
+        return '${maxH.toStringAsFixed(2)} m';
+      }
+      return '${minH.toStringAsFixed(2)}–${maxH.toStringAsFixed(2)} m';
+    }
 
     // Si viene config, sus valores tienen prioridad
     final doFloors = config?.renovateFloors ?? renovateFloors;
@@ -554,9 +576,13 @@ class RenovationPlannerEngine {
       if (mat == null) continue;
       final groupPerimeter =
           entry.value.fold(0.0, (s, r) => s + r.geometry.perimeter);
-      final netWallM2 =
-          ((groupPerimeter * safeFloorHeight * 0.85) * 100).round() / 100.0;
+      final groupGrossM2 = entry.value.fold(
+        0.0,
+        (s, r) => s + r.geometry.perimeter * heightForRoom(r),
+      );
+      final netWallM2 = ((groupGrossM2 * 0.85) * 100).round() / 100.0;
       final totalCop = netWallM2 * mat.pricePerM2Cop;
+      final heightLabel = describeHeights(entry.value);
       addMaterial(MaterialItem(
         id: 'mat_custom_wall_${mat.id}',
         name: 'Acabado Vertical Elegido: ${mat.nameEs}',
@@ -566,7 +592,7 @@ class RenovationPlannerEngine {
         packagingDetail:
             '${netWallM2.toStringAsFixed(1)} m² netos de muro • Est. \$${totalCop.toStringAsFixed(0)} COP',
         yieldFormula:
-            '${mat.specDescriptionEs} (Perímetro ${groupPerimeter.toStringAsFixed(1)} m × ${safeFloorHeight.toStringAsFixed(2)} m × 85% área neta)',
+            '${mat.specDescriptionEs} (Perímetro ${groupPerimeter.toStringAsFixed(1)} m × $heightLabel × 85% área neta)',
         targetRoomNames: entry.value.map((r) => r.name).toList(),
         estimatedUnitCostCop: mat.pricePerM2Cop,
         estimatedTotalCostCop: totalCop,
@@ -577,20 +603,21 @@ class RenovationPlannerEngine {
       final genericPaintRooms = paintRooms
           .where((r) => FinishMaterialCatalog.byId(r.wallFinishId) == null)
           .toList();
-      final totalWallPerimeter =
-          paintRooms.fold(0.0, (sum, r) => sum + r.geometry.perimeter);
-      final totalNetWallM2 = totalWallPerimeter * safeFloorHeight * 0.85;
+      final totalNetWallM2 = paintRooms.fold(
+        0.0,
+        (sum, r) => sum + r.geometry.perimeter * heightForRoom(r) * 0.85,
+      );
 
       if (genericPaintRooms.isNotEmpty) {
-        final genericPerimeter = genericPaintRooms.fold(
+        final grossWallM2 = genericPaintRooms.fold(
           0.0,
-          (sum, r) => sum + r.geometry.perimeter,
+          (sum, r) => sum + r.geometry.perimeter * heightForRoom(r),
         );
-        final grossWallM2 = genericPerimeter * safeFloorHeight;
         final netWallM2 = grossWallM2 * 0.85;
         final paintGallons = math.max(1, (netWallM2 * 2 / 25.0).ceil());
         final genericPaintNames =
             genericPaintRooms.map((r) => r.name).toList();
+        final paintHeightLabel = describeHeights(genericPaintRooms);
 
         addMaterial(MaterialItem(
           id: 'mat_paint_walls',
@@ -600,7 +627,7 @@ class RenovationPlannerEngine {
           unit: 'galones',
           packagingDetail: '${(paintGallons / 5.0).ceil()} cuñete(s) de 5 galones',
           yieldFormula:
-              'Superficie neta de muros: ${netWallM2.toStringAsFixed(1)}m² (h=${safeFloorHeight.toStringAsFixed(2)}m) a 2 manos (25 m²/galón)',
+              'Superficie neta de muros: ${netWallM2.toStringAsFixed(1)}m² (h=$paintHeightLabel) a 2 manos (25 m²/galón)',
           targetRoomNames: genericPaintNames,
           purchaseTip:
               'Usa pintura antimanchas con bajo olor y VOC para habitar rápido los espacios.',

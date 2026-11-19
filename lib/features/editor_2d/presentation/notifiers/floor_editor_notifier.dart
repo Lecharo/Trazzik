@@ -458,12 +458,20 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     addModule(duplicated);
   }
 
-  void setModulePosition(String moduleId, double newX, double newY) {
+  static double _roundMillimeter(double value) =>
+      (value * 1000).round() / 1000.0;
+
+  void setModulePosition(
+    String moduleId,
+    double newX,
+    double newY, {
+    bool snap = true,
+  }) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
     if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
-    final snappedX = snapToGrid(newX);
-    final snappedY = snapToGrid(newY);
+    final snappedX = snap ? snapToGrid(newX) : _roundMillimeter(newX);
+    final snappedY = snap ? snapToGrid(newY) : _roundMillimeter(newY);
     final dx = snappedX - bb.minX;
     final dy = snappedY - bb.minY;
     if (dx.abs() < 1e-6 && dy.abs() < 1e-6) return;
@@ -526,12 +534,23 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     }).toList();
   }
 
-  void setModuleDimensions(String moduleId, double newWidth, double newHeight) {
+  void setModuleDimensions(
+    String moduleId,
+    double newWidth,
+    double newHeight, {
+    bool snap = true,
+  }) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
     if (mod == null || mod.isLocked) return;
     final bb = mod.geometry.boundingBox;
-    final snappedW = math.max(0.10, snapToGrid(newWidth));
-    final snappedH = math.max(0.10, snapToGrid(newHeight));
+    final snappedW = math.max(
+      0.10,
+      snap ? snapToGrid(newWidth) : _roundMillimeter(newWidth),
+    );
+    final snappedH = math.max(
+      0.10,
+      snap ? snapToGrid(newHeight) : _roundMillimeter(newHeight),
+    );
 
     final Polygon2D updatedGeom;
     if (mod.geometry.vertices.length == 4) {
@@ -846,17 +865,25 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
   }
 
   /// Mueve una pieza de mobiliario dentro del recinto
-  void setSubModulePosition(String moduleId, String subModuleId, double newX, double newY) {
+  void setSubModulePosition(
+    String moduleId,
+    String subModuleId,
+    double newX,
+    double newY, {
+    bool snap = true,
+  }) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
     if (mod == null || mod.isLocked) return;
     final sub = mod.subModules.where((s) => s.id == subModuleId).firstOrNull;
     if (sub == null || sub.isLocked) return;
     final modBb = mod.geometry.boundingBox;
     final bb = sub.geometry.boundingBox;
-    final snappedX = snapToGrid(newX)
+    final resolvedX = snap ? snapToGrid(newX) : _roundMillimeter(newX);
+    final resolvedY = snap ? snapToGrid(newY) : _roundMillimeter(newY);
+    final snappedX = resolvedX
         .clamp(modBb.minX, math.max(modBb.minX, modBb.maxX - bb.width))
         .toDouble();
-    final snappedY = snapToGrid(newY)
+    final snappedY = resolvedY
         .clamp(modBb.minY, math.max(modBb.minY, modBb.maxY - bb.height))
         .toDouble();
     if ((snappedX - bb.minX).abs() < 1e-6 && (snappedY - bb.minY).abs() < 1e-6) {
@@ -885,6 +912,7 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     double? depth,
     double? height,
     double? elevation,
+    bool snap = true,
   }) {
     final mod = state.floor.modules.where((m) => m.id == moduleId).firstOrNull;
     if (mod == null || mod.isLocked) return;
@@ -894,15 +922,23 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     final bb = sub.geometry.boundingBox;
 
     final newW = math.min(
-      width != null ? math.max(0.15, snapToGrid(width)) : bb.width,
+      width != null
+          ? math.max(0.15, snap ? snapToGrid(width) : _roundMillimeter(width))
+          : bb.width,
       math.max(0.15, modBb.width),
     );
     final newD = math.min(
-      depth != null ? math.max(0.15, snapToGrid(depth)) : bb.height,
+      depth != null
+          ? math.max(0.15, snap ? snapToGrid(depth) : _roundMillimeter(depth))
+          : bb.height,
       math.max(0.15, modBb.height),
     );
-    final newH = height != null ? math.max(0.05, (height * 100).round() / 100.0) : sub.resolvedHeight;
-    final newElev = elevation != null ? math.max(0.0, (elevation * 100).round() / 100.0) : sub.elevation;
+    final newH = height != null
+        ? math.max(0.05, _roundMillimeter(height))
+        : sub.resolvedHeight;
+    final newElev = elevation != null
+        ? math.max(0.0, _roundMillimeter(elevation))
+        : sub.elevation;
 
     final clampedX = bb.minX
         .clamp(modBb.minX, math.max(modBb.minX, modBb.maxX - newW))
@@ -1371,10 +1407,19 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     double? heightMeters,
     double? levelMeters,
   }) {
+    final resolvedHeight = heightMeters != null
+        ? math.max(0.50, _roundMillimeter(heightMeters))
+        : state.floor.heightMeters;
+    final updatedWalls = heightMeters != null
+        ? state.floor.walls
+            .map((w) => w.copyWith(height: resolvedHeight))
+            .toList()
+        : state.floor.walls;
     final updatedFloor = state.floor.copyWith(
       name: name ?? state.floor.name,
-      heightMeters: heightMeters ?? state.floor.heightMeters,
+      heightMeters: resolvedHeight,
       levelMeters: levelMeters ?? state.floor.levelMeters,
+      walls: updatedWalls,
     );
     _applyFloorChange(updatedFloor);
   }

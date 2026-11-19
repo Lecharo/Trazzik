@@ -333,8 +333,12 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                 label: 'X',
                 value: bb.minX,
                 enabled: !selectedModule.isLocked,
-                onChanged: (newX) =>
-                    notifier.setModulePosition(selectedModule.id, newX, bb.minY),
+                onChanged: (newX) => notifier.setModulePosition(
+                  selectedModule.id,
+                  newX,
+                  bb.minY,
+                  snap: false,
+                ),
               ),
             ),
             const SizedBox(width: 8),
@@ -343,8 +347,12 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                 label: 'Y',
                 value: bb.minY,
                 enabled: !selectedModule.isLocked,
-                onChanged: (newY) =>
-                    notifier.setModulePosition(selectedModule.id, bb.minX, newY),
+                onChanged: (newY) => notifier.setModulePosition(
+                  selectedModule.id,
+                  bb.minX,
+                  newY,
+                  snap: false,
+                ),
               ),
             ),
           ],
@@ -367,6 +375,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                   selectedModule.id,
                   newW,
                   bb.height,
+                  snap: false,
                 ),
               ),
             ),
@@ -381,6 +390,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                   selectedModule.id,
                   bb.width,
                   newD,
+                  snap: false,
                 ),
               ),
             ),
@@ -517,6 +527,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                                   0.01,
                                 ),
                                 bb.minY,
+                                snap: false,
                               ),
                     ),
                     IconButton(
@@ -538,6 +549,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                                   bb.minY - 0.05,
                                   0.01,
                                 ),
+                                snap: false,
                               ),
                     ),
                     IconButton(
@@ -560,6 +572,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                                   bb.minY + 0.05,
                                   0.01,
                                 ),
+                                snap: false,
                               ),
                     ),
                     IconButton(
@@ -582,6 +595,7 @@ class _ModuleInspectorSectionState extends State<ModuleInspectorSection> {
                                   0.01,
                                 ),
                                 bb.minY,
+                                snap: false,
                               ),
                     ),
                   ],

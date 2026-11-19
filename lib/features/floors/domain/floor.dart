@@ -34,33 +34,24 @@ class Floor {
 
   double get floorGeometricArea => boundary.area;
 
-  /// Superficie útil interior habitable (módulos propuestos o conservados que no son vanos ni zonas exteriores sin techar)
+  /// Interior usable floor area (new, preserved, or existing modules excluding openings and unpaved outdoor zones)
   late final double usableSpacesArea = modules
       .where(
         (m) =>
-            (m.status == ElementStatus.isNew ||
-                m.status == ElementStatus.preserved) &&
+            (m.status.isPreserved || m.status == ElementStatus.isNew) &&
             !m.isOpening &&
             !m.isOutdoorUnpaved,
       )
       .fold(0.0, (acc, m) => acc + m.area);
 
-  /// Superficie en planta ocupada por la huella de muros y tabiques en m²
+  /// Plan footprint area occupied by active walls and partitions in m²
   late final double wallsFootprintArea = walls
-      .where(
-        (w) =>
-            w.status == ElementStatus.isNew ||
-            w.status == ElementStatus.preserved,
-      )
+      .where((w) => w.status.isPreserved || w.status == ElementStatus.isNew)
       .fold(0.0, (acc, w) => acc + (w.length * w.thickness));
 
-  /// Longitud lineal total de muros y tabiques en metros
+  /// Total linear length of active walls and partitions in meters
   late final double wallsTotalLinearMeters = walls
-      .where(
-        (w) =>
-            w.status == ElementStatus.isNew ||
-            w.status == ElementStatus.preserved,
-      )
+      .where((w) => w.status.isPreserved || w.status == ElementStatus.isNew)
       .fold(0.0, (acc, w) => acc + w.length);
 
   /// Área construida total (ambientes útiles + huella de muros si existen)

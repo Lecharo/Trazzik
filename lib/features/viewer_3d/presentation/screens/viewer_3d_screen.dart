@@ -46,7 +46,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   int _cameraRevision = 0;
   bool _zoomInitialized = false;
   bool _showLabels = true; // Rótulos activados por defecto
-  double _wallHeight = 1.20; // 1.20m Maqueta axonométrica (o 2.60m volumen completo)
+  bool _isFullWallHeight = false; // false = 1.20m Maqueta axonométrica, true = altura real por piso
   bool _isPerspective = false;
   SunPreset3D _sunPreset = SunPreset3D.studioNoon;
   SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
@@ -76,16 +76,40 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   double? _cachedWallHeight;
   SunPreset3D? _cachedSunPreset;
 
+  double _resolveWallHeight(List<Floor> floors) {
+    if (!_isFullWallHeight) return 1.20;
+    final visible = _selectedFloorId != null
+        ? floors.where((f) => f.id == _selectedFloorId).toList()
+        : floors;
+    if (visible.isEmpty) return 2.60;
+    return visible.map((f) => f.heightMeters).reduce(math.max);
+  }
+
+  String _fullHeightLabel(List<Floor> floors) {
+    final visible = _selectedFloorId != null
+        ? floors.where((f) => f.id == _selectedFloorId).toList()
+        : floors;
+    if (visible.isEmpty) return '2.60 m';
+    final heights = visible.map((f) => f.heightMeters).toList();
+    final minH = heights.reduce(math.min);
+    final maxH = heights.reduce(math.max);
+    if ((maxH - minH).abs() < 1e-3) {
+      return '${maxH.toStringAsFixed(2)} m';
+    }
+    return '${minH.toStringAsFixed(2)}–${maxH.toStringAsFixed(2)} m';
+  }
+
   List<Face3D> _resolveSceneFaces({
     required List<Floor> floors,
     required Lot lot,
   }) {
+    final effectiveWallHeight = _resolveWallHeight(floors);
     final canReuse = _cachedFaces != null &&
         _cachedFloors != null &&
         listEquals(_cachedFloors, floors) &&
         identical(_cachedLot, lot) &&
         _cachedSelectedFloorId == _selectedFloorId &&
-        _cachedWallHeight == _wallHeight &&
+        _cachedWallHeight == effectiveWallHeight &&
         _cachedSunPreset == _sunPreset;
     if (canReuse) {
       return _cachedFaces!;
@@ -97,14 +121,14 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       explodedFactor: 0.0,
       soloFloorId: _selectedFloorId,
       showLotGround: true,
-      wallHeight: _wallHeight,
+      wallHeight: effectiveWallHeight,
       sunPreset: _sunPreset,
     );
     _cachedFaces = built;
     _cachedFloors = List<Floor>.unmodifiable(floors);
     _cachedLot = lot;
     _cachedSelectedFloorId = _selectedFloorId;
-    _cachedWallHeight = _wallHeight;
+    _cachedWallHeight = effectiveWallHeight;
     _cachedSunPreset = _sunPreset;
     return built;
   }
@@ -163,7 +187,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       _zoom = 48.0;
       _panOffset = Offset.zero;
       _explodedFactor = 0.0;
-      _wallHeight = 1.20;
+      _isFullWallHeight = false;
       _sectionCutAxis = SectionCutAxis3D.none;
       _sectionCutRatio = 0.65;
       _cameraRevision++;
@@ -196,7 +220,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         case 'dollhouse':
           _yaw = -0.18;
           _pitch = 0.24; // Planta 3D amoblada tipo Dollhouse
-          _wallHeight = 1.20;
+          _isFullWallHeight = false;
           break;
         case 'top':
           _yaw = 0.0;
@@ -529,14 +553,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
             ),
             IconButton(
               icon: Icon(
-                _wallHeight <= 1.50 ? Icons.view_compact_alt : Icons.apartment,
+                !_isFullWallHeight ? Icons.view_compact_alt : Icons.apartment,
                 size: 20,
-                color: _wallHeight <= 1.50 ? const Color(0xFF00E5FF) : Colors.amber,
+                color: !_isFullWallHeight ? const Color(0xFF00E5FF) : Colors.amber,
               ),
-              tooltip: _wallHeight <= 1.50
-                  ? (lang == 'es' ? 'Modo Maqueta' : 'Maquette')
-                  : (lang == 'es' ? 'Muros Completos' : 'Full Height'),
-              onPressed: () => setState(() => _wallHeight = _wallHeight <= 1.50 ? 2.60 : 1.20),
+              tooltip: !_isFullWallHeight
+                  ? (lang == 'es'
+                      ? 'Modo Maqueta (1.20 m) — Tocar para Muros Completos (${_fullHeightLabel(floors)})'
+                      : 'Maquette (1.20 m) — Tap for Full Height (${_fullHeightLabel(floors)})')
+                  : (lang == 'es'
+                      ? 'Muros Completos (${_fullHeightLabel(floors)}) — Tocar para Maqueta (1.20 m)'
+                      : 'Full Height (${_fullHeightLabel(floors)}) — Tap for Maquette (1.20 m)'),
+              onPressed: () => setState(() => _isFullWallHeight = !_isFullWallHeight),
             ),
             IconButton(
               icon: Icon(
@@ -619,18 +647,18 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 5),
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
               icon: Icon(
-                _wallHeight <= 1.50 ? Icons.view_compact_alt : Icons.apartment,
+                !_isFullWallHeight ? Icons.view_compact_alt : Icons.apartment,
                 size: 19,
-                color: _wallHeight <= 1.50 ? const Color(0xFF00E5FF) : Colors.amber,
+                color: !_isFullWallHeight ? const Color(0xFF00E5FF) : Colors.amber,
               ),
-              tooltip: _wallHeight <= 1.50
+              tooltip: !_isFullWallHeight
                   ? (lang == 'es'
-                      ? 'Modo Maqueta (1.20 m) — Tocar para Muros Completos (2.60 m)'
-                      : 'Maquette (1.20m) — Tap for Full Height (2.60m)')
+                      ? 'Modo Maqueta (1.20 m) — Tocar para Muros Completos (${_fullHeightLabel(floors)})'
+                      : 'Maquette (1.20 m) — Tap for Full Height (${_fullHeightLabel(floors)})')
                   : (lang == 'es'
-                      ? 'Muros Completos (2.60 m) — Tocar para Maqueta (1.20 m)'
-                      : 'Full Height (2.60m) — Tap for Maquette (1.20m)'),
-              onPressed: () => setState(() => _wallHeight = _wallHeight <= 1.50 ? 2.60 : 1.20),
+                      ? 'Muros Completos (${_fullHeightLabel(floors)}) — Tocar para Maqueta (1.20 m)'
+                      : 'Full Height (${_fullHeightLabel(floors)}) — Tap for Maquette (1.20 m)'),
+              onPressed: () => setState(() => _isFullWallHeight = !_isFullWallHeight),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
