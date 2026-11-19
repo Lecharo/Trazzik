@@ -5,9 +5,12 @@ import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/theme/app_theme.dart';
 import 'package:trazzik/core/utils/file_export_helper.dart';
 import 'package:trazzik/features/ai_advisor/data/renovation_planner_engine.dart';
+import 'package:trazzik/features/ai_advisor/domain/renovation_budget_config.dart';
 import 'package:trazzik/features/ai_advisor/domain/renovation_plan_result.dart';
 import 'package:trazzik/features/ai_advisor/presentation/services/renovation_plan_pdf_service.dart';
+import 'package:trazzik/features/ai_advisor/presentation/widgets/renovation_budget_forms.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/fee_proposal/presentation/services/architect_fee_proposal_pdf_service.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 
@@ -51,12 +54,24 @@ class _RenovationPlannerDialogState
   Set<String> _forcedHalfBathroomIds = {};
 
   late RenovationPlanResult _plan;
+  late RenovationBudgetConfig _budgetConfig;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 3, vsync: this);
+    _tabController = TabController(length: 4, vsync: this);
+    _budgetConfig =
+        ref.read(floorEditorProvider).project?.renovationBudgetConfig ??
+            const RenovationBudgetConfig();
     _recalculate();
+  }
+
+  void _updateBudgetConfig(RenovationBudgetConfig next) {
+    ref.read(floorEditorProvider.notifier).updateRenovationBudgetConfig(next);
+    setState(() {
+      _budgetConfig = next;
+      _recalculate();
+    });
   }
 
   @override
@@ -138,6 +153,7 @@ class _RenovationPlannerDialogState
       allRooms: sourceModules,
       floors: sourceFloors,
       floorHeightMeters: activeFloorHeight,
+      budgetConfig: _budgetConfig,
       selectedModuleIds: scopedIds.isEmpty ? null : scopedIds,
       config: config,
     );
@@ -300,6 +316,7 @@ class _RenovationPlannerDialogState
       includedRoomIds: scopedIds.isEmpty ? null : scopedIds,
       projectName: projectName,
       lang: lang,
+      parallelMode: _isParallelMode,
     );
     final safeName = projectName
         .replaceAll(RegExp(r'[^a-zA-Z0-9_-]'), '_')
@@ -626,6 +643,7 @@ class _RenovationPlannerDialogState
                 indicatorColor: colors.accent,
                 labelColor: colors.accent,
                 unselectedLabelColor: colors.textMuted,
+                isScrollable: isMobile,
                 tabs: [
                   Tab(
                     icon: const Icon(Icons.shopping_cart_outlined, size: 15),
@@ -637,7 +655,12 @@ class _RenovationPlannerDialogState
                   ),
                   Tab(
                     icon: const Icon(Icons.timeline_outlined, size: 15),
-                    text: '${isEn ? 'Critical Path' : 'Ruta Crítica'} (${_plan.phases.length})',
+                    text: '${isEn ? 'Schedule' : 'Cronograma'} (${_plan.phases.length})',
+                  ),
+                  Tab(
+                    key: const Key('tab_expenses'),
+                    icon: const Icon(Icons.receipt_long_outlined, size: 15),
+                    text: '${isEn ? 'Expenses' : 'Gastos'} (${_plan.expenses.length})',
                   ),
                 ],
               ),
@@ -651,6 +674,7 @@ class _RenovationPlannerDialogState
                     _buildMaterialsTab(colors, isEn),
                     _buildCrewsTab(colors, isEn),
                     _buildScheduleTab(colors, isLight, isEn),
+                    _buildExpensesTab(colors, isEn),
                   ],
                 ),
               ),
@@ -1032,209 +1056,832 @@ class _RenovationPlannerDialogState
     );
   }
 
-  Widget _buildMaterialsTab(AppColors colors, bool isEn) {
-    if (_plan.materials.isEmpty) {
-      return Center(
-        child: Text(
-          isEn
-              ? 'No material items for the selected filters.'
-              : 'No hay partidas de materiales para los filtros seleccionados.',
-          style: TextStyle(color: colors.textMuted, fontSize: 12),
-        ),
-      );
-    }
+  String _fmtCop(double amount) =>
+      '${ArchitectFeeProposalPdfService.formatCop(amount)} COP';
 
-    return ListView.builder(
-      itemCount: _plan.materials.length,
-      itemBuilder: (context, idx) {
-        final mat = _plan.materials[idx];
-        return Container(
+  Future<void> _onEditUnitPrice(MaterialItem mat, bool isEn) async {
+    final defaultPrice = RenovationPlannerEngine.defaultUnitPricesCop[mat.id];
+    final res = await showEditUnitPriceDialog(
+      context: context,
+      item: mat,
+      defaultPriceCop: defaultPrice,
+      isEn: isEn,
+    );
+    if (res == null) return;
+    if (mat.isCustom) {
+      if (res.priceCop == null) return;
+      final updatedCustom = _budgetConfig.customItems
+          .map(
+            (c) => c.id == mat.id ? c.copyWith(unitCostCop: res.priceCop) : c,
+          )
+          .toList();
+      _updateBudgetConfig(_budgetConfig.copyWith(customItems: updatedCustom));
+      return;
+    }
+    final nextOverrides = Map<String, double>.from(
+      _budgetConfig.unitPriceOverridesCop,
+    );
+    if (res.resetToDefault) {
+      nextOverrides.remove(mat.id);
+    } else if (res.priceCop != null) {
+      nextOverrides[mat.id] = res.priceCop!;
+    }
+    _updateBudgetConfig(
+      _budgetConfig.copyWith(unitPriceOverridesCop: nextOverrides),
+    );
+  }
+
+  Future<void> _onAddCustomItem(bool isEn) async {
+    final created = await showAddCustomBudgetItemDialog(
+      context: context,
+      isEn: isEn,
+    );
+    if (created == null) return;
+    _updateBudgetConfig(
+      _budgetConfig.copyWith(
+        customItems: [..._budgetConfig.customItems, created],
+      ),
+    );
+  }
+
+  void _onDeleteCustomItem(String id) {
+    _updateBudgetConfig(
+      _budgetConfig.copyWith(
+        customItems:
+            _budgetConfig.customItems.where((c) => c.id != id).toList(),
+      ),
+    );
+  }
+
+  Future<void> _onEditCrewRate(SpecialistCrew crew, bool isEn) async {
+    if (crew.roleKey.isEmpty) return;
+    final newRate = await showEditCrewRateDialog(
+      context: context,
+      crew: crew,
+      isEn: isEn,
+    );
+    if (newRate == null) return;
+    final nextRates = Map<String, double>.from(_budgetConfig.crewDailyRatesCop);
+    nextRates[crew.roleKey] = newRate;
+    _updateBudgetConfig(_budgetConfig.copyWith(crewDailyRatesCop: nextRates));
+  }
+
+  Future<void> _onAddExpense(bool isEn) async {
+    final created = await showAddActualExpenseDialog(
+      context: context,
+      availableItems: _plan.materials,
+      isEn: isEn,
+    );
+    if (created == null) return;
+    _updateBudgetConfig(
+      _budgetConfig.copyWith(
+        expenses: [created, ..._budgetConfig.expenses],
+      ),
+    );
+  }
+
+  void _onCycleExpenseStatus(ActualExpenseRecord record) {
+    final nextIdx = (record.status.index + 1) % ExpenseStatus.values.length;
+    final nextStatus = ExpenseStatus.values[nextIdx];
+    final updated = _budgetConfig.expenses
+        .map((e) => e.id == record.id ? e.copyWith(status: nextStatus) : e)
+        .toList();
+    _updateBudgetConfig(_budgetConfig.copyWith(expenses: updated));
+  }
+
+  void _onDeleteExpense(String id) {
+    _updateBudgetConfig(
+      _budgetConfig.copyWith(
+        expenses: _budgetConfig.expenses.where((e) => e.id != id).toList(),
+      ),
+    );
+  }
+
+  Widget _buildMaterialsTab(AppColors colors, bool isEn) {
+    final laborCost = _isParallelMode
+        ? _plan.totalParallelLaborCostCop
+        : _plan.totalSequentialLaborCostCop;
+    final grandTotal = _plan.totalBudgetCop(parallelMode: _isParallelMode);
+
+    return Column(
+      children: [
+        Container(
+          key: const Key('budget_cop_summary_banner'),
           margin: const EdgeInsets.only(bottom: 7),
-          padding: const EdgeInsets.all(9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           decoration: BoxDecoration(
             color: colors.cardBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: colors.borderSubtle),
+            border: Border.all(color: colors.accent.withValues(alpha: 0.45)),
           ),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+          child: Wrap(
+            spacing: 12,
+            runSpacing: 6,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            alignment: WrapAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: colors.accent.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(mat.icon, color: colors.accent, size: 16),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isEn ? 'Materials & Items' : 'Materiales y Partidas',
+                    style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                  ),
+                  Text(
+                    _fmtCop(_plan.totalMaterialsCostCop),
+                    style: TextStyle(
+                      color: colors.textPrimary,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            mat.name,
-                            style: TextStyle(
-                              color: colors.textPrimary,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: colors.accent.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '${mat.quantity.toStringAsFixed(mat.quantity % 1 == 0 ? 0 : 2)} ${mat.unit}',
-                            style: TextStyle(
-                              color: colors.accent,
-                              fontSize: 10.5,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isEn ? 'Labor (Crews)' : 'Mano de Obra',
+                    style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                  ),
+                  Text(
+                    _fmtCop(laborCost),
+                    style: TextStyle(
+                      color: colors.success,
+                      fontSize: 11.5,
+                      fontWeight: FontWeight.bold,
                     ),
-                    if (mat.targetRoomNames.isNotEmpty) ...[
-                      const SizedBox(height: 3),
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(Icons.place_outlined, color: colors.accent, size: 12),
-                          const SizedBox(width: 3),
-                          Expanded(
-                            child: Text(
-                              '${isEn ? 'Target' : 'Destino'}: ${mat.targetRoomNames.join(', ')}',
-                              style: TextStyle(
-                                color: colors.accent,
-                                fontSize: 9.8,
-                                fontWeight: FontWeight.w500,
-                              ),
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                    if (mat.packagingDetail != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '${isEn ? 'Packaging' : 'Presentación'}: ${mat.packagingDetail}',
-                        style: TextStyle(color: colors.textSecondary, fontSize: 9.6),
-                      ),
-                    ],
-                    const SizedBox(height: 2),
-                    Text(
-                      '• ${mat.yieldFormula}',
-                      style: TextStyle(color: colors.textSecondary, fontSize: 9.6),
+                  ),
+                ],
+              ),
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    isEn ? 'Estimated Total' : 'Total General Obra',
+                    style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                  ),
+                  Text(
+                    _fmtCop(grandTotal),
+                    style: TextStyle(
+                      color: colors.accent,
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.bold,
                     ),
-                    if (mat.purchaseTip != null) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '💡 ${isEn ? 'Tip' : 'Tip técnico'}: ${mat.purchaseTip}',
-                        style: TextStyle(color: colors.warning, fontSize: 9.4, fontStyle: FontStyle.italic),
-                      ),
-                    ],
-                  ],
+                  ),
+                ],
+              ),
+              OutlinedButton.icon(
+                key: const Key('add_custom_item_button'),
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: colors.accent,
+                  side: BorderSide(color: colors.accent.withValues(alpha: 0.6)),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  visualDensity: VisualDensity.compact,
+                ),
+                onPressed: () => _onAddCustomItem(isEn),
+                icon: const Icon(Icons.add_circle_outline, size: 15),
+                label: Text(
+                  isEn ? 'Custom Item' : '+ Partida Manual',
+                  style: const TextStyle(fontSize: 10.5),
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: _plan.materials.isEmpty
+              ? Center(
+                  child: Text(
+                    isEn
+                        ? 'No material items for the selected filters.'
+                        : 'No hay partidas de materiales para los filtros seleccionados.',
+                    style: TextStyle(color: colors.textMuted, fontSize: 12),
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _plan.materials.length,
+                  itemBuilder: (context, idx) {
+                    final mat = _plan.materials[idx];
+                    final isOverridden =
+                        _budgetConfig.unitPriceOverridesCop.containsKey(mat.id);
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 7),
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: colors.cardBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: isOverridden || mat.isCustom
+                              ? colors.accent.withValues(alpha: 0.45)
+                              : colors.borderSubtle,
+                        ),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(7),
+                            decoration: BoxDecoration(
+                              color: colors.accent.withValues(alpha: 0.1),
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            child: Icon(mat.icon, color: colors.accent, size: 16),
+                          ),
+                          const SizedBox(width: 9),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Expanded(
+                                      child: Text(
+                                        mat.name,
+                                        style: TextStyle(
+                                          color: colors.textPrimary,
+                                          fontSize: 11.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 6),
+                                    Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 6,
+                                        vertical: 2,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: colors.accent.withValues(alpha: 0.16),
+                                        borderRadius: BorderRadius.circular(4),
+                                      ),
+                                      child: Text(
+                                        '${mat.quantity.toStringAsFixed(mat.quantity % 1 == 0 ? 0 : 2)} ${mat.unit}',
+                                        style: TextStyle(
+                                          color: colors.accent,
+                                          fontSize: 10.5,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 4),
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: Wrap(
+                                        spacing: 8,
+                                        runSpacing: 2,
+                                        crossAxisAlignment:
+                                            WrapCrossAlignment.center,
+                                        children: [
+                                          Text(
+                                            mat.estimatedUnitCostCop != null
+                                                ? '${ArchitectFeeProposalPdfService.formatCop(mat.estimatedUnitCostCop!)} / ${mat.unit}'
+                                                : (isEn
+                                                    ? 'Unit price: N/A'
+                                                    : 'V. Unit: N/A'),
+                                            style: TextStyle(
+                                              color: isOverridden
+                                                  ? colors.warning
+                                                  : colors.textSecondary,
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                            ),
+                                          ),
+                                          if (mat.estimatedTotalCostCop != null)
+                                            Container(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 1.5,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: colors.success
+                                                    .withValues(alpha: 0.14),
+                                                borderRadius:
+                                                    BorderRadius.circular(4),
+                                              ),
+                                              child: Text(
+                                                _fmtCop(
+                                                  mat.estimatedTotalCostCop!,
+                                                ),
+                                                style: TextStyle(
+                                                  color: colors.success,
+                                                  fontSize: 10.2,
+                                                  fontWeight: FontWeight.bold,
+                                                ),
+                                              ),
+                                            ),
+                                        ],
+                                      ),
+                                    ),
+                                    IconButton(
+                                      key: Key('edit_price_${mat.id}'),
+                                      padding: EdgeInsets.zero,
+                                      constraints: const BoxConstraints(
+                                        minWidth: 26,
+                                        minHeight: 26,
+                                      ),
+                                      tooltip: isEn
+                                          ? 'Edit unit price COP'
+                                          : 'Editar tarifa COP',
+                                      icon: Icon(
+                                        Icons.edit_outlined,
+                                        size: 15,
+                                        color: colors.accent,
+                                      ),
+                                      onPressed: () =>
+                                          _onEditUnitPrice(mat, isEn),
+                                    ),
+                                    if (mat.isCustom)
+                                      IconButton(
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(
+                                          minWidth: 26,
+                                          minHeight: 26,
+                                        ),
+                                        tooltip:
+                                            isEn ? 'Delete item' : 'Eliminar partida',
+                                        icon: const Icon(
+                                          Icons.delete_outline,
+                                          size: 15,
+                                          color: Color(0xFFEF5350),
+                                        ),
+                                        onPressed: () =>
+                                            _onDeleteCustomItem(mat.id),
+                                      ),
+                                  ],
+                                ),
+                                if (mat.targetRoomNames.isNotEmpty) ...[
+                                  const SizedBox(height: 3),
+                                  Row(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Icon(
+                                        Icons.place_outlined,
+                                        color: colors.accent,
+                                        size: 12,
+                                      ),
+                                      const SizedBox(width: 3),
+                                      Expanded(
+                                        child: Text(
+                                          '${isEn ? 'Target' : 'Destino'}: ${mat.targetRoomNames.join(', ')}',
+                                          style: TextStyle(
+                                            color: colors.accent,
+                                            fontSize: 9.8,
+                                            fontWeight: FontWeight.w500,
+                                          ),
+                                          maxLines: 2,
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                                if (mat.packagingDetail != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '${isEn ? 'Detail' : 'Presentación'}: ${mat.packagingDetail}',
+                                    style: TextStyle(
+                                      color: colors.textSecondary,
+                                      fontSize: 9.6,
+                                    ),
+                                  ),
+                                ],
+                                const SizedBox(height: 2),
+                                Text(
+                                  '• ${mat.yieldFormula}',
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontSize: 9.6,
+                                  ),
+                                ),
+                                if (mat.purchaseTip != null) ...[
+                                  const SizedBox(height: 2),
+                                  Text(
+                                    '💡 ${isEn ? 'Tip' : 'Tip técnico'}: ${mat.purchaseTip}',
+                                    style: TextStyle(
+                                      color: colors.warning,
+                                      fontSize: 9.4,
+                                      fontStyle: FontStyle.italic,
+                                    ),
+                                  ),
+                                ],
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
   Widget _buildCrewsTab(AppColors colors, bool isEn) {
     final crews = _isParallelMode ? _plan.parallelCrews : _plan.sequentialCrews;
+    final totalLabor = _isParallelMode
+        ? _plan.totalParallelLaborCostCop
+        : _plan.totalSequentialLaborCostCop;
 
-    return ListView.builder(
-      itemCount: crews.length,
-      itemBuilder: (context, idx) {
-        final crew = crews[idx];
-        return Container(
+    return Column(
+      children: [
+        Container(
           margin: const EdgeInsets.only(bottom: 7),
-          padding: const EdgeInsets.all(9),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
             color: colors.cardBg,
             borderRadius: BorderRadius.circular(8),
-            border: Border.all(color: colors.borderSubtle),
+            border: Border.all(color: colors.success.withValues(alpha: 0.45)),
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Container(
-                padding: const EdgeInsets.all(7),
-                decoration: BoxDecoration(
-                  color: colors.success.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Icon(crew.icon, color: colors.success, size: 18),
+              Text(
+                isEn
+                    ? 'Total Estimated Labor (days × workers × daily rate)'
+                    : 'Total Mano de Obra (días × operarios × tarifa diaria)',
+                style: TextStyle(color: colors.textSecondary, fontSize: 10.5),
               ),
-              const SizedBox(width: 9),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Row(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Expanded(
-                          child: Text(
-                            crew.roleName,
-                            style: TextStyle(
-                              color: colors.textPrimary,
-                              fontSize: 11.5,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: colors.success.withValues(alpha: 0.16),
-                            borderRadius: BorderRadius.circular(4),
-                          ),
-                          child: Text(
-                            '${crew.headcount} op. • ${crew.estimatedDays} d',
-                            style: TextStyle(
-                              color: colors.success,
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      crew.scopeDescription,
-                      style: TextStyle(color: colors.textSecondary, fontSize: 10),
-                    ),
-                    if (crew.equipmentNeeded.isNotEmpty) ...[
-                      const SizedBox(height: 2),
-                      Text(
-                        '🛠️ ${isEn ? 'Tools' : 'Herramientas'}: ${crew.equipmentNeeded.join(', ')}',
-                        style: TextStyle(color: colors.textMuted, fontSize: 9.2),
-                      ),
-                    ],
-                  ],
+              Text(
+                _fmtCop(totalLabor),
+                style: TextStyle(
+                  color: colors.success,
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-        );
-      },
+        ),
+        Expanded(
+          child: ListView.builder(
+            itemCount: crews.length,
+            itemBuilder: (context, idx) {
+              final crew = crews[idx];
+              return Container(
+                margin: const EdgeInsets.only(bottom: 7),
+                padding: const EdgeInsets.all(9),
+                decoration: BoxDecoration(
+                  color: colors.cardBg,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: colors.borderSubtle),
+                ),
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(7),
+                      decoration: BoxDecoration(
+                        color: colors.success.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Icon(crew.icon, color: colors.success, size: 18),
+                    ),
+                    const SizedBox(width: 9),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  crew.roleName,
+                                  style: TextStyle(
+                                    color: colors.textPrimary,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              const SizedBox(width: 6),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 2,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: colors.success.withValues(alpha: 0.16),
+                                  borderRadius: BorderRadius.circular(4),
+                                ),
+                                child: Text(
+                                  '${crew.headcount} op. • ${crew.estimatedDays} d',
+                                  style: TextStyle(
+                                    color: colors.success,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 4),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  '${ArchitectFeeProposalPdfService.formatCop(crew.dailyRateCop)} / ${isEn ? 'day' : 'día'}  →  ${_fmtCop(crew.totalLaborCostCop)}',
+                                  style: TextStyle(
+                                    color: colors.accent,
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                              if (crew.roleKey.isNotEmpty)
+                                IconButton(
+                                  key: Key('edit_crew_${crew.roleKey}'),
+                                  padding: EdgeInsets.zero,
+                                  constraints: const BoxConstraints(
+                                    minWidth: 26,
+                                    minHeight: 26,
+                                  ),
+                                  tooltip: isEn
+                                      ? 'Edit daily wage COP'
+                                      : 'Editar tarifa diaria COP',
+                                  icon: Icon(
+                                    Icons.edit_outlined,
+                                    size: 15,
+                                    color: colors.accent,
+                                  ),
+                                  onPressed: () => _onEditCrewRate(crew, isEn),
+                                ),
+                            ],
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            crew.scopeDescription,
+                            style: TextStyle(
+                              color: colors.textSecondary,
+                              fontSize: 10,
+                            ),
+                          ),
+                          if (crew.equipmentNeeded.isNotEmpty) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              '🛠️ ${isEn ? 'Tools' : 'Herramientas'}: ${crew.equipmentNeeded.join(', ')}',
+                              style: TextStyle(
+                                color: colors.textMuted,
+                                fontSize: 9.2,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildExpensesTab(AppColors colors, bool isEn) {
+    final budgeted = _plan.totalBudgetCop(parallelMode: _isParallelMode);
+    final executed = _plan.totalExecutedCop;
+    final inProgress = _plan.totalInProgressCop;
+    final balance = _plan.remainingBalanceCop(parallelMode: _isParallelMode);
+    final ratio = budgeted > 0 ? (executed / budgeted).clamp(0.0, 1.0) : 0.0;
+
+    return Column(
+      children: [
+        Container(
+          key: const Key('expenses_summary_card'),
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: colors.cardBg,
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(color: colors.accent.withValues(alpha: 0.45)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Wrap(
+                spacing: 14,
+                runSpacing: 6,
+                alignment: WrapAlignment.spaceBetween,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEn ? 'Budgeted' : 'Presupuestado',
+                        style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                      ),
+                      Text(
+                        _fmtCop(budgeted),
+                        style: TextStyle(
+                          color: colors.textPrimary,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEn ? 'Executed (Paid)' : 'Ejecutado (Pagado)',
+                        style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                      ),
+                      Text(
+                        _fmtCop(executed),
+                        style: TextStyle(
+                          color: colors.success,
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        isEn ? 'Balance' : 'Saldo',
+                        style: TextStyle(color: colors.textMuted, fontSize: 9.5),
+                      ),
+                      Text(
+                        _fmtCop(balance),
+                        style: TextStyle(
+                          color: balance >= 0
+                              ? colors.accent
+                              : const Color(0xFFEF5350),
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ],
+                  ),
+                  ElevatedButton.icon(
+                    key: const Key('add_expense_button'),
+                    style: ElevatedButton.styleFrom(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                    onPressed: () => _onAddExpense(isEn),
+                    icon: const Icon(Icons.add, size: 15),
+                    label: Text(
+                      isEn ? 'Log Expense' : 'Registrar Gasto',
+                      style: const TextStyle(fontSize: 10.5),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(4),
+                child: LinearProgressIndicator(
+                  value: ratio,
+                  minHeight: 6,
+                  backgroundColor: colors.surfaceSubtle,
+                  color: balance >= 0 ? colors.success : const Color(0xFFEF5350),
+                ),
+              ),
+              if (inProgress > 0) ...[
+                const SizedBox(height: 4),
+                Text(
+                  '${isEn ? 'In progress / committed' : 'En proceso / comprometido'}: ${_fmtCop(inProgress)}',
+                  style: TextStyle(color: colors.warning, fontSize: 9.5),
+                ),
+              ],
+            ],
+          ),
+        ),
+        Expanded(
+          child: _plan.expenses.isEmpty
+              ? Center(
+                  child: Text(
+                    isEn
+                        ? 'No expenses recorded yet. Log payments to compare Budget vs. Actual.'
+                        : 'Aún no hay gastos registrados. Registra pagos o anticipos para controlar Presupuestado vs. Ejecutado.',
+                    style: TextStyle(color: colors.textMuted, fontSize: 11.5),
+                    textAlign: TextAlign.center,
+                  ),
+                )
+              : ListView.builder(
+                  itemCount: _plan.expenses.length,
+                  itemBuilder: (context, idx) {
+                    final exp = _plan.expenses[idx];
+                    final statusColor = switch (exp.status) {
+                      ExpenseStatus.paid => colors.success,
+                      ExpenseStatus.inProgress => colors.warning,
+                      ExpenseStatus.pending => colors.textMuted,
+                    };
+                    final dateStr = exp.date.toIso8601String().split('T').first;
+                    return Container(
+                      margin: const EdgeInsets.only(bottom: 7),
+                      padding: const EdgeInsets.all(9),
+                      decoration: BoxDecoration(
+                        color: colors.cardBg,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: colors.borderSubtle),
+                      ),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  exp.linkedLabel,
+                                  style: TextStyle(
+                                    color: colors.textPrimary,
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                                const SizedBox(height: 2),
+                                Text(
+                                  '${exp.phaseName} • $dateStr${exp.vendorOrNote.isNotEmpty ? ' • ${exp.vendorOrNote}' : ''}',
+                                  style: TextStyle(
+                                    color: colors.textSecondary,
+                                    fontSize: 9.8,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Column(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Text(
+                                _fmtCop(exp.amountCop),
+                                style: TextStyle(
+                                  color: colors.textPrimary,
+                                  fontSize: 11.5,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              const SizedBox(height: 3),
+                              InkWell(
+                                onTap: () => _onCycleExpenseStatus(exp),
+                                borderRadius: BorderRadius.circular(4),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 6,
+                                    vertical: 2,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: statusColor.withValues(alpha: 0.16),
+                                    borderRadius: BorderRadius.circular(4),
+                                    border: Border.all(
+                                      color: statusColor.withValues(alpha: 0.45),
+                                    ),
+                                  ),
+                                  child: Text(
+                                    exp.status.label(isEn ? 'en' : 'es'),
+                                    style: TextStyle(
+                                      color: statusColor,
+                                      fontSize: 9.5,
+                                      fontWeight: FontWeight.bold,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          IconButton(
+                            padding: EdgeInsets.zero,
+                            constraints: const BoxConstraints(
+                              minWidth: 26,
+                              minHeight: 26,
+                            ),
+                            icon: const Icon(
+                              Icons.delete_outline,
+                              size: 15,
+                              color: Color(0xFFEF5350),
+                            ),
+                            onPressed: () => _onDeleteExpense(exp.id),
+                          ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+        ),
+      ],
     );
   }
 
