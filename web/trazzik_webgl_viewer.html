@@ -60,7 +60,12 @@
       cursor: pointer;
     }
     .walk-btn:active { background: rgba(56, 189, 248, 0.35); }
-    .walk-pad {
+    .walk-btn.active {
+      background: rgba(16, 185, 129, 0.28);
+      color: #6ee7b7;
+      border-color: rgba(16, 185, 129, 0.8);
+    }
+    .walk-pad, .walk-floors {
       display: flex;
       gap: 4px;
     }
@@ -98,6 +103,7 @@
   <div id="status-pill">Iniciando motor WebGL PBR…</div>
   <div id="walk-hud">
     <span>Recorrido 1.65 m • WASD / Flechas + Arrastrar vista</span>
+    <div class="walk-floors" id="walk-floors"></div>
     <div class="walk-pad">
       <button class="walk-btn" data-move="forward">▲</button>
       <button class="walk-btn" data-move="back">▼</button>

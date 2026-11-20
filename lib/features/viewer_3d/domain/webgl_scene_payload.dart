@@ -188,6 +188,7 @@ class WebGlScenePayloadBuilder {
     String? selectedModuleId,
     bool highlightWallSelection = false,
     bool isPerspective = true,
+    bool showLabels = true,
     double orientationDegrees = 0.0,
   }) {
     final materialsMap = <String, PbrMaterialSpec>{};
@@ -368,6 +369,7 @@ class WebGlScenePayloadBuilder {
         'selectedModuleId': selectedModuleId,
         'highlightWallSelection': highlightWallSelection,
         'isPerspective': isPerspective,
+        'showLabels': showLabels,
         'orientationDegrees': _r3(orientationDegrees),
       },
       'materials': materialsMap.values.map((m) => m.toJson()).toList(),

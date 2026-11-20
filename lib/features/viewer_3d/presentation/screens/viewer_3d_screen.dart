@@ -1016,6 +1016,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                         highlightWallSelection:
                             _activeSurfaceTab == FinishSurfaceTarget.wall,
                         isPerspective: _isPerspective,
+                        showLabels: _showLabels,
                         orientationDegrees: lot.orientationDegrees,
                         controller: _webGlController,
                         onSurfaceTapped: (moduleId, floorId, isWallFace) {

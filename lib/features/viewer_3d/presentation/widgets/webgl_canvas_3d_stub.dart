@@ -13,6 +13,7 @@ Widget buildWebGlCanvas3D({
   required String? selectedModuleId,
   required bool highlightWallSelection,
   required bool isPerspective,
+  required bool showLabels,
   required double orientationDegrees,
   required WebGlViewerController? controller,
   required void Function(String? moduleId, String? floorId, bool isWallFace)?

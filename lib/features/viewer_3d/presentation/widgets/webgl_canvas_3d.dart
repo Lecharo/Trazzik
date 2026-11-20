@@ -62,6 +62,7 @@ class WebGlCanvas3D extends StatelessWidget {
   final String? selectedModuleId;
   final bool highlightWallSelection;
   final bool isPerspective;
+  final bool showLabels;
   final double orientationDegrees;
   final WebGlViewerController? controller;
   final void Function(String? moduleId, String? floorId, bool isWallFace)?
@@ -79,6 +80,7 @@ class WebGlCanvas3D extends StatelessWidget {
     this.selectedModuleId,
     this.highlightWallSelection = false,
     this.isPerspective = true,
+    this.showLabels = true,
     this.orientationDegrees = 0.0,
     this.controller,
     this.onSurfaceTapped,
@@ -97,6 +99,7 @@ class WebGlCanvas3D extends StatelessWidget {
       selectedModuleId: selectedModuleId,
       highlightWallSelection: highlightWallSelection,
       isPerspective: isPerspective,
+      showLabels: showLabels,
       orientationDegrees: orientationDegrees,
       controller: controller,
       onSurfaceTapped: onSurfaceTapped,

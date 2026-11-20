@@ -8,6 +8,7 @@ const viewerId = params.get('viewerId') || 'trazzik-webgl';
 const host = document.getElementById('canvas-host');
 const statusPill = document.getElementById('status-pill');
 const walkHud = document.getElementById('walk-hud');
+const walkFloorsEl = document.getElementById('walk-floors');
 const walkExitBtn = document.getElementById('walk-exit-btn');
 
 // ---------------------------------------------------------------------------
@@ -27,6 +28,7 @@ renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 1.08;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.localClippingEnabled = true;
+renderer.domElement.tabIndex = 0;
 host.appendChild(renderer.domElement);
 
 const scene = new THREE.Scene();
@@ -111,14 +113,25 @@ scene.add(interiorLightsGroup);
 const buildingRoot = new THREE.Group();
 scene.add(buildingRoot);
 
+const labelsGroup = new THREE.Group();
+scene.add(labelsGroup);
+
 const clippingPlanes = [];
+const edgeLineMaterial = new THREE.LineBasicMaterial({
+  color: '#0f172a',
+  transparent: true,
+  opacity: 0.22,
+  clippingPlanes,
+});
 const materialCache = new Map();
 const textureCache = new Map();
+const skyTextureCache = new Map();
 const floorGroups = new Map();
 const pickableMeshes = [];
 
 let currentPayload = null;
 let hasInitializedCamera = false;
+let currentShowLabels = true;
 let currentBounds = {
   minX: 0, maxX: 10, minY: 0, maxY: 3, minZ: 0, maxZ: 10,
   centerX: 5, centerY: 1.5, centerZ: 5, radius: 8,
@@ -448,8 +461,114 @@ function getOrCreateMaterial(spec) {
 }
 
 // ---------------------------------------------------------------------------
-// 4. Lighting, GPU Section Clipping & Exploded Offsets
+// 4. Sky Gradient, Floating 3D Labels, Lighting, GPU Clipping & Exploded Offsets
 // ---------------------------------------------------------------------------
+function getSkyGradientTexture(topHex, midHex, bottomHex) {
+  const key = `${topHex}|${midHex}|${bottomHex}`;
+  if (skyTextureCache.has(key)) return skyTextureCache.get(key);
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 256;
+  const ctx = c.getContext('2d');
+  const grad = ctx.createLinearGradient(0, 0, 0, 256);
+  grad.addColorStop(0.0, topHex);
+  grad.addColorStop(0.55, midHex);
+  grad.addColorStop(1.0, bottomHex);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, 4, 256);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  skyTextureCache.set(key, tex);
+  return tex;
+}
+
+function disposeLabels() {
+  while (labelsGroup.children.length > 0) {
+    const child = labelsGroup.children[0];
+    labelsGroup.remove(child);
+    if (child.material) {
+      if (child.material.map) child.material.map.dispose();
+      child.material.dispose();
+    }
+  }
+}
+
+function createRoomLabelSprite(lbl) {
+  const w = 512;
+  const h = 168;
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const ctx = c.getContext('2d');
+
+  // Rounded dark translucent architectural pill
+  const r = 24;
+  ctx.fillStyle = 'rgba(15, 23, 42, 0.88)';
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.72)';
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(r + 6, 8);
+  ctx.lineTo(w - r - 6, 8);
+  ctx.quadraticCurveTo(w - 6, 8, w - 6, r + 8);
+  ctx.lineTo(w - 6, h - r - 8);
+  ctx.quadraticCurveTo(w - 6, h - 8, w - r - 6, h - 8);
+  ctx.lineTo(r + 6, h - 8);
+  ctx.quadraticCurveTo(6, h - 8, 6, h - r - 8);
+  ctx.lineTo(6, r + 8);
+  ctx.quadraticCurveTo(6, 8, r + 6, 8);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  const title = String(lbl.text || '').toUpperCase().slice(0, 22);
+  const sub = String(lbl.sub || '').slice(0, 26);
+
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#f8fafc';
+  ctx.font = '700 42px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+  ctx.fillText(title, w / 2, sub ? 62 : h / 2);
+
+  if (sub) {
+    ctx.fillStyle = '#bae6fd';
+    ctx.font = '600 32px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+    ctx.fillText(sub, w / 2, 118);
+  }
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    depthTest: false,
+    depthWrite: false,
+  });
+  const sprite = new THREE.Sprite(mat);
+  sprite.scale.set(2.35, 0.77, 1);
+  sprite.renderOrder = 25;
+  const baseY = (lbl.y || 0.35) + 0.55;
+  sprite.position.set(
+    lbl.x || 0,
+    baseY + Math.max(0, lbl.floorIndex || 0) * currentExplodedFactor * 2.4,
+    lbl.z || 0
+  );
+  sprite.userData = { baseY, floorIndex: lbl.floorIndex || 0 };
+  return sprite;
+}
+
+function buildRoomLabelSprites(roomLabels) {
+  disposeLabels();
+  if (!roomLabels || roomLabels.length === 0) return;
+  for (const lbl of roomLabels) {
+    labelsGroup.add(createRoomLabelSprite(lbl));
+  }
+  updateLabelsVisibility();
+}
+
+function updateLabelsVisibility() {
+  labelsGroup.visible = Boolean(currentShowLabels) && !walkMode;
+}
+
 function applyLighting(sunPreset, bounds, interiorLights) {
   const cx = bounds.centerX;
   const cy = bounds.centerY;
@@ -461,7 +580,10 @@ function applyLighting(sunPreset, bounds, interiorLights) {
     interiorLightsGroup.remove(interiorLightsGroup.children[0]);
   }
 
-  let bgHex = '#0f172a';
+  let skyTop = '#0c1a30';
+  let skyMid = '#1b314f';
+  let skyBottom = '#111b2c';
+  let fogHex = '#142238';
   let groundHex = '#1e293b';
   let sunColor = '#fffdf7';
   let sunIntensity = 2.3;
@@ -473,7 +595,10 @@ function applyLighting(sunPreset, bounds, interiorLights) {
   let exposure = 1.08;
 
   if (sunPreset === 'morningEast') {
-    bgHex = '#142033';
+    skyTop = '#122642';
+    skyMid = '#284b6e';
+    skyBottom = '#1b293b';
+    fogHex = '#1d324a';
     groundHex = '#233144';
     sunColor = '#ffebd2';
     sunIntensity = 2.45;
@@ -482,7 +607,10 @@ function applyLighting(sunPreset, bounds, interiorLights) {
     hemiGround = '#78716c';
     hemiIntensity = 0.95;
   } else if (sunPreset === 'goldenHourWest') {
-    bgHex = '#1a1625';
+    skyTop = '#181936';
+    skyMid = '#5b3952';
+    skyBottom = '#2c2233';
+    fogHex = '#2b2234';
     groundHex = '#282330';
     sunColor = '#ffb26b';
     sunIntensity = 2.85;
@@ -493,7 +621,10 @@ function applyLighting(sunPreset, bounds, interiorLights) {
     envIntensity = 0.55;
     exposure = 1.14;
   } else if (sunPreset === 'nightInterior') {
-    bgHex = '#070b14';
+    skyTop = '#040711';
+    skyMid = '#0b1328';
+    skyBottom = '#070b14';
+    fogHex = '#080e1c';
     groundHex = '#111827';
     sunColor = '#7ca4e8';
     sunIntensity = 0.55;
@@ -518,8 +649,8 @@ function applyLighting(sunPreset, bounds, interiorLights) {
     }
   }
 
-  scene.background = new THREE.Color(bgHex);
-  scene.fog.color.set(bgHex);
+  scene.background = getSkyGradientTexture(skyTop, skyMid, skyBottom);
+  scene.fog.color.set(fogHex);
   groundMat.color.set(groundHex);
   scene.environmentIntensity = envIntensity;
   renderer.toneMappingExposure = exposure;
@@ -558,6 +689,8 @@ function applySectionCut(axis, ratio, bounds) {
     mat.clippingPlanes = clippingPlanes;
     mat.needsUpdate = true;
   }
+  edgeLineMaterial.clippingPlanes = clippingPlanes;
+  edgeLineMaterial.needsUpdate = true;
 }
 
 function applyExplodedFactor(factor) {
@@ -569,6 +702,12 @@ function applyExplodedFactor(factor) {
     if (pt.userData && typeof pt.userData.baseY === 'number') {
       const fIdx = Math.max(0, pt.userData.floorIndex || 0);
       pt.position.y = pt.userData.baseY + fIdx * factor * 2.4;
+    }
+  }
+  for (const sp of labelsGroup.children) {
+    if (sp.userData && typeof sp.userData.baseY === 'number') {
+      const fIdx = Math.max(0, sp.userData.floorIndex || 0);
+      sp.position.y = sp.userData.baseY + fIdx * factor * 2.4;
     }
   }
 }
@@ -700,6 +839,11 @@ function loadScenePayload(payload) {
     };
 
     group.add(mesh);
+    if (meshData.castShadow && !mat.transmission) {
+      const edgesGeo = new THREE.EdgesGeometry(geo, 32);
+      const edges = new THREE.LineSegments(edgesGeo, edgeLineMaterial);
+      group.add(edges);
+    }
     if (meshData.moduleId) {
       pickableMeshes.push(mesh);
     }
@@ -710,6 +854,7 @@ function loadScenePayload(payload) {
   gridHelper.position.x = currentBounds.centerX;
   gridHelper.position.z = currentBounds.centerZ;
 
+  currentShowLabels = settings.showLabels !== false;
   applyExplodedFactor(settings.explodedFactor || 0.0);
   applySectionCut(
     settings.sectionCutAxis || 'none',
@@ -721,6 +866,8 @@ function loadScenePayload(payload) {
     currentBounds,
     payload.interiorLights || []
   );
+  buildRoomLabelSprites(payload.roomLabels || []);
+  rebuildWalkFloorButtons(payload.floors || []);
   applySelectionHighlight(
     settings.selectedModuleId || null,
     Boolean(settings.highlightWallSelection)
@@ -798,11 +945,40 @@ function setCameraPreset(presetId, instant = false) {
   };
 }
 
+function rebuildWalkFloorButtons(floors) {
+  if (!walkFloorsEl) return;
+  walkFloorsEl.innerHTML = '';
+  if (!floors || floors.length <= 1) return;
+  floors.forEach((f, idx) => {
+    const btn = document.createElement('button');
+    btn.className = 'walk-btn';
+    btn.textContent = `P${idx + 1}`;
+    btn.dataset.elevation = String(f.elevation || 0);
+    btn.addEventListener('click', () => {
+      walkFloorElevation = f.elevation || 0;
+      perspCamera.position.y = walkFloorElevation + 1.65;
+      highlightActiveWalkFloor();
+      renderer.domElement.focus();
+    });
+    walkFloorsEl.appendChild(btn);
+  });
+  highlightActiveWalkFloor();
+}
+
+function highlightActiveWalkFloor() {
+  if (!walkFloorsEl) return;
+  walkFloorsEl.querySelectorAll('.walk-btn').forEach((btn) => {
+    const elev = parseFloat(btn.dataset.elevation || '0');
+    btn.classList.toggle('active', Math.abs(elev - walkFloorElevation) < 0.25);
+  });
+}
+
 function setWalkMode(enabled, floorElevation = null) {
   if (enabled === walkMode) {
     if (enabled && typeof floorElevation === 'number') {
       walkFloorElevation = floorElevation;
       perspCamera.position.y = walkFloorElevation + 1.65;
+      highlightActiveWalkFloor();
     }
     return;
   }
@@ -830,7 +1006,12 @@ function setWalkMode(enabled, floorElevation = null) {
     walkYaw = 0;
     walkPitch = -0.04;
     applyWalkOrientation();
+    highlightActiveWalkFloor();
     walkHud.classList.add('visible');
+    updateLabelsVisibility();
+    // Auto-focus iframe/canvas so WASD / Arrow keys work immediately
+    window.focus();
+    renderer.domElement.focus();
   } else {
     walkHud.classList.remove('visible');
     walkKeys.clear();
@@ -840,6 +1021,7 @@ function setWalkMode(enabled, floorElevation = null) {
     controls.object = activeCamera;
     controls.enabled = true;
     controls.update();
+    updateLabelsVisibility();
     postToParent({ type: 'walkModeChanged', enabled: false });
   }
 }
@@ -980,6 +1162,10 @@ window.addEventListener('message', (event) => {
       }
       if (typeof s.isPerspective === 'boolean') {
         switchProjection(s.isPerspective);
+      }
+      if (typeof s.showLabels === 'boolean') {
+        currentShowLabels = s.showLabels;
+        updateLabelsVisibility();
       }
       break;
     }

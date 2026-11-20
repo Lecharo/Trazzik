@@ -26,6 +26,7 @@ Widget buildWebGlCanvas3D({
   required String? selectedModuleId,
   required bool highlightWallSelection,
   required bool isPerspective,
+  required bool showLabels,
   required double orientationDegrees,
   required WebGlViewerController? controller,
   required void Function(String? moduleId, String? floorId, bool isWallFace)?
@@ -42,6 +43,7 @@ Widget buildWebGlCanvas3D({
     selectedModuleId: selectedModuleId,
     highlightWallSelection: highlightWallSelection,
     isPerspective: isPerspective,
+    showLabels: showLabels,
     orientationDegrees: orientationDegrees,
     controller: controller,
     onSurfaceTapped: onSurfaceTapped,
@@ -59,6 +61,7 @@ class _WebGlCanvas3DWeb extends StatefulWidget {
   final String? selectedModuleId;
   final bool highlightWallSelection;
   final bool isPerspective;
+  final bool showLabels;
   final double orientationDegrees;
   final WebGlViewerController? controller;
   final void Function(String? moduleId, String? floorId, bool isWallFace)?
@@ -75,6 +78,7 @@ class _WebGlCanvas3DWeb extends StatefulWidget {
     required this.selectedModuleId,
     required this.highlightWallSelection,
     required this.isPerspective,
+    required this.showLabels,
     required this.orientationDegrees,
     required this.controller,
     required this.onSurfaceTapped,
@@ -240,6 +244,7 @@ class _WebGlCanvas3DWebState extends State<_WebGlCanvas3DWeb> {
       selectedModuleId: widget.selectedModuleId,
       highlightWallSelection: widget.highlightWallSelection,
       isPerspective: widget.isPerspective,
+      showLabels: widget.showLabels,
       orientationDegrees: widget.orientationDegrees,
     );
     _postMessage(<String, dynamic>{
@@ -259,6 +264,7 @@ class _WebGlCanvas3DWebState extends State<_WebGlCanvas3DWeb> {
         'selectedModuleId': widget.selectedModuleId,
         'highlightWallSelection': widget.highlightWallSelection,
         'isPerspective': widget.isPerspective,
+        'showLabels': widget.showLabels,
       },
     });
   }
@@ -280,7 +286,8 @@ class _WebGlCanvas3DWebState extends State<_WebGlCanvas3DWeb> {
         oldWidget.sectionCutRatio != widget.sectionCutRatio ||
         oldWidget.selectedModuleId != widget.selectedModuleId ||
         oldWidget.highlightWallSelection != widget.highlightWallSelection ||
-        oldWidget.isPerspective != widget.isPerspective) {
+        oldWidget.isPerspective != widget.isPerspective ||
+        oldWidget.showLabels != widget.showLabels) {
       _pushSettingsOnly();
     }
   }
