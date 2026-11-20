@@ -109,30 +109,48 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           PopupMenuItem(
             value: 'wall_existing',
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.layers, size: 16),
                 const SizedBox(width: 8),
-                Text(lang == 'es' ? 'Muro Existente' : 'Mark Existing'),
+                Flexible(
+                  child: Text(
+                    lang == 'es' ? 'Muro Existente' : 'Mark Existing',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
           PopupMenuItem(
             value: 'wall_new',
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.add_box_outlined, size: 16, color: Color(0xFF14B8A6)),
                 const SizedBox(width: 8),
-                Text(lang == 'es' ? 'Muro Nuevo' : 'Mark New'),
+                Flexible(
+                  child: Text(
+                    lang == 'es' ? 'Muro Nuevo' : 'Mark New',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
           PopupMenuItem(
             value: 'wall_demolish',
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFEF4444)),
                 const SizedBox(width: 8),
-                Text(lang == 'es' ? 'Marcar Demoler' : 'Mark Demolish'),
+                Flexible(
+                  child: Text(
+                    lang == 'es' ? 'Marcar Demoler' : 'Mark Demolish',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
@@ -140,10 +158,16 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           PopupMenuItem(
             value: 'delete',
             child: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
                 const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
                 const SizedBox(width: 8),
-                Text(lang == 'es' ? 'Eliminar muro' : 'Delete wall'),
+                Flexible(
+                  child: Text(
+                    lang == 'es' ? 'Eliminar muro' : 'Delete wall',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                ),
               ],
             ),
           ),
@@ -177,26 +201,36 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         PopupMenuItem(
           value: 'duplicate',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.copy_all, size: 16),
               const SizedBox(width: 8),
-              Text(lang == 'es' ? 'Duplicar (Ctrl+D)' : 'Duplicate (Ctrl+D)'),
+              Flexible(
+                child: Text(
+                  lang == 'es' ? 'Duplicar (Ctrl+D)' : 'Duplicate (Ctrl+D)',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
         PopupMenuItem(
           value: 'lock',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               Icon(
                 targetMod.isLocked ? Icons.lock_open : Icons.lock_outline,
                 size: 16,
               ),
               const SizedBox(width: 8),
-              Text(
-                targetMod.isLocked
-                    ? (lang == 'es' ? 'Desbloquear' : 'Unlock')
-                    : (lang == 'es' ? 'Bloquear posición' : 'Lock position'),
+              Flexible(
+                child: Text(
+                  targetMod.isLocked
+                      ? (lang == 'es' ? 'Desbloquear' : 'Unlock')
+                      : (lang == 'es' ? 'Bloquear posición' : 'Lock position'),
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ],
           ),
@@ -205,30 +239,48 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         PopupMenuItem(
           value: 'status_existing',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.home_outlined, size: 16),
               const SizedBox(width: 8),
-              Text(lang == 'es' ? 'Estado: Existente' : 'Status: Existing'),
+              Flexible(
+                child: Text(
+                  lang == 'es' ? 'Estado: Existente' : 'Status: Existing',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
         PopupMenuItem(
           value: 'status_new',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF14B8A6)),
               const SizedBox(width: 8),
-              Text(lang == 'es' ? 'Estado: Nuevo' : 'Status: New'),
+              Flexible(
+                child: Text(
+                  lang == 'es' ? 'Estado: Nuevo' : 'Status: New',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
         PopupMenuItem(
           value: 'status_demolish',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.delete_sweep_outlined, size: 16, color: Color(0xFFEF4444)),
               const SizedBox(width: 8),
-              Text(lang == 'es' ? 'Estado: Demoler' : 'Status: Demolish'),
+              Flexible(
+                child: Text(
+                  lang == 'es' ? 'Estado: Demoler' : 'Status: Demolish',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),
@@ -236,10 +288,16 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         PopupMenuItem(
           value: 'delete',
           child: Row(
+            mainAxisSize: MainAxisSize.min,
             children: [
               const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
               const SizedBox(width: 8),
-              Text(lang == 'es' ? 'Eliminar' : 'Delete'),
+              Flexible(
+                child: Text(
+                  lang == 'es' ? 'Eliminar' : 'Delete',
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
             ],
           ),
         ),

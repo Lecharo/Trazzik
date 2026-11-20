@@ -180,39 +180,51 @@ class _LiveSplit3dPaneState extends ConsumerState<LiveSplit3dPane> {
                       ),
                       const SizedBox(width: 6),
                       Text(
-                        lang == 'es' ? '3D EN VIVO' : 'LIVE 3D',
+                        lang == 'es' ? '3D VIVO' : 'LIVE 3D',
                         style: const TextStyle(
                           color: Color(0xFF34D399),
-                          fontSize: 10.5,
+                          fontSize: 10.0,
                           fontWeight: FontWeight.w800,
-                          letterSpacing: 0.6,
+                          letterSpacing: 0.5,
                         ),
                       ),
-                      const Spacer(),
-                      if (floors.length > 1) ...[
-                        _SplitMiniBtn(
-                          label: _showAllFloors
-                              ? (lang == 'es' ? 'Todos' : 'All')
-                              : 'P${activeFloor.floorNumber}',
-                          active: _showAllFloors,
-                          onTap: () =>
-                              setState(() => _showAllFloors = !_showAllFloors),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          reverse: true,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (floors.length > 1) ...[
+                                _SplitMiniBtn(
+                                  label: _showAllFloors
+                                      ? (lang == 'es' ? 'Todos' : 'All')
+                                      : 'P${activeFloor.floorNumber}',
+                                  active: _showAllFloors,
+                                  onTap: () => setState(
+                                    () => _showAllFloors = !_showAllFloors,
+                                  ),
+                                ),
+                                const SizedBox(width: 4),
+                              ],
+                              _SplitMiniBtn(
+                                label: 'Iso',
+                                onTap: () => _applyPreset(-0.52, 0.78),
+                              ),
+                              const SizedBox(width: 4),
+                              _SplitMiniBtn(
+                                label: lang == 'es' ? 'Frente' : 'Front',
+                                onTap: () => _applyPreset(0.0, 1.38),
+                              ),
+                              const SizedBox(width: 4),
+                              _SplitMiniBtn(
+                                label: lang == 'es' ? 'Planta' : 'Top',
+                                onTap: () => _applyPreset(0.0, 0.08),
+                              ),
+                            ],
+                          ),
                         ),
-                        const SizedBox(width: 4),
-                      ],
-                      _SplitMiniBtn(
-                        label: 'Iso',
-                        onTap: () => _applyPreset(-0.52, 0.78),
-                      ),
-                      const SizedBox(width: 4),
-                      _SplitMiniBtn(
-                        label: lang == 'es' ? 'Frente' : 'Front',
-                        onTap: () => _applyPreset(0.0, 1.38),
-                      ),
-                      const SizedBox(width: 4),
-                      _SplitMiniBtn(
-                        label: lang == 'es' ? 'Planta' : 'Top',
-                        onTap: () => _applyPreset(0.0, 0.08),
                       ),
                       const SizedBox(width: 6),
                       InkWell(

@@ -1149,11 +1149,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 ),
               ],
 
-          // 1.5. Selector flotante en vivo: Antes / Después / Comparativo / Realista
+          // 1.5. Selector flotante en vivo: Antes / Después / Comparativo / Cortina / Realista
           Positioned(
-            top: isMobile ? 12 : 16,
-            left: isMobile ? 12 : 380,
-            right: isMobile ? 12 : 300,
+            top: isMobile ? 12 : (constraints.maxWidth < 1080 ? 112 : 16),
+            left: isMobile ? 12 : (constraints.maxWidth < 1080 ? 16 : 444),
+            right: isMobile ? 12 : (constraints.maxWidth < 1080 ? 180 : 270),
             child: IgnorePointer(
               ignoring: false,
               child: Center(
