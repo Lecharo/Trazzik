@@ -50,12 +50,52 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
   String? _draggingParentModuleId;
   Point2D? _dragStartMeters;
   Point2D? _moduleInitialOrigin;
+  double? _moduleInitialWidth;
+  double? _moduleInitialHeight;
   Point2D? _subModuleInitialOrigin;
+
+  // Direct handle resize state
+  String? _resizingModuleId;
+  ResizeHandle2D? _activeResizeHandle;
+  double? _resizeInitialMinX;
+  double? _resizeInitialMinY;
+  double? _resizeInitialMaxX;
+  double? _resizeInitialMaxY;
+
+  // Hover, cursor & smart-snap guide feedback state
+  String? _hoveredModuleId;
+  String? _hoveredWallId;
+  ResizeHandle2D? _hoveredHandle;
+  Point2D? _cursorMeters;
+  List<SnapGuide2D> _activeSnapGuides = const <SnapGuide2D>[];
+
   bool _isAuxPanning = false;
   bool _isSpacePanning = false;
   Offset? _lastAuxPanPos;
+  Offset? _primaryPointerDownLocalPos;
+
+  static MouseCursor _cursorForResizeHandle(ResizeHandle2D handle) {
+    switch (handle) {
+      case ResizeHandle2D.left:
+      case ResizeHandle2D.right:
+        return SystemMouseCursors.resizeLeftRight;
+      case ResizeHandle2D.top:
+      case ResizeHandle2D.bottom:
+        return SystemMouseCursors.resizeUpDown;
+      case ResizeHandle2D.topLeft:
+      case ResizeHandle2D.bottomRight:
+        return SystemMouseCursors.resizeUpLeftDownRight;
+      case ResizeHandle2D.topRight:
+      case ResizeHandle2D.bottomLeft:
+        return SystemMouseCursors.resizeUpRightDownLeft;
+    }
+  }
 
   MouseCursor _resolveCursor(FloorEditorState editorState) {
+    final handle = _activeResizeHandle ?? _hoveredHandle;
+    if (handle != null) {
+      return _cursorForResizeHandle(handle);
+    }
     if (_isAuxPanning ||
         _isSpacePanning ||
         _draggingModuleId != null ||
@@ -65,11 +105,91 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
     if (editorState.isDrawWallMode || editorState.isLaserMeasureActive) {
       return SystemMouseCursors.precise;
     }
+    if (_hoveredModuleId != null || _hoveredWallId != null) {
+      return SystemMouseCursors.click;
+    }
     return SystemMouseCursors.grab;
   }
 
+  static ResizeHandle2D? _hitTestResizeHandle(
+    Point2D pointMeters,
+    FloorEditorState editorState,
+  ) {
+    final selectedId = editorState.selectedModuleId;
+    if (selectedId == null) return null;
+    final selected = editorState.floor.modules
+        .where((m) => m.id == selectedId)
+        .firstOrNull;
+    if (selected == null) return null;
+
+    final handles = computeModuleResizeHandles(selected);
+    if (handles.isEmpty) return null;
+
+    final tol = math.max(0.16, 12.0 / editorState.zoom);
+    ResizeHandle2D? closest;
+    double bestDist = tol + 1e-6;
+    for (final entry in handles.entries) {
+      final d = pointMeters.distanceTo(entry.value);
+      if (d <= tol && d < bestDist) {
+        bestDist = d;
+        closest = entry.key;
+      }
+    }
+    return closest;
+  }
+
+  void _updateHover(Offset localPosition, FloorEditorState editorState) {
+    if (_isAuxPanning ||
+        _isSpacePanning ||
+        _draggingModuleId != null ||
+        _draggingSubModuleId != null ||
+        _resizingModuleId != null) {
+      return;
+    }
+    final metersX = (localPosition.dx - editorState.panOffset.dx) / editorState.zoom;
+    final metersY = (localPosition.dy - editorState.panOffset.dy) / editorState.zoom;
+    final rawPoint = Point2D(metersX, metersY);
+    final quantized = Point2D(
+      (metersX * 100).round() / 100.0,
+      (metersY * 100).round() / 100.0,
+    );
+
+    final nextHandle = (editorState.isDrawWallMode || editorState.isLaserMeasureActive)
+        ? null
+        : _hitTestResizeHandle(rawPoint, editorState);
+
+    String? nextHoveredModule;
+    String? nextHoveredWall;
+    if (nextHandle == null &&
+        !editorState.isDrawWallMode &&
+        !editorState.isLaserMeasureActive) {
+      final hit = _hitTestAt(rawPoint, editorState.floor, editorState.zoom);
+      if (hit.kind == _HitKind.module ||
+          hit.kind == _HitKind.opening ||
+          hit.kind == _HitKind.subModule) {
+        nextHoveredModule = hit.module?.id;
+      } else if (hit.kind == _HitKind.wall) {
+        nextHoveredWall = hit.wallId;
+      }
+    }
+
+    if (quantized != _cursorMeters ||
+        nextHandle != _hoveredHandle ||
+        nextHoveredModule != _hoveredModuleId ||
+        nextHoveredWall != _hoveredWallId) {
+      setState(() {
+        _cursorMeters = quantized;
+        _hoveredHandle = nextHandle;
+        _hoveredModuleId = nextHoveredModule;
+        _hoveredWallId = nextHoveredWall;
+      });
+    }
+  }
+
   void _finishDragGesture(FloorEditorNotifier notifier) {
-    if (_draggingModuleId != null || _draggingSubModuleId != null) {
+    if (_draggingModuleId != null ||
+        _draggingSubModuleId != null ||
+        _resizingModuleId != null) {
       notifier.endInteraction();
     }
     if (mounted) {
@@ -79,7 +199,16 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         _draggingParentModuleId = null;
         _dragStartMeters = null;
         _moduleInitialOrigin = null;
+        _moduleInitialWidth = null;
+        _moduleInitialHeight = null;
         _subModuleInitialOrigin = null;
+        _resizingModuleId = null;
+        _activeResizeHandle = null;
+        _resizeInitialMinX = null;
+        _resizeInitialMinY = null;
+        _resizeInitialMaxX = null;
+        _resizeInitialMaxY = null;
+        _activeSnapGuides = const <SnapGuide2D>[];
         _isSpacePanning = false;
       });
     }
@@ -162,6 +291,20 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
 
     return MouseRegion(
       cursor: _resolveCursor(editorState),
+      onHover: (event) => _updateHover(event.localPosition, editorState),
+      onExit: (_) {
+        if (_cursorMeters != null ||
+            _hoveredHandle != null ||
+            _hoveredModuleId != null ||
+            _hoveredWallId != null) {
+          setState(() {
+            _cursorMeters = null;
+            _hoveredHandle = null;
+            _hoveredModuleId = null;
+            _hoveredWallId = null;
+          });
+        }
+      },
       child: Listener(
         onPointerSignal: (pointerSignal) {
           if (pointerSignal is PointerScrollEvent) {
@@ -180,6 +323,8 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
               _isAuxPanning = true;
               _lastAuxPanPos = event.localPosition;
             });
+          } else {
+            _primaryPointerDownLocalPos = event.localPosition;
           }
         },
         onPointerMove: (event) {
@@ -190,6 +335,7 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           }
         },
         onPointerUp: (_) {
+          _primaryPointerDownLocalPos = null;
           if (_isAuxPanning) {
             setState(() {
               _isAuxPanning = false;
@@ -198,6 +344,7 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           }
         },
         onPointerCancel: (_) {
+          _primaryPointerDownLocalPos = null;
           if (_isAuxPanning) {
             setState(() {
               _isAuxPanning = false;
@@ -213,7 +360,7 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           setState(() => _isSpacePanning = true);
           return;
         }
-        final localPos = details.localPosition;
+        final localPos = _primaryPointerDownLocalPos ?? details.localPosition;
         final metersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
         final clickPoint = Point2D(metersX, metersY);
@@ -230,19 +377,51 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           return;
         }
 
+        // Check direct resize handle hit on the currently selected room first
+        final hitHandle = _hitTestResizeHandle(clickPoint, editorState);
+        if (hitHandle != null && editorState.selectedModuleId != null) {
+          final selectedMod = editorState.floor.modules
+              .where((m) => m.id == editorState.selectedModuleId)
+              .firstOrNull;
+          if (selectedMod != null && !selectedMod.isLocked) {
+            final bb = selectedMod.geometry.boundingBox;
+            setState(() {
+              _resizingModuleId = selectedMod.id;
+              _activeResizeHandle = hitHandle;
+              _resizeInitialMinX = bb.minX;
+              _resizeInitialMinY = bb.minY;
+              _resizeInitialMaxX = bb.maxX;
+              _resizeInitialMaxY = bb.maxY;
+              _draggingModuleId = null;
+              _draggingSubModuleId = null;
+              _draggingParentModuleId = null;
+              _dragStartMeters = clickPoint;
+              _activeSnapGuides = const <SnapGuide2D>[];
+            });
+            notifier.beginInteraction();
+            return;
+          }
+        }
+
         final hit = _hitTestAt(clickPoint, editorState.floor, editorState.zoom);
 
         switch (hit.kind) {
           case _HitKind.opening:
           case _HitKind.module:
             final hitMod = hit.module!;
+            final hitBb = hitMod.geometry.boundingBox;
             setState(() {
               _draggingModuleId = hitMod.isLocked ? null : hitMod.id;
               _dragStartMeters = hitMod.isLocked ? null : clickPoint;
               _moduleInitialOrigin = hitMod.isLocked ? null : hit.initialOrigin;
+              _moduleInitialWidth = hitMod.isLocked ? null : hitBb.width;
+              _moduleInitialHeight = hitMod.isLocked ? null : hitBb.height;
               _draggingSubModuleId = null;
               _draggingParentModuleId = null;
               _subModuleInitialOrigin = null;
+              _resizingModuleId = null;
+              _activeResizeHandle = null;
+              _activeSnapGuides = const <SnapGuide2D>[];
             });
             notifier.selectModule(hitMod.id);
             if (!hitMod.isLocked) {
@@ -322,6 +501,79 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           return;
         }
 
+        if (_resizingModuleId != null &&
+            _activeResizeHandle != null &&
+            _resizeInitialMinX != null &&
+            _resizeInitialMinY != null &&
+            _resizeInitialMaxX != null &&
+            _resizeInitialMaxY != null) {
+          final localPos = details.localPosition;
+          final curMetersX =
+              (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
+          final curMetersY =
+              (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
+          final snappedX = FloorEditorNotifier.snapToGrid(curMetersX, 0.05);
+          final snappedY = FloorEditorNotifier.snapToGrid(curMetersY, 0.05);
+
+          const minDim = 0.40;
+          double newMinX = _resizeInitialMinX!;
+          double newMinY = _resizeInitialMinY!;
+          double newMaxX = _resizeInitialMaxX!;
+          double newMaxY = _resizeInitialMaxY!;
+
+          final handle = _activeResizeHandle!;
+          final movesLeft = handle == ResizeHandle2D.left ||
+              handle == ResizeHandle2D.topLeft ||
+              handle == ResizeHandle2D.bottomLeft;
+          final movesRight = handle == ResizeHandle2D.right ||
+              handle == ResizeHandle2D.topRight ||
+              handle == ResizeHandle2D.bottomRight;
+          final movesTop = handle == ResizeHandle2D.top ||
+              handle == ResizeHandle2D.topLeft ||
+              handle == ResizeHandle2D.topRight;
+          final movesBottom = handle == ResizeHandle2D.bottom ||
+              handle == ResizeHandle2D.bottomLeft ||
+              handle == ResizeHandle2D.bottomRight;
+
+          if (movesLeft) {
+            newMinX = math.min(snappedX, newMaxX - minDim);
+          } else if (movesRight) {
+            newMaxX = math.max(snappedX, newMinX + minDim);
+          }
+
+          if (movesTop) {
+            newMinY = math.min(snappedY, newMaxY - minDim);
+          } else if (movesBottom) {
+            newMaxY = math.max(snappedY, newMinY + minDim);
+          }
+
+          final newW = math.max(minDim, newMaxX - newMinX);
+          final newH = math.max(minDim, newMaxY - newMinY);
+
+          if (movesLeft || movesTop) {
+            notifier.setModulePosition(
+              _resizingModuleId!,
+              newMinX,
+              newMinY,
+              snap: false,
+            );
+          }
+          notifier.setModuleDimensions(
+            _resizingModuleId!,
+            newW,
+            newH,
+            snap: false,
+          );
+          final quantizedCursor = Point2D(
+            (curMetersX * 100).round() / 100.0,
+            (curMetersY * 100).round() / 100.0,
+          );
+          if (quantizedCursor != _cursorMeters) {
+            setState(() => _cursorMeters = quantizedCursor);
+          }
+          return;
+        }
+
         if (_draggingSubModuleId != null &&
             _draggingParentModuleId != null &&
             _dragStartMeters != null &&
@@ -338,17 +590,44 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
 
           notifier.setSubModulePosition(_draggingParentModuleId!, _draggingSubModuleId!, targetX, targetY);
         } else if (_draggingModuleId != null && _dragStartMeters != null && _moduleInitialOrigin != null) {
-          // Arrastrar recinto completo
+          // Arrastrar recinto completo con guías magnéticas inteligentes (Smart Snap)
           final localPos = details.localPosition;
           final curMetersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
           final curMetersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
           final deltaX = curMetersX - _dragStartMeters!.x;
           final deltaY = curMetersY - _dragStartMeters!.y;
 
-          final targetX = FloorEditorNotifier.snapToGrid(_moduleInitialOrigin!.x + deltaX, 0.05);
-          final targetY = FloorEditorNotifier.snapToGrid(_moduleInitialOrigin!.y + deltaY, 0.05);
+          final rawTargetX = FloorEditorNotifier.snapToGrid(_moduleInitialOrigin!.x + deltaX, 0.05);
+          final rawTargetY = FloorEditorNotifier.snapToGrid(_moduleInitialOrigin!.y + deltaY, 0.05);
 
-          notifier.setModulePosition(_draggingModuleId!, targetX, targetY);
+          final draggedMod = editorState.floor.modules
+              .where((m) => m.id == _draggingModuleId)
+              .firstOrNull;
+          if (draggedMod != null && !draggedMod.isOpening) {
+            final snapResult = computeSmartSnapGuides(
+              candidateX: rawTargetX,
+              candidateY: rawTargetY,
+              width: _moduleInitialWidth ?? draggedMod.geometry.boundingBox.width,
+              height: _moduleInitialHeight ?? draggedMod.geometry.boundingBox.height,
+              floor: editorState.floor,
+              excludeModuleId: _draggingModuleId!,
+            );
+            notifier.setModulePosition(
+              _draggingModuleId!,
+              snapResult.x,
+              snapResult.y,
+              snap: false,
+            );
+            setState(() {
+              _activeSnapGuides = snapResult.guides;
+              _cursorMeters = Point2D(
+                (curMetersX * 100).round() / 100.0,
+                (curMetersY * 100).round() / 100.0,
+              );
+            });
+          } else {
+            notifier.setModulePosition(_draggingModuleId!, rawTargetX, rawTargetY);
+          }
         } else {
           notifier.updatePan(details.delta);
         }
@@ -427,6 +706,13 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
             painter: Canvas2DPainter(
               editorState,
               lang: ref.watch(appLocaleProvider),
+              isDarkTheme: Theme.of(context).brightness == Brightness.dark,
+              hoveredModuleId: _hoveredModuleId,
+              hoveredWallId: _hoveredWallId,
+              hoveredHandle: _hoveredHandle,
+              activeHandle: _activeResizeHandle,
+              cursorMeters: _cursorMeters,
+              snapGuides: _activeSnapGuides,
             ),
           ),
         ),
