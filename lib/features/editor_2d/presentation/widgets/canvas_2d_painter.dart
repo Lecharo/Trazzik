@@ -2,18 +2,199 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:trazzik/core/cad/cad_symbol_drawer.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
+import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
+import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/zoning_type.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/zoning_assistant/domain/zoning_engine.dart';
+
+/// Interactive edge/corner resize handles for a selected rectangular room.
+enum ResizeHandle2D {
+  topLeft,
+  top,
+  topRight,
+  right,
+  bottomRight,
+  bottom,
+  bottomLeft,
+  left,
+}
+
+/// Visual smart-snap alignment guide line in floor meters.
+class SnapGuide2D {
+  final bool isVertical;
+  final double coordinate;
+  final double start;
+  final double end;
+
+  const SnapGuide2D({
+    required this.isVertical,
+    required this.coordinate,
+    required this.start,
+    required this.end,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is SnapGuide2D &&
+      other.isVertical == isVertical &&
+      (other.coordinate - coordinate).abs() < 1e-6 &&
+      (other.start - start).abs() < 1e-6 &&
+      (other.end - end).abs() < 1e-6;
+
+  @override
+  int get hashCode => Object.hash(
+        isVertical,
+        (coordinate * 1000).round(),
+        (start * 1000).round(),
+        (end * 1000).round(),
+      );
+}
+
+/// Snapped origin and active visual alignment guides computed during a drag.
+class SmartSnapResult {
+  final double x;
+  final double y;
+  final List<SnapGuide2D> guides;
+
+  const SmartSnapResult({
+    required this.x,
+    required this.y,
+    required this.guides,
+  });
+}
+
+/// Computes the 8 interactive resize handle positions (in meters) for an
+/// unlocked rectangular room module. Returns an empty map for locked, opening,
+/// or non-rectangular modules.
+Map<ResizeHandle2D, Point2D> computeModuleResizeHandles(Module module) {
+  if (module.isLocked || module.isOpening || module.geometry.vertices.length != 4) {
+    return const <ResizeHandle2D, Point2D>{};
+  }
+  final bb = module.geometry.boundingBox;
+  final midX = bb.minX + bb.width / 2;
+  final midY = bb.minY + bb.height / 2;
+  return <ResizeHandle2D, Point2D>{
+    ResizeHandle2D.topLeft: Point2D(bb.minX, bb.minY),
+    ResizeHandle2D.top: Point2D(midX, bb.minY),
+    ResizeHandle2D.topRight: Point2D(bb.maxX, bb.minY),
+    ResizeHandle2D.right: Point2D(bb.maxX, midY),
+    ResizeHandle2D.bottomRight: Point2D(bb.maxX, bb.maxY),
+    ResizeHandle2D.bottom: Point2D(midX, bb.maxY),
+    ResizeHandle2D.bottomLeft: Point2D(bb.minX, bb.maxY),
+    ResizeHandle2D.left: Point2D(bb.minX, midY),
+  };
+}
+
+/// Computes magnetic smart-snap alignment for a dragged room box against
+/// sibling rooms, floor walls, and the floor boundary.
+SmartSnapResult computeSmartSnapGuides({
+  required double candidateX,
+  required double candidateY,
+  required double width,
+  required double height,
+  required Floor floor,
+  required String excludeModuleId,
+  double thresholdMeters = 0.12,
+}) {
+  final refX = <({double coord, double minSpan, double maxSpan})>[];
+  final refY = <({double coord, double minSpan, double maxSpan})>[];
+
+  final floorBb = floor.boundary.boundingBox;
+  refX.add((coord: floorBb.minX, minSpan: floorBb.minY, maxSpan: floorBb.maxY));
+  refX.add((coord: floorBb.maxX, minSpan: floorBb.minY, maxSpan: floorBb.maxY));
+  refY.add((coord: floorBb.minY, minSpan: floorBb.minX, maxSpan: floorBb.maxX));
+  refY.add((coord: floorBb.maxY, minSpan: floorBb.minX, maxSpan: floorBb.maxX));
+
+  for (final other in floor.modules) {
+    if (other.id == excludeModuleId || other.isOpening) continue;
+    final obb = other.geometry.boundingBox;
+    refX.add((coord: obb.minX, minSpan: obb.minY, maxSpan: obb.maxY));
+    refX.add((coord: obb.maxX, minSpan: obb.minY, maxSpan: obb.maxY));
+    refX.add((coord: obb.minX + obb.width / 2, minSpan: obb.minY, maxSpan: obb.maxY));
+
+    refY.add((coord: obb.minY, minSpan: obb.minX, maxSpan: obb.maxX));
+    refY.add((coord: obb.maxY, minSpan: obb.minX, maxSpan: obb.maxX));
+    refY.add((coord: obb.minY + obb.height / 2, minSpan: obb.minX, maxSpan: obb.maxX));
+  }
+
+  for (final wall in floor.walls) {
+    final minWy = math.min(wall.startPoint.y, wall.endPoint.y);
+    final maxWy = math.max(wall.startPoint.y, wall.endPoint.y);
+    final minWx = math.min(wall.startPoint.x, wall.endPoint.x);
+    final maxWx = math.max(wall.startPoint.x, wall.endPoint.x);
+    refX.add((coord: wall.startPoint.x, minSpan: minWy, maxSpan: maxWy));
+    refX.add((coord: wall.endPoint.x, minSpan: minWy, maxSpan: maxWy));
+    refY.add((coord: wall.startPoint.y, minSpan: minWx, maxSpan: maxWx));
+    refY.add((coord: wall.endPoint.y, minSpan: minWx, maxSpan: maxWx));
+  }
+
+  double snappedX = candidateX;
+  double bestDx = thresholdMeters + 1e-6;
+  SnapGuide2D? verticalGuide;
+  final xAnchors = <double>[candidateX, candidateX + width, candidateX + width / 2];
+
+  for (final anchor in xAnchors) {
+    for (final ref in refX) {
+      final delta = ref.coord - anchor;
+      final absDelta = delta.abs();
+      if (absDelta <= thresholdMeters && absDelta < bestDx) {
+        bestDx = absDelta;
+        snappedX = candidateX + delta;
+        verticalGuide = SnapGuide2D(
+          isVertical: true,
+          coordinate: ref.coord,
+          start: math.min(candidateY, ref.minSpan) - 0.35,
+          end: math.max(candidateY + height, ref.maxSpan) + 0.35,
+        );
+      }
+    }
+  }
+
+  double snappedY = candidateY;
+  double bestDy = thresholdMeters + 1e-6;
+  SnapGuide2D? horizontalGuide;
+  final yAnchors = <double>[candidateY, candidateY + height, candidateY + height / 2];
+
+  for (final anchor in yAnchors) {
+    for (final ref in refY) {
+      final delta = ref.coord - anchor;
+      final absDelta = delta.abs();
+      if (absDelta <= thresholdMeters && absDelta < bestDy) {
+        bestDy = absDelta;
+        snappedY = candidateY + delta;
+        horizontalGuide = SnapGuide2D(
+          isVertical: false,
+          coordinate: ref.coord,
+          start: math.min(snappedX, ref.minSpan) - 0.35,
+          end: math.max(snappedX + width, ref.maxSpan) + 0.35,
+        );
+      }
+    }
+  }
+
+  final guides = <SnapGuide2D>[
+    ?verticalGuide,
+    ?horizontalGuide,
+  ];
+  return SmartSnapResult(x: snappedX, y: snappedY, guides: guides);
+}
 
 /// Custom painter responsible for rendering the 2D architectural floor plan,
 /// grid, zoning bands, walls, spaces, openings, and interior furniture.
 class Canvas2DPainter extends CustomPainter {
   final FloorEditorState state;
   final String lang;
+  final bool isDarkTheme;
+  final String? hoveredModuleId;
+  final String? hoveredWallId;
+  final ResizeHandle2D? hoveredHandle;
+  final ResizeHandle2D? activeHandle;
+  final Point2D? cursorMeters;
+  final List<SnapGuide2D> snapGuides;
 
   static final Map<Object, TextPainter> _textPainterCache = <Object, TextPainter>{};
 
@@ -29,22 +210,38 @@ class Canvas2DPainter extends CustomPainter {
     Object key,
     TextSpan span, {
     TextAlign textAlign = TextAlign.start,
+    double maxWidth = double.infinity,
+    int? maxLines,
   }) {
     final existing = _textPainterCache[key];
     if (existing != null) return existing;
-    if (_textPainterCache.length >= 256) {
+    if (_textPainterCache.length >= 384) {
       _textPainterCache.remove(_textPainterCache.keys.first)?.dispose();
     }
     final tp = TextPainter(
       text: span,
       textAlign: textAlign,
       textDirection: TextDirection.ltr,
-    )..layout();
+      maxLines: maxLines,
+    )..layout(maxWidth: maxWidth);
     _textPainterCache[key] = tp;
     return tp;
   }
 
-  Canvas2DPainter(this.state, {this.lang = 'es'});
+  Canvas2DPainter(
+    this.state, {
+    this.lang = 'es',
+    this.isDarkTheme = true,
+    this.hoveredModuleId,
+    this.hoveredWallId,
+    this.hoveredHandle,
+    this.activeHandle,
+    this.cursorMeters,
+    this.snapGuides = const <SnapGuide2D>[],
+  });
+
+  Color get _canvasBg =>
+      isDarkTheme ? const Color(0xFF161A22) : const Color(0xFFF8FAFC);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -55,74 +252,119 @@ class Canvas2DPainter extends CustomPainter {
         ? state.panOffset
         : Offset.zero;
 
-    // 1. Fondo técnico oscuro
+    // 1. Theme-aware architectural drafting surface (Dark Blueprint / Light Technical Paper)
     canvas.drawRect(
       Offset.zero & size,
-      Paint()..color = const Color(0xFF1E222B),
+      Paint()..color = _canvasBg,
     );
 
     canvas.save();
     canvas.translate(pan.dx, pan.dy);
 
-    // 2. Cuadrícula métrica
+    // 2. Metric grid
     _drawGrid(canvas, size, zoom, pan);
 
-    // 2.5. Calco de Plano Base Calibrado y Ejes Estructurales (Blueprint Underlay)
+    // 2.5. Calibrated Blueprint Underlay
     if (state.blueprintUnderlay.isEnabled) {
       _drawBlueprintUnderlay(canvas, zoom);
     }
 
-    // 3. Dibujar Zonas Normativas del Lote
+    // 3. Normative Zoning Zones
     _drawZoningZones(canvas, zoom);
 
-    // 3.5. Guía Arquitectónica de Zonificación y Asoleamiento
+    // 3.5. Zoning & Solar Orientation Guide Bands
     if (state.showZoningGuide) {
       _drawZoningGuideBands(canvas, zoom);
     }
 
-    // 4. Dibujar Límite del Lote
+    // 4. Lot Boundary
     _drawPolygonBoundary(
       canvas,
       state.lot.boundary,
       zoom,
       Paint()
-        ..color = const Color(0xFF90A4AE)
+        ..color = isDarkTheme ? const Color(0xFF90A4AE) : const Color(0xFF64748B)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0,
       label: 'LOTE (${state.lot.boundary.area.toStringAsFixed(1)} m²)',
       labelOffsetY: -28,
     );
 
-    // 5. Dibujar Límite del Piso
+    // 5. Floor Boundary
     _drawPolygonBoundary(
       canvas,
       state.floor.boundary,
       zoom,
       Paint()
-        ..color = const Color(0xFF64B5F6)
+        ..color = isDarkTheme ? const Color(0xFF64B5F6) : const Color(0xFF0284C7)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5,
-      label: '${state.floor.name.toUpperCase()} (Max: ${state.floor.maxAllowedArea.toStringAsFixed(0)} m²)',
+      label:
+          '${state.floor.name.toUpperCase()} (Max: ${state.floor.maxAllowedArea.toStringAsFixed(0)} m²)',
       labelOffsetY: -14,
     );
 
-    // 6. Dibujar Muros del Piso (Estructura base)
-    _drawWalls(canvas, zoom);
-
-    // 7. Dibujar Módulos y Aberturas (Recintos y vanos sobre muros)
+    // 6. Non-opening Room Modules (floor finishes, furniture & symbols under walls)
+    Module? selectedModule;
     for (final module in state.floor.modules) {
       final isSelected = module.id == state.selectedModuleId;
-      _drawModule(canvas, module, zoom, isSelected);
+      if (isSelected) selectedModule = module;
+      if (!module.isOpening) {
+        _drawModuleBase(
+          canvas,
+          module,
+          zoom,
+          isSelected: isSelected,
+          isHovered: module.id == hoveredModuleId && !isSelected,
+        );
+      }
     }
 
-    // 7.5. Regla Láser 2D Interactiva y Verificador de Paso Normativo
+    // 7. Structural & Partition Walls (with remodeling poché on top of room floors)
+    _drawWalls(canvas, zoom);
+
+    // 8. Opening Modules (doors, windows, gates mounted cleanly over walls)
+    for (final module in state.floor.modules) {
+      if (module.isOpening) {
+        final isSelected = module.id == state.selectedModuleId;
+        _drawModuleBase(
+          canvas,
+          module,
+          zoom,
+          isSelected: isSelected,
+          isHovered: module.id == hoveredModuleId && !isSelected,
+        );
+      }
+    }
+
+    // 9. Clean Cached Architectural Room & Opening Labels
+    for (final module in state.floor.modules) {
+      _drawModuleLabel(
+        canvas,
+        module,
+        zoom,
+        isSelected: module.id == state.selectedModuleId,
+      );
+    }
+
+    // 10. Selected Module Architectural 45°-Tick Dimensions & Resize Handles
+    if (selectedModule != null) {
+      _drawSelectedModuleOverlay(canvas, selectedModule, zoom);
+    }
+
+    // 11. Smart Snap Alignment Guides (active during drag)
+    if (snapGuides.isNotEmpty) {
+      _drawSnapGuides(canvas, zoom);
+    }
+
+    // 12. Interactive 2D Laser Tape Measure
     if (state.isLaserMeasureActive &&
         state.laserStart != null &&
         state.laserEnd != null) {
       _drawLaserMeasureOverlay(canvas, zoom);
     }
 
-    // 7.6. Vista previa de muro manual en trazado 2D
+    // 13. Manual 2D Wall Draft Preview
     if (state.isDrawWallMode &&
         state.draftWallStart != null &&
         state.draftWallEnd != null) {
@@ -131,15 +373,26 @@ class Canvas2DPainter extends CustomPainter {
 
     canvas.restore();
 
-    // 8. Brújula / Indicador de Orientación Norte
-    _drawNorthCompass(canvas, size, state.lot.orientationDegrees);
+    // 14. Screen-space Fixed Metric Rulers (Top & Left)
+    if (size.width >= 120 && size.height >= 120) {
+      _drawMetricRulers(canvas, size, zoom, pan);
+      // 15. North Compass (positioned below top ruler)
+      _drawNorthCompass(canvas, size, state.lot.orientationDegrees);
+    }
+
+    // 16. Live Cursor Coordinate Badge (Desktop Web hover)
+    if (cursorMeters != null && size.width >= 160 && size.height >= 120) {
+      _drawCursorCoordinateBadge(canvas, size, cursorMeters!);
+    }
   }
 
   void _drawGrid(Canvas canvas, Size size, double zoom, Offset pan) {
     // 1. Subdivisión de 10 cm (0.10 m) si el zoom lo amerita
     if (zoom >= 25.0) {
       final cmPaint = Paint()
-        ..color = const Color(0xFF232836).withValues(alpha: 0.7)
+        ..color = isDarkTheme
+            ? const Color(0xFF212735).withValues(alpha: 0.72)
+            : const Color(0xFFE2E8F0).withValues(alpha: 0.65)
         ..strokeWidth = 0.5;
 
       final minX10 = ((-pan.dx) / zoom * 10).floor() - 5;
@@ -150,19 +403,29 @@ class Canvas2DPainter extends CustomPainter {
       for (int i = minX10; i <= maxX10; i++) {
         if (i % 10 == 0) continue; // Omitir múltiplos de metro
         final px = (i / 10.0) * zoom;
-        canvas.drawLine(Offset(px, (minY10 / 10.0) * zoom), Offset(px, (maxY10 / 10.0) * zoom), cmPaint);
+        canvas.drawLine(
+          Offset(px, (minY10 / 10.0) * zoom),
+          Offset(px, (maxY10 / 10.0) * zoom),
+          cmPaint,
+        );
       }
       for (int j = minY10; j <= maxY10; j++) {
         if (j % 10 == 0) continue;
         final py = (j / 10.0) * zoom;
-        canvas.drawLine(Offset((minX10 / 10.0) * zoom, py), Offset((maxX10 / 10.0) * zoom, py), cmPaint);
+        canvas.drawLine(
+          Offset((minX10 / 10.0) * zoom, py),
+          Offset((maxX10 / 10.0) * zoom, py),
+          cmPaint,
+        );
       }
     }
 
     // 2. Líneas intermedias cada 50 cm (0.50 m)
     final halfMeterPaint = Paint()
-      ..color = const Color(0xFF2D3545)
-      ..strokeWidth = 0.8;
+      ..color = isDarkTheme
+          ? const Color(0xFF283040)
+          : const Color(0xFFCBD5E1).withValues(alpha: 0.55)
+      ..strokeWidth = 0.75;
 
     final minX2 = ((-pan.dx) / zoom * 2).floor() - 2;
     final maxX2 = (((size.width - pan.dx) / zoom) * 2).ceil() + 2;
@@ -172,22 +435,30 @@ class Canvas2DPainter extends CustomPainter {
     for (int i = minX2; i <= maxX2; i++) {
       if (i % 2 == 0) continue; // Omitir metros completos
       final px = (i / 2.0) * zoom;
-      canvas.drawLine(Offset(px, (minY2 / 2.0) * zoom), Offset(px, (maxY2 / 2.0) * zoom), halfMeterPaint);
+      canvas.drawLine(
+        Offset(px, (minY2 / 2.0) * zoom),
+        Offset(px, (maxY2 / 2.0) * zoom),
+        halfMeterPaint,
+      );
     }
     for (int j = minY2; j <= maxY2; j++) {
       if (j % 2 == 0) continue;
       final py = (j / 2.0) * zoom;
-      canvas.drawLine(Offset((minX2 / 2.0) * zoom, py), Offset((maxX2 / 2.0) * zoom, py), halfMeterPaint);
+      canvas.drawLine(
+        Offset((minX2 / 2.0) * zoom, py),
+        Offset((maxX2 / 2.0) * zoom, py),
+        halfMeterPaint,
+      );
     }
 
     // 3. Líneas de metro completo (1.00 m) y líneas mayores (5.00 m)
     final meterPaint = Paint()
-      ..color = const Color(0xFF384355)
-      ..strokeWidth = 1.0;
+      ..color = isDarkTheme ? const Color(0xFF333E52) : const Color(0xFFCBD5E1)
+      ..strokeWidth = 0.95;
 
     final majorGridPaint = Paint()
-      ..color = const Color(0xFF4C5B72)
-      ..strokeWidth = 1.6;
+      ..color = isDarkTheme ? const Color(0xFF475770) : const Color(0xFF94A3B8)
+      ..strokeWidth = 1.4;
 
     final minX = ((-pan.dx) / zoom).floor() - 2;
     final maxX = ((size.width - pan.dx) / zoom).ceil() + 2;
@@ -202,22 +473,6 @@ class Canvas2DPainter extends CustomPainter {
         Offset(px, maxY * zoom),
         isMajor ? majorGridPaint : meterPaint,
       );
-
-      // Cota de metro en eje X
-      if (zoom >= 25.0 && (isMajor || zoom >= 38.0)) {
-        final tp = _getCachedTextPainter(
-          ('grid_x', x, isMajor),
-          TextSpan(
-            text: '${x}m',
-            style: TextStyle(
-              color: isMajor ? const Color(0xFF00E5FF).withValues(alpha: 0.7) : Colors.white24,
-              fontSize: 9,
-              fontWeight: isMajor ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        );
-        tp.paint(canvas, Offset(px + 2, 4));
-      }
     }
 
     for (int y = minY; y <= maxY; y++) {
@@ -228,22 +483,6 @@ class Canvas2DPainter extends CustomPainter {
         Offset(maxX * zoom, py),
         isMajor ? majorGridPaint : meterPaint,
       );
-
-      // Cota de metro en eje Y
-      if (zoom >= 25.0 && (isMajor || zoom >= 38.0)) {
-        final tp = _getCachedTextPainter(
-          ('grid_y', y, isMajor),
-          TextSpan(
-            text: '${y}m',
-            style: TextStyle(
-              color: isMajor ? const Color(0xFF00E5FF).withValues(alpha: 0.7) : Colors.white24,
-              fontSize: 9,
-              fontWeight: isMajor ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        );
-        tp.paint(canvas, Offset(4, py + 2));
-      }
     }
   }
 
@@ -376,43 +615,88 @@ class Canvas2DPainter extends CustomPainter {
     streetTp.paint(canvas, Offset(streetX - streetTp.width / 2, streetY));
   }
 
-  void _drawModule(Canvas canvas, Module module, double zoom, bool isSelected) {
+  void _drawModuleBase(
+    Canvas canvas,
+    Module module,
+    double zoom, {
+    required bool isSelected,
+    required bool isHovered,
+  }) {
     final path = _polygonToPath(module.geometry, zoom);
 
     Color fillColor;
     Color strokeColor;
-    double strokeWidth = 2.0;
+    double strokeWidth = module.isOpening ? 1.8 : 1.5;
 
     switch (module.status) {
       case ElementStatus.toDemolish:
-        fillColor = const Color(0x40E53935); // Rojo demolición
-        strokeColor = const Color(0xFFE53935);
+        fillColor = isDarkTheme
+            ? const Color(0x36EF4444)
+            : const Color(0x28DC2626);
+        strokeColor = isDarkTheme
+            ? const Color(0xFFEF4444)
+            : const Color(0xFFDC2626);
         break;
       case ElementStatus.isNew:
-        fillColor = const Color(0x4000E5FF); // Cian nueva construcción
-        strokeColor = const Color(0xFF00E5FF);
-        strokeWidth = 2.5;
+        fillColor = isDarkTheme
+            ? const Color(0x2E14B8A6)
+            : const Color(0x240D9488);
+        strokeColor = isDarkTheme
+            ? const Color(0xFF2DD4BF)
+            : const Color(0xFF0F766E);
+        strokeWidth = module.isOpening ? 2.0 : 1.9;
         break;
       case ElementStatus.preserved:
-        fillColor = const Color(0x304CAF50); // Verde conservado
-        strokeColor = const Color(0xFF4CAF50);
+        fillColor = isDarkTheme
+            ? const Color(0x264CAF50)
+            : const Color(0x1E16A34A);
+        strokeColor = isDarkTheme
+            ? const Color(0xFF4CAF50)
+            : const Color(0xFF15803D);
         break;
       case ElementStatus.existing:
       default:
-        fillColor = const Color(0x2078909C); // Gris pizarra existente
-        strokeColor = const Color(0xFF78909C);
+        fillColor = isDarkTheme
+            ? const Color(0x2264748B)
+            : const Color(0x1C94A3B8);
+        strokeColor = isDarkTheme
+            ? const Color(0xFF64748B)
+            : const Color(0xFF475569);
         break;
     }
 
-    // Relleno arquitectónico
+    // Room floor finish / fill
     if ((state.isRenderedMode || module.floorMaterialId != null) && !module.isOpening) {
       _drawRenderedFloorFinish(canvas, module, zoom, path);
-      canvas.drawPath(path, Paint()..color = fillColor.withValues(alpha: 0.16)..style = PaintingStyle.fill);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = fillColor.withValues(alpha: isDarkTheme ? 0.16 : 0.12)
+          ..style = PaintingStyle.fill,
+      );
     } else {
-      canvas.drawPath(path, Paint()..color = fillColor..style = PaintingStyle.fill);
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = fillColor
+          ..style = PaintingStyle.fill,
+      );
     }
 
-    // Efecto de Iluminación Cenital / Spotlight cuando el recinto está seleccionado o enfocado
+    // Subtle hover highlight
+    if (isHovered) {
+      canvas.drawPath(
+        path,
+        Paint()
+          ..color = (isDarkTheme
+                  ? const Color(0xFF38BDF8)
+                  : const Color(0xFF0284C7))
+              .withValues(alpha: 0.14)
+          ..style = PaintingStyle.fill,
+      );
+    }
+
+    // Soft spotlight when selected
     if (isSelected && !module.isOpening) {
       final bb = module.geometry.boundingBox;
       final center = Offset((bb.minX + bb.width / 2) * zoom, (bb.minY + bb.height / 2) * zoom);
@@ -420,8 +704,11 @@ class Canvas2DPainter extends CustomPainter {
       final spotlightPaint = Paint()
         ..shader = RadialGradient(
           colors: [
-            const Color(0xFFFFF9C4).withValues(alpha: 0.35),
-            const Color(0xFFFFF9C4).withValues(alpha: 0.0),
+            (isDarkTheme
+                    ? const Color(0xFFFFF9C4)
+                    : const Color(0xFFFEF08A))
+                .withValues(alpha: isDarkTheme ? 0.24 : 0.32),
+            const Color(0x00FFF9C4),
           ],
         ).createShader(Rect.fromCircle(center: center, radius: radius));
       canvas.save();
@@ -430,68 +717,192 @@ class Canvas2DPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Si es a demoler, dibujar trama diagonal
+    // Diagonal hatch for rooms marked to demolish
     if (module.status == ElementStatus.toDemolish) {
-      _drawHatchPattern(canvas, module.geometry, zoom, const Color(0x60E53935), path: path);
+      _drawHatchPattern(
+        canvas,
+        module.geometry,
+        zoom,
+        isDarkTheme ? const Color(0x60EF4444) : const Color(0x55DC2626),
+        path: path,
+      );
     }
 
-    // Mobiliario y artefactos interiores
+    // Interior furniture and sanitary fixtures
     if (module.subModules.isNotEmpty) {
       _drawFurnitureList(canvas, module.subModules, zoom);
     }
 
-    // Simbología Técnica Arquitectónica
+    // Architectural symbols (doors, windows, stairs, pools, decks)
     _drawArchitecturalSymbol(canvas, module, zoom, strokeColor);
 
-    // Borde
+    // Room / opening outline
     canvas.drawPath(
       path,
       Paint()
-        ..color = strokeColor
+        ..color = isHovered
+            ? (isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
+            : strokeColor
         ..style = PaintingStyle.stroke
-        ..strokeWidth = strokeWidth,
+        ..strokeWidth = isHovered ? strokeWidth + 0.8 : strokeWidth,
     );
 
-    // Resaltado de selección
-    if (isSelected) {
-      if (module.isOpening) {
-        // Halo de selección brillante para destacar aberturas en el muro
-        final bb = module.geometry.boundingBox;
-        final haloRect = Rect.fromLTWH(
-          (bb.minX - 0.10) * zoom,
-          (bb.minY - 0.10) * zoom,
-          (bb.width + 0.20) * zoom,
-          (bb.height + 0.20) * zoom,
+    if (isSelected && module.isOpening) {
+      final bb = module.geometry.boundingBox;
+      final haloRect = Rect.fromLTWH(
+        (bb.minX - 0.10) * zoom,
+        (bb.minY - 0.10) * zoom,
+        (bb.width + 0.20) * zoom,
+        (bb.height + 0.20) * zoom,
+      );
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(haloRect, const Radius.circular(5)),
+        Paint()
+          ..color = const Color(0xFFFFB300).withValues(alpha: 0.32)
+          ..style = PaintingStyle.fill,
+      );
+    }
+  }
+
+  void _drawSelectedModuleOverlay(Canvas canvas, Module module, double zoom) {
+    final path = _polygonToPath(module.geometry, zoom);
+    final accent = isDarkTheme ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+
+    // Crisp selection outline
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = accent
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.6,
+    );
+
+    // Architectural 45°-tick dimension lines (width along top, depth along left)
+    final bb = module.geometry.boundingBox;
+    final leftPx = bb.minX * zoom;
+    final rightPx = bb.maxX * zoom;
+    final topPx = bb.minY * zoom;
+    final bottomPx = bb.maxY * zoom;
+
+    _drawArchitecturalDimensionLine(
+      canvas,
+      Offset(leftPx, topPx),
+      Offset(rightPx, topPx),
+      offsetVector: const Offset(0, -18),
+      label: '${bb.width.toStringAsFixed(2)} m',
+      color: accent,
+    );
+
+    _drawArchitecturalDimensionLine(
+      canvas,
+      Offset(leftPx, topPx),
+      Offset(leftPx, bottomPx),
+      offsetVector: const Offset(-18, 0),
+      label: '${bb.height.toStringAsFixed(2)} m',
+      color: accent,
+      rotateLabelDegrees: -90,
+    );
+
+    // Direct drag-resize handles (unlocked rectangular rooms only)
+    final handles = computeModuleResizeHandles(module);
+    if (handles.isNotEmpty) {
+      for (final entry in handles.entries) {
+        final handle = entry.key;
+        final pt = entry.value;
+        final center = Offset(pt.x * zoom, pt.y * zoom);
+        final isCorner = handle == ResizeHandle2D.topLeft ||
+            handle == ResizeHandle2D.topRight ||
+            handle == ResizeHandle2D.bottomRight ||
+            handle == ResizeHandle2D.bottomLeft;
+        final isHighlighted = handle == hoveredHandle || handle == activeHandle;
+        final halfSize = (isCorner ? 4.5 : 3.8) + (isHighlighted ? 1.4 : 0.0);
+        final handleRect = Rect.fromCenter(
+          center: center,
+          width: halfSize * 2,
+          height: halfSize * 2,
         );
+
         canvas.drawRRect(
-          RRect.fromRectAndRadius(haloRect, const Radius.circular(5)),
+          RRect.fromRectAndRadius(handleRect, const Radius.circular(2)),
           Paint()
-            ..color = const Color(0xFFFFB300).withValues(alpha: 0.35)
+            ..color = isHighlighted
+                ? (isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0284C7))
+                : (isDarkTheme ? const Color(0xFFF8FAFC) : Colors.white)
             ..style = PaintingStyle.fill,
         );
+        canvas.drawRRect(
+          RRect.fromRectAndRadius(handleRect, const Radius.circular(2)),
+          Paint()
+            ..color = isHighlighted ? Colors.white : accent
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.6,
+        );
       }
-
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = Colors.amber
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 3.0,
-      );
-
-      // Cotas de ancho y fondo en metros
-      final bb = module.geometry.boundingBox;
-      final topCenter = Offset((bb.minX + bb.width / 2) * zoom, bb.minY * zoom - 14);
-      final leftCenter = Offset(bb.minX * zoom - 16, (bb.minY + bb.height / 2) * zoom);
-
-      // Cota Ancho
-      _drawBadgeText(canvas, '${bb.width.toStringAsFixed(2)} m', topCenter, color: Colors.amber);
-      // Cota Largo
-      _drawBadgeText(canvas, '${bb.height.toStringAsFixed(2)} m', leftCenter, color: Colors.amber, rotateDegrees: -90);
     }
+  }
 
-    // Etiqueta de texto con nombre y m²
-    _drawModuleLabel(canvas, module, zoom);
+  void _drawArchitecturalDimensionLine(
+    Canvas canvas,
+    Offset startAnchor,
+    Offset endAnchor, {
+    required Offset offsetVector,
+    required String label,
+    required Color color,
+    double rotateLabelDegrees = 0.0,
+  }) {
+    final dimStart = startAnchor + offsetVector;
+    final dimEnd = endAnchor + offsetVector;
+    final extExtra = Offset(
+      offsetVector.dx.sign * 4.5,
+      offsetVector.dy.sign * 4.5,
+    );
+
+    final extPaint = Paint()
+      ..color = color.withValues(alpha: 0.55)
+      ..strokeWidth = 0.9
+      ..style = PaintingStyle.stroke;
+
+    // Extension lines projecting outward from room corners
+    canvas.drawLine(startAnchor, dimStart + extExtra, extPaint);
+    canvas.drawLine(endAnchor, dimEnd + extExtra, extPaint);
+
+    final linePaint = Paint()
+      ..color = color
+      ..strokeWidth = 1.2
+      ..style = PaintingStyle.stroke;
+
+    // Main dimension line
+    canvas.drawLine(dimStart, dimEnd, linePaint);
+
+    // Architectural 45° tick slashes at both endpoints
+    const tickRadius = 4.2;
+    final tickPaint = Paint()
+      ..color = color
+      ..strokeWidth = 1.6
+      ..strokeCap = StrokeCap.round;
+
+    canvas.drawLine(
+      Offset(dimStart.dx - tickRadius, dimStart.dy + tickRadius),
+      Offset(dimStart.dx + tickRadius, dimStart.dy - tickRadius),
+      tickPaint,
+    );
+    canvas.drawLine(
+      Offset(dimEnd.dx - tickRadius, dimEnd.dy + tickRadius),
+      Offset(dimEnd.dx + tickRadius, dimEnd.dy - tickRadius),
+      tickPaint,
+    );
+
+    final mid = Offset(
+      (dimStart.dx + dimEnd.dx) / 2,
+      (dimStart.dy + dimEnd.dy) / 2,
+    );
+    _drawBadgeText(
+      canvas,
+      label,
+      mid,
+      color: color,
+      rotateDegrees: rotateLabelDegrees,
+    );
   }
 
   void _drawRenderedFloorFinish(
@@ -742,14 +1153,20 @@ class Canvas2DPainter extends CustomPainter {
     }
 
     final bgPaint = Paint()
-      ..color = const Color(0x33B0BEC5)
+      ..color = isDarkTheme
+          ? const Color(0x33B0BEC5)
+          : const Color(0x2264748B)
       ..style = PaintingStyle.fill;
     final borderPaint = Paint()
-      ..color = const Color(0xFFCFD8DC)
+      ..color = isDarkTheme
+          ? const Color(0xFFCFD8DC)
+          : const Color(0xFF334155)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
     final detailPaint = Paint()
-      ..color = const Color(0xFF90A4AE)
+      ..color = isDarkTheme
+          ? const Color(0xFF90A4AE)
+          : const Color(0xFF64748B)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.0;
 
@@ -1017,15 +1434,20 @@ class Canvas2DPainter extends CustomPainter {
     canvas.drawCircle(r.center, drumRadius * 0.6, detail);
   }
 
-  void _drawModuleLabel(Canvas canvas, Module module, double zoom) {
+  void _drawModuleLabel(
+    Canvas canvas,
+    Module module,
+    double zoom, {
+    bool isSelected = false,
+  }) {
     final bb = module.geometry.boundingBox;
     final isCompact = bb.width < 0.6 || bb.height < 0.6 || module.isOpening;
 
     if (isCompact) {
       final dim = bb.width >= bb.height ? bb.width : bb.height;
       final typePrefix = (module.isDoor || module.isGate)
-          ? 'P'
-          : (module.isWindow ? 'V' : '');
+          ? (lang == 'en' ? 'D' : 'P')
+          : (module.isWindow ? (lang == 'en' ? 'W' : 'V') : '');
       final shortLabel = typePrefix.isNotEmpty
           ? '$typePrefix (${dim.toStringAsFixed(2)}m)'
           : (module.name.length > 8 ? '${module.name.substring(0, 8)}...' : module.name);
@@ -1035,7 +1457,12 @@ class Canvas2DPainter extends CustomPainter {
         (bb.minY + bb.height / 2) * zoom,
       );
 
-      _drawBadgeText(canvas, shortLabel, center, color: Colors.white);
+      _drawBadgeText(
+        canvas,
+        shortLabel,
+        center,
+        color: isDarkTheme ? Colors.white : const Color(0xFF0F172A),
+      );
       return;
     }
 
@@ -1046,62 +1473,116 @@ class Canvas2DPainter extends CustomPainter {
 
     final roomPixelW = bb.width * zoom;
     final roomPixelH = bb.height * zoom;
+    if (roomPixelW < 22 || roomPixelH < 16) return;
 
     final statusTag = module.status == ElementStatus.toDemolish
-        ? ' [DEMOLER]'
-        : (module.status == ElementStatus.isNew ? ' [NUEVO]' : '');
+        ? (lang == 'en' ? ' [DEMO]' : ' [DEMOLER]')
+        : (module.status == ElementStatus.isNew
+            ? (lang == 'en' ? ' [NEW]' : ' [NUEVO]')
+            : '');
 
     final lockTag = module.isLocked ? ' 🔒' : '';
-    String labelText;
-    double fontSize;
+    final String titleText;
+    final String subtitleText;
+    final double titleFontSize;
+    final double subFontSize;
 
-    if (roomPixelW < 75.0 || roomPixelH < 45.0) {
-      // Recinto angosto/pequeño: código corto y área compacta
-      final compactName = _toCompactRoomName(module.name);
-      labelText = '$compactName$lockTag\n${module.area.toStringAsFixed(1)}m²';
-      fontSize = 8.5;
-    } else if (roomPixelW < 130.0 || roomPixelH < 65.0) {
-      // Recinto mediano: nombre simplificado sin subtítulos excesivos
-      final mediumName = _toMediumRoomName(module.name);
-      labelText = '$mediumName$lockTag$statusTag\n${module.area.toStringAsFixed(1)} m²';
-      fontSize = 9.5;
+    if (roomPixelW < 78.0 || roomPixelH < 46.0) {
+      titleText = '${_toCompactRoomName(module.name)}$lockTag';
+      subtitleText = '${module.area.toStringAsFixed(1)}m²';
+      titleFontSize = 8.5;
+      subFontSize = 7.5;
+    } else if (roomPixelW < 138.0 || roomPixelH < 68.0) {
+      titleText = '${_toMediumRoomName(module.name)}$lockTag$statusTag';
+      subtitleText = '${module.area.toStringAsFixed(1)} m²';
+      titleFontSize = 9.5;
+      subFontSize = 8.2;
     } else {
-      // Recinto amplio: nombre completo
-      labelText = '${module.name}$lockTag$statusTag\n${module.area.toStringAsFixed(2)} m²';
-      fontSize = 11.0;
+      titleText = '${module.name}$lockTag$statusTag';
+      subtitleText =
+          '${bb.width.toStringAsFixed(2)}×${bb.height.toStringAsFixed(2)}m · ${module.area.toStringAsFixed(2)} m²';
+      titleFontSize = 10.8;
+      subFontSize = 8.8;
     }
 
-    final textSpan = TextSpan(
-      text: labelText,
-      style: TextStyle(
-        color: Colors.white,
-        fontSize: fontSize,
-        fontWeight: FontWeight.w600,
-        height: 1.15,
+    final titleColor = isDarkTheme ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
+    final subColor = isSelected
+        ? (isDarkTheme ? const Color(0xFFFBBF24) : const Color(0xFFB45309))
+        : (isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569));
+
+    final maxLabelW = math.max(28.0, roomPixelW - 8.0);
+    final widthBucket = (maxLabelW / 12.0).floor() * 12;
+
+    final textPainter = _getCachedTextPainter(
+      (
+        'room_lbl',
+        titleText,
+        subtitleText,
+        titleFontSize,
+        widthBucket,
+        isDarkTheme,
+        isSelected,
       ),
+      TextSpan(
+        children: [
+          TextSpan(
+            text: '$titleText\n',
+            style: TextStyle(
+              color: titleColor,
+              fontSize: titleFontSize,
+              fontWeight: FontWeight.w700,
+              height: 1.18,
+              letterSpacing: 0.15,
+            ),
+          ),
+          TextSpan(
+            text: subtitleText,
+            style: TextStyle(
+              color: subColor,
+              fontSize: subFontSize,
+              fontWeight: FontWeight.w600,
+              height: 1.15,
+            ),
+          ),
+        ],
+      ),
+      textAlign: TextAlign.center,
+      maxWidth: math.max(28.0, widthBucket.toDouble()),
+      maxLines: 3,
     );
 
-    final maxLabelW = math.max(25.0, roomPixelW - 6.0);
-    final textPainter = TextPainter(
-      text: textSpan,
-      textAlign: TextAlign.center,
-      textDirection: TextDirection.ltr,
-      maxLines: 3,
-    )..layout(maxWidth: maxLabelW);
+    final textOffset =
+        center - Offset(textPainter.width / 2, textPainter.height / 2);
 
-    final textOffset = center - Offset(textPainter.width / 2, textPainter.height / 2);
+    final pillRect = RRect.fromRectAndRadius(
+      Rect.fromLTWH(
+        textOffset.dx - 5,
+        textOffset.dy - 2.5,
+        textPainter.width + 10,
+        textPainter.height + 5,
+      ),
+      const Radius.circular(5),
+    );
 
     canvas.drawRRect(
-      RRect.fromRectAndRadius(
-        Rect.fromLTWH(
-          textOffset.dx - 3,
-          textOffset.dy - 2,
-          textPainter.width + 6,
-          textPainter.height + 4,
-        ),
-        const Radius.circular(4),
-      ),
-      Paint()..color = Colors.black.withValues(alpha: 0.70),
+      pillRect,
+      Paint()
+        ..color = isDarkTheme
+            ? const Color(0xFF0F172A).withValues(alpha: 0.58)
+            : Colors.white.withValues(alpha: 0.80),
+    );
+    canvas.drawRRect(
+      pillRect,
+      Paint()
+        ..color = isSelected
+            ? (isDarkTheme
+                ? const Color(0xFFFBBF24).withValues(alpha: 0.65)
+                : const Color(0xFFD97706).withValues(alpha: 0.65))
+            : (isDarkTheme
+                ? Colors.white.withValues(alpha: 0.12)
+                : const Color(0xFFCBD5E1).withValues(alpha: 0.85))
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
     );
 
     textPainter.paint(canvas, textOffset);
@@ -1122,9 +1603,15 @@ class Canvas2DPainter extends CustomPainter {
     return clean.length > 14 ? '${clean.substring(0, 13)}.' : clean;
   }
 
-  void _drawBadgeText(Canvas canvas, String text, Offset position, {Color color = Colors.white, double rotateDegrees = 0.0}) {
+  void _drawBadgeText(
+    Canvas canvas,
+    String text,
+    Offset position, {
+    Color color = Colors.white,
+    double rotateDegrees = 0.0,
+  }) {
     final tp = _getCachedTextPainter(
-      ('badge', text, color.toARGB32()),
+      ('badge', text, color.toARGB32(), isDarkTheme),
       TextSpan(
         text: text,
         style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
@@ -1136,15 +1623,39 @@ class Canvas2DPainter extends CustomPainter {
     if (rotateDegrees != 0.0) {
       canvas.rotate(rotateDegrees * math.pi / 180.0);
     }
-    // Background pill
-    final bgRect = Rect.fromCenter(center: Offset.zero, width: tp.width + 6, height: tp.height + 4);
-    canvas.drawRRect(RRect.fromRectAndRadius(bgRect, const Radius.circular(3)), Paint()..color = const Color(0xFF13161C).withValues(alpha: 0.9));
+    final bgRect = Rect.fromCenter(
+      center: Offset.zero,
+      width: tp.width + 8,
+      height: tp.height + 4,
+    );
+    final pill = RRect.fromRectAndRadius(bgRect, const Radius.circular(3.5));
+    canvas.drawRRect(
+      pill,
+      Paint()
+        ..color = isDarkTheme
+            ? const Color(0xFF0F172A).withValues(alpha: 0.90)
+            : Colors.white.withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      pill,
+      Paint()
+        ..color = color.withValues(alpha: isDarkTheme ? 0.32 : 0.45)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 0.8,
+    );
     tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
     canvas.restore();
   }
 
   void _drawHatchPattern(
-      Canvas canvas, Polygon2D polygon, double zoom, Color color, {Path? path}) {
+    Canvas canvas,
+    Polygon2D polygon,
+    double zoom,
+    Color color, {
+    Path? path,
+    double stepMeters = 0.5,
+    bool crossHatch = false,
+  }) {
     final bb = polygon.boundingBox;
     final paint = Paint()
       ..color = color
@@ -1153,7 +1664,7 @@ class Canvas2DPainter extends CustomPainter {
     canvas.save();
     canvas.clipPath(path ?? _polygonToPath(polygon, zoom));
 
-    final step = 0.5 * zoom;
+    final step = math.max(4.0, stepMeters * zoom);
     final start = (bb.minX + bb.minY) * zoom;
     final end = (bb.maxX + bb.maxY) * zoom;
 
@@ -1164,71 +1675,403 @@ class Canvas2DPainter extends CustomPainter {
         paint,
       );
     }
+    if (crossHatch) {
+      final minXpx = bb.minX * zoom;
+      final maxXpx = bb.maxX * zoom;
+      final minYpx = bb.minY * zoom;
+      final maxYpx = bb.maxY * zoom;
+      final hPx = bb.height * zoom;
+      for (double x = minXpx - hPx; x <= maxXpx + hPx; x += step) {
+        canvas.drawLine(
+          Offset(x, minYpx),
+          Offset(x + hPx, maxYpx),
+          paint,
+        );
+      }
+    }
     canvas.restore();
+  }
+
+  void _drawDashedPath(
+    Canvas canvas,
+    Path path,
+    Paint paint, {
+    double dashLength = 6.0,
+    double gapLength = 4.0,
+  }) {
+    for (final metric in path.computeMetrics()) {
+      double distance = 0.0;
+      while (distance < metric.length) {
+        final next = math.min(distance + dashLength, metric.length);
+        canvas.drawPath(metric.extractPath(distance, next), paint);
+        distance += dashLength + gapLength;
+      }
+    }
   }
 
   void _drawWalls(Canvas canvas, double zoom) {
     for (final wall in state.floor.walls) {
       final isSelected = wall.id == state.selectedWallId;
+      final isHovered = wall.id == hoveredWallId && !isSelected;
       final path = _polygonToPath(wall.footprint, zoom);
 
-      Color wallColor;
+      Color wallFill;
+      Color wallStroke;
+      double strokeWidth = 1.2;
+
       switch (wall.status) {
         case ElementStatus.toDemolish:
-          wallColor = const Color(0x60E53935);
+          wallFill = isDarkTheme
+              ? const Color(0x42EF4444)
+              : const Color(0x36DC2626);
+          wallStroke = isDarkTheme
+              ? const Color(0xFFF87171)
+              : const Color(0xFFDC2626);
+          strokeWidth = 1.4;
           break;
         case ElementStatus.isNew:
-          wallColor = const Color(0xFFCFD8DC);
+          wallFill = isDarkTheme
+              ? const Color(0xFF0F766E)
+              : const Color(0xFF0D9488);
+          wallStroke = isDarkTheme
+              ? const Color(0xFF2DD4BF)
+              : const Color(0xFF115E59);
+          strokeWidth = 1.4;
           break;
         case ElementStatus.preserved:
         case ElementStatus.existing:
         default:
-          wallColor = const Color(0xFFB0BEC5);
+          wallFill = isDarkTheme
+              ? const Color(0xFF334155)
+              : const Color(0xFF1E293B);
+          wallStroke = isDarkTheme
+              ? const Color(0xFF94A3B8)
+              : const Color(0xFF0F172A);
+          strokeWidth = 1.25;
           break;
       }
 
-      // Sombra arrojada volumétrica en modo renderizado
-      if (state.isRenderedMode) {
-        canvas.drawShadow(path, Colors.black.withValues(alpha: 0.55), 4.5, true);
+      // Soft drop shadow in rendered mode (skip demolished walls)
+      if (state.isRenderedMode && wall.status != ElementStatus.toDemolish) {
+        canvas.drawShadow(
+          path,
+          Colors.black.withValues(alpha: isDarkTheme ? 0.55 : 0.28),
+          4.0,
+          true,
+        );
       }
 
-      // Relleno
+      // 1. Architectural wall poché fill
       canvas.drawPath(
         path,
         Paint()
-          ..color = wallColor
+          ..color = wallFill
           ..style = PaintingStyle.fill,
       );
 
-      // Borde técnico
-      canvas.drawPath(
-        path,
-        Paint()
-          ..color = const Color(0xFF37474F)
-          ..style = PaintingStyle.stroke
-          ..strokeWidth = 1.0,
-      );
+      // 2. Remodeling poché hatch distinction
+      if (wall.status == ElementStatus.toDemolish) {
+        _drawHatchPattern(
+          canvas,
+          wall.footprint,
+          zoom,
+          isDarkTheme ? const Color(0x99F87171) : const Color(0x99DC2626),
+          path: path,
+          stepMeters: 0.18,
+          crossHatch: true,
+        );
+      } else if (wall.status == ElementStatus.isNew) {
+        _drawHatchPattern(
+          canvas,
+          wall.footprint,
+          zoom,
+          isDarkTheme
+              ? const Color(0x555EEAD4)
+              : const Color(0x55CCFBF1),
+          path: path,
+          stepMeters: 0.22,
+        );
+      } else if (zoom >= 24.0) {
+        _drawHatchPattern(
+          canvas,
+          wall.footprint,
+          zoom,
+          isDarkTheme
+              ? const Color(0x40CBD5E1)
+              : const Color(0x28F8FAFC),
+          path: path,
+          stepMeters: 0.28,
+        );
+      }
 
-      // Resaltado de selección
-      if (isSelected) {
+      // 3. Technical wall outline (dashed for demolition, crisp solid otherwise)
+      final outlinePaint = Paint()
+        ..color = wallStroke
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth;
+      if (wall.status == ElementStatus.toDemolish) {
+        _drawDashedPath(canvas, path, outlinePaint, dashLength: 5.5, gapLength: 3.5);
+      } else {
+        canvas.drawPath(path, outlinePaint);
+      }
+
+      // 4. Hover highlight
+      if (isHovered) {
         canvas.drawPath(
           path,
           Paint()
-            ..color = Colors.amber
+            ..color = isDarkTheme
+                ? const Color(0xFF38BDF8)
+                : const Color(0xFF0284C7)
             ..style = PaintingStyle.stroke
-            ..strokeWidth = 2.5,
+            ..strokeWidth = 2.2,
+        );
+      }
+
+      // 5. Selection highlight & length pill
+      if (isSelected) {
+        final accent = isDarkTheme ? const Color(0xFFFBBF24) : const Color(0xFFD97706);
+        canvas.drawPath(
+          path,
+          Paint()
+            ..color = accent
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2.8,
         );
 
         final midX = (wall.startPoint.x + wall.endPoint.x) / 2 * zoom;
-        final midY = (wall.startPoint.y + wall.endPoint.y) / 2 * zoom - 12;
+        final midY = (wall.startPoint.y + wall.endPoint.y) / 2 * zoom - 13;
+        final wallLabel = lang == 'en'
+            ? 'Wall: ${wall.length.toStringAsFixed(2)} m'
+            : 'Muro: ${wall.length.toStringAsFixed(2)} m';
         _drawBadgeText(
           canvas,
-          'Muro: ${wall.length.toStringAsFixed(2)} m',
+          wallLabel,
           Offset(midX, midY),
-          color: Colors.amber,
+          color: accent,
         );
       }
     }
+  }
+
+  void _drawSnapGuides(Canvas canvas, double zoom) {
+    final guideColor =
+        isDarkTheme ? const Color(0xFFEC4899) : const Color(0xFFDB2777);
+    final guidePaint = Paint()
+      ..color = guideColor
+      ..strokeWidth = 1.25
+      ..style = PaintingStyle.stroke;
+
+    final markerPaint = Paint()
+      ..color = guideColor
+      ..style = PaintingStyle.fill;
+
+    for (final guide in snapGuides) {
+      final p1 = guide.isVertical
+          ? Offset(guide.coordinate * zoom, guide.start * zoom)
+          : Offset(guide.start * zoom, guide.coordinate * zoom);
+      final p2 = guide.isVertical
+          ? Offset(guide.coordinate * zoom, guide.end * zoom)
+          : Offset(guide.end * zoom, guide.coordinate * zoom);
+
+      final path = Path()
+        ..moveTo(p1.dx, p1.dy)
+        ..lineTo(p2.dx, p2.dy);
+      _drawDashedPath(canvas, path, guidePaint, dashLength: 5.0, gapLength: 4.0);
+
+      canvas.drawCircle(p1, 2.5, markerPaint);
+      canvas.drawCircle(p2, 2.5, markerPaint);
+    }
+  }
+
+  void _drawMetricRulers(Canvas canvas, Size size, double zoom, Offset pan) {
+    const topBarH = 22.0;
+    const leftBarW = 28.0;
+
+    final barBg = isDarkTheme
+        ? const Color(0xFF0F131B).withValues(alpha: 0.94)
+        : const Color(0xFFF1F5F9).withValues(alpha: 0.96);
+    final borderColor =
+        isDarkTheme ? const Color(0xFF2B3548) : const Color(0xFFCBD5E1);
+    final tickColor =
+        isDarkTheme ? const Color(0xFF64748B) : const Color(0xFF64748B);
+    final majorTextColor =
+        isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0369A1);
+    final minorTextColor =
+        isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+
+    final bgPaint = Paint()..color = barBg;
+    final borderPaint = Paint()
+      ..color = borderColor
+      ..strokeWidth = 1.0;
+    final tickPaint = Paint()
+      ..color = tickColor
+      ..strokeWidth = 1.0;
+
+    // Top ruler strip
+    canvas.drawRect(Rect.fromLTWH(leftBarW, 0, size.width - leftBarW, topBarH), bgPaint);
+    // Left ruler strip
+    canvas.drawRect(Rect.fromLTWH(0, topBarH, leftBarW, size.height - topBarH), bgPaint);
+
+    // Choose adaptive label step (in meters) so ruler numbers never overlap
+    final double labelStepMeters;
+    if (zoom >= 68.0) {
+      labelStepMeters = 0.5;
+    } else if (zoom >= 34.0) {
+      labelStepMeters = 1.0;
+    } else if (zoom >= 16.0) {
+      labelStepMeters = 2.0;
+    } else {
+      labelStepMeters = 5.0;
+    }
+    final minorStepMeters = labelStepMeters / 2.0;
+
+    // Top horizontal ticks
+    final startMeterX = ((leftBarW - pan.dx) / zoom / minorStepMeters).floor() * minorStepMeters;
+    final endMeterX = ((size.width - pan.dx) / zoom / minorStepMeters).ceil() * minorStepMeters;
+    for (double m = startMeterX; m <= endMeterX + 1e-6; m += minorStepMeters) {
+      final sx = pan.dx + m * zoom;
+      if (sx < leftBarW || sx > size.width) continue;
+      final isLabelTick = ((m / labelStepMeters) - (m / labelStepMeters).round()).abs() < 1e-3;
+      final tickLen = isLabelTick ? 8.0 : 4.0;
+      canvas.drawLine(Offset(sx, topBarH - tickLen), Offset(sx, topBarH), tickPaint);
+      if (isLabelTick) {
+        final isMajor = (m.round() % 5 == 0) && (m - m.round()).abs() < 1e-3;
+        final label = (m - m.round()).abs() < 1e-3
+            ? '${m.round()}m'
+            : '${m.toStringAsFixed(1)}m';
+        final tp = _getCachedTextPainter(
+          ('ruler_x', label, isMajor, isDarkTheme),
+          TextSpan(
+            text: label,
+            style: TextStyle(
+              color: isMajor ? majorTextColor : minorTextColor,
+              fontSize: 8.5,
+              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        );
+        if (sx + 2 + tp.width < size.width) {
+          tp.paint(canvas, Offset(sx + 2, 2.5));
+        }
+      }
+    }
+
+    // Left vertical ticks
+    final startMeterY = ((topBarH - pan.dy) / zoom / minorStepMeters).floor() * minorStepMeters;
+    final endMeterY = ((size.height - pan.dy) / zoom / minorStepMeters).ceil() * minorStepMeters;
+    for (double m = startMeterY; m <= endMeterY + 1e-6; m += minorStepMeters) {
+      final sy = pan.dy + m * zoom;
+      if (sy < topBarH || sy > size.height) continue;
+      final isLabelTick = ((m / labelStepMeters) - (m / labelStepMeters).round()).abs() < 1e-3;
+      final tickLen = isLabelTick ? 7.0 : 3.5;
+      canvas.drawLine(Offset(leftBarW - tickLen, sy), Offset(leftBarW, sy), tickPaint);
+      if (isLabelTick) {
+        final isMajor = (m.round() % 5 == 0) && (m - m.round()).abs() < 1e-3;
+        final label = (m - m.round()).abs() < 1e-3
+            ? '${m.round()}'
+            : m.toStringAsFixed(1);
+        final tp = _getCachedTextPainter(
+          ('ruler_y', label, isMajor, isDarkTheme),
+          TextSpan(
+            text: label,
+            style: TextStyle(
+              color: isMajor ? majorTextColor : minorTextColor,
+              fontSize: 8.0,
+              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w500,
+            ),
+          ),
+        );
+        if (sy + tp.height < size.height) {
+          tp.paint(canvas, Offset(2.5, sy + 1.5));
+        }
+      }
+    }
+
+    // Live cursor marker ticks on top & left rulers
+    if (cursorMeters != null) {
+      final cursorPaint = Paint()
+        ..color = isDarkTheme ? const Color(0xFFFBBF24) : const Color(0xFFD97706)
+        ..strokeWidth = 2.0;
+      final cx = pan.dx + cursorMeters!.x * zoom;
+      final cy = pan.dy + cursorMeters!.y * zoom;
+      if (cx >= leftBarW && cx <= size.width) {
+        canvas.drawLine(Offset(cx, 0), Offset(cx, topBarH), cursorPaint);
+      }
+      if (cy >= topBarH && cy <= size.height) {
+        canvas.drawLine(Offset(0, cy), Offset(leftBarW, cy), cursorPaint);
+      }
+    }
+
+    // Corner origin square ("m")
+    canvas.drawRect(const Rect.fromLTWH(0, 0, leftBarW, topBarH), bgPaint);
+    final unitTp = _getCachedTextPainter(
+      ('ruler_unit', isDarkTheme),
+      TextSpan(
+        text: 'm',
+        style: TextStyle(
+          color: majorTextColor,
+          fontSize: 9.0,
+          fontWeight: FontWeight.w800,
+        ),
+      ),
+    );
+    unitTp.paint(
+      canvas,
+      Offset((leftBarW - unitTp.width) / 2, (topBarH - unitTp.height) / 2),
+    );
+
+    // Ruler divider borders
+    canvas.drawLine(Offset(0, topBarH), Offset(size.width, topBarH), borderPaint);
+    canvas.drawLine(Offset(leftBarW, 0), Offset(leftBarW, size.height), borderPaint);
+  }
+
+  void _drawCursorCoordinateBadge(
+    Canvas canvas,
+    Size size,
+    Point2D cursor,
+  ) {
+    final text = 'X: ${cursor.x.toStringAsFixed(2)} m   Y: ${cursor.y.toStringAsFixed(2)} m';
+    final tp = _getCachedTextPainter(
+      ('cursor_coord', text, isDarkTheme),
+      TextSpan(
+        text: text,
+        style: TextStyle(
+          color: isDarkTheme ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
+          fontSize: 10.5,
+          fontWeight: FontWeight.w600,
+          fontFeatures: const [FontFeature.tabularFigures()],
+        ),
+      ),
+    );
+
+    final badgeW = tp.width + 18;
+    final badgeH = tp.height + 10;
+    final rect = Rect.fromLTWH(
+      size.width - badgeW - 12,
+      size.height - badgeH - 12,
+      badgeW,
+      badgeH,
+    );
+    final rrect = RRect.fromRectAndRadius(rect, const Radius.circular(6));
+
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = isDarkTheme
+            ? const Color(0xFF0F172A).withValues(alpha: 0.88)
+            : Colors.white.withValues(alpha: 0.94),
+    );
+    canvas.drawRRect(
+      rrect,
+      Paint()
+        ..color = isDarkTheme
+            ? const Color(0xFF334155)
+            : const Color(0xFFCBD5E1)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.0,
+    );
+    tp.paint(canvas, Offset(rect.left + 9, rect.top + 5));
   }
 
   void _drawPolygonBoundary(
@@ -1244,52 +2087,59 @@ class Canvas2DPainter extends CustomPainter {
 
     if (label != null) {
       final bb = polygon.boundingBox;
-      final textSpan = TextSpan(
-        text: label,
-        style: TextStyle(
-          color: paint.color,
-          fontSize: 10,
-          fontWeight: FontWeight.bold,
+      final textPainter = _getCachedTextPainter(
+        ('poly_lbl', label, paint.color.toARGB32()),
+        TextSpan(
+          text: label,
+          style: TextStyle(
+            color: paint.color,
+            fontSize: 10,
+            fontWeight: FontWeight.bold,
+          ),
         ),
       );
-      final textPainter = TextPainter(
-        text: textSpan,
-        textDirection: TextDirection.ltr,
-      )..layout();
       textPainter.paint(
         canvas,
         Offset(bb.minX * zoom + 4, bb.minY * zoom + labelOffsetY),
       );
 
-      // Indicadores permanentes de orientación para el Lote
+      // Permanent lot orientation indicators
       if (label.startsWith('LOTE')) {
-        final frontTp = TextPainter(
-          text: const TextSpan(
-            text: '▲ FRENTE / CALLE / ACCESO ▲',
+        final frontColor =
+            isDarkTheme ? const Color(0xFFFFB300) : const Color(0xFFB45309);
+        final backColor =
+            isDarkTheme ? Colors.white38 : const Color(0xFF64748B);
+        final frontTp = _getCachedTextPainter(
+          ('lot_front', lang, isDarkTheme),
+          TextSpan(
+            text: lang == 'en'
+                ? '▲ FRONT / STREET / ACCESS ▲'
+                : '▲ FRENTE / CALLE / ACCESO ▲',
             style: TextStyle(
-              color: Color(0xFFFFB300),
+              color: frontColor,
               fontSize: 9,
               fontWeight: FontWeight.bold,
               letterSpacing: 0.8,
             ),
           ),
-          textDirection: TextDirection.ltr,
-        )..layout();
+        );
         final frontX = (bb.minX + bb.width / 2) * zoom - frontTp.width / 2;
         frontTp.paint(canvas, Offset(frontX, bb.minY * zoom - 42));
 
-        final backTp = TextPainter(
-          text: const TextSpan(
-            text: '▼ FONDO / PATIO POSTERIOR ▼',
+        final backTp = _getCachedTextPainter(
+          ('lot_back', lang, isDarkTheme),
+          TextSpan(
+            text: lang == 'en'
+                ? '▼ REAR / BACKYARD ▼'
+                : '▼ FONDO / PATIO POSTERIOR ▼',
             style: TextStyle(
-              color: Colors.white38,
+              color: backColor,
               fontSize: 8.5,
               fontWeight: FontWeight.w600,
               letterSpacing: 0.8,
             ),
           ),
-          textDirection: TextDirection.ltr,
-        )..layout();
+        );
         final backX = (bb.minX + bb.width / 2) * zoom - backTp.width / 2;
         backTp.paint(canvas, Offset(backX, bb.maxY * zoom + 4));
       }
@@ -1300,17 +2150,21 @@ class Canvas2DPainter extends CustomPainter {
       CadSymbolDrawer.polygonToPath(polygon, zoom);
 
   void _drawNorthCompass(Canvas canvas, Size size, double orientationDegrees) {
-    final center = Offset(size.width - 55, 45);
+    final center = Offset(size.width - 42, 54);
     CadSymbolDrawer.drawNorthCompass(
       canvas,
       center,
-      22.0,
+      20.0,
       orientationDegrees,
-      backgroundColor: const Color(0xFF13161C).withValues(alpha: 0.85),
-      ringColor: const Color(0xFF00E5FF).withValues(alpha: 0.4),
+      backgroundColor: isDarkTheme
+          ? const Color(0xFF13161C).withValues(alpha: 0.88)
+          : Colors.white.withValues(alpha: 0.92),
+      ringColor: isDarkTheme
+          ? const Color(0xFF00E5FF).withValues(alpha: 0.45)
+          : const Color(0xFF0284C7).withValues(alpha: 0.45),
       northColor: const Color(0xFFEF5350),
-      southColor: const Color(0xFF90A4AE),
-      labelColor: const Color(0xFF00E5FF),
+      southColor: isDarkTheme ? const Color(0xFF90A4AE) : const Color(0xFF64748B),
+      labelColor: isDarkTheme ? const Color(0xFF00E5FF) : const Color(0xFF0369A1),
     );
   }
 
@@ -1608,9 +2462,27 @@ class Canvas2DPainter extends CustomPainter {
     }
   }
 
+  static bool _snapGuidesDiffer(List<SnapGuide2D> a, List<SnapGuide2D> b) {
+    if (identical(a, b)) return false;
+    if (a.length != b.length) return true;
+    for (int i = 0; i < a.length; i++) {
+      if (a[i] != b[i]) return true;
+    }
+    return false;
+  }
+
   @override
   bool shouldRepaint(covariant Canvas2DPainter oldDelegate) {
-    if (oldDelegate.lang != lang) return true;
+    if (oldDelegate.lang != lang ||
+        oldDelegate.isDarkTheme != isDarkTheme ||
+        oldDelegate.hoveredModuleId != hoveredModuleId ||
+        oldDelegate.hoveredWallId != hoveredWallId ||
+        oldDelegate.hoveredHandle != hoveredHandle ||
+        oldDelegate.activeHandle != activeHandle ||
+        oldDelegate.cursorMeters != cursorMeters ||
+        _snapGuidesDiffer(oldDelegate.snapGuides, snapGuides)) {
+      return true;
+    }
     final prev = oldDelegate.state;
     if (identical(prev, state)) return false;
     return !identical(prev.floor, state.floor) ||
