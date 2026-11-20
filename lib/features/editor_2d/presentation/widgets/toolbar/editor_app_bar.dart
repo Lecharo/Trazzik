@@ -75,6 +75,15 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     final showZoningGuide = ref.watch(
       floorEditorProvider.select((s) => s.showZoningGuide),
     );
+    final hasGhostFloor = ref.watch(
+      floorEditorProvider.select((s) => s.ghostReferenceFloor != null),
+    );
+    final showFloorGhost = ref.watch(
+      floorEditorProvider.select((s) => s.showFloorGhost),
+    );
+    final showPerimeterDimensions = ref.watch(
+      floorEditorProvider.select((s) => s.showPerimeterDimensions),
+    );
     final isLaserMeasureActive = ref.watch(
       floorEditorProvider.select((s) => s.isLaserMeasureActive),
     );
@@ -149,6 +158,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
               selectedModuleName: selectedModuleHeader?.name,
               isRenderedMode: isRenderedMode,
               showZoningGuide: showZoningGuide,
+              hasGhostFloor: hasGhostFloor,
+              showFloorGhost: showFloorGhost,
+              showPerimeterDimensions: showPerimeterDimensions,
               canUndo: canUndo,
               canRedo: canRedo,
               hasUnsavedChanges: hasUnsavedChanges,
@@ -736,6 +748,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required String? selectedModuleName,
     required bool isRenderedMode,
     required bool showZoningGuide,
+    required bool hasGhostFloor,
+    required bool showFloorGhost,
+    required bool showPerimeterDimensions,
     required bool canUndo,
     required bool canRedo,
     required bool hasUnsavedChanges,
@@ -812,6 +827,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
           selectedModuleName: selectedModuleName,
           isRenderedMode: isRenderedMode,
           showZoningGuide: showZoningGuide,
+          hasGhostFloor: hasGhostFloor,
+          showFloorGhost: showFloorGhost,
+          showPerimeterDimensions: showPerimeterDimensions,
           canUndo: canUndo,
           canRedo: canRedo,
           lang: lang,
@@ -979,6 +997,9 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
     required String? selectedModuleName,
     required bool isRenderedMode,
     required bool showZoningGuide,
+    required bool hasGhostFloor,
+    required bool showFloorGhost,
+    required bool showPerimeterDimensions,
     required bool canUndo,
     required bool canRedo,
     required String lang,
@@ -1067,6 +1088,31 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         showZoningGuide ? Icons.wb_sunny : Icons.wb_sunny_outlined,
         lang == 'es' ? 'Guía de Zonificación y Sol' : 'Zoning & Sun Guide',
         iconColor: const Color(0xFFFFB300),
+      ),
+      if (hasGhostFloor)
+        _menuItem(
+          'toggle_floor_ghost',
+          showFloorGhost ? Icons.layers : Icons.layers_outlined,
+          showFloorGhost
+              ? (lang == 'es'
+                  ? 'Ocultar Calco Piso Inferior'
+                  : 'Hide Lower Floor Ghost')
+              : (lang == 'es'
+                  ? 'Mostrar Calco Piso Inferior'
+                  : 'Show Lower Floor Ghost'),
+          iconColor: const Color(0xFF818CF8),
+        ),
+      _menuItem(
+        'toggle_perimeter_dims',
+        Icons.straighten,
+        showPerimeterDimensions
+            ? (lang == 'es'
+                ? 'Ocultar Cotas Perimetrales'
+                : 'Hide Outer Dimensions')
+            : (lang == 'es'
+                ? 'Mostrar Cotas Perimetrales'
+                : 'Show Outer Dimensions'),
+        iconColor: const Color(0xFF38BDF8),
       ),
       _menuItem(
         'starter_layout',
@@ -1217,6 +1263,12 @@ class EditorAppBar extends ConsumerWidget implements PreferredSizeWidget {
         break;
       case 'zoning_guide':
         notifier.toggleZoningGuide();
+        break;
+      case 'toggle_floor_ghost':
+        notifier.toggleFloorGhost();
+        break;
+      case 'toggle_perimeter_dims':
+        notifier.togglePerimeterDimensions();
         break;
       case 'starter_layout':
         StarterLayoutDialog.show(context);
