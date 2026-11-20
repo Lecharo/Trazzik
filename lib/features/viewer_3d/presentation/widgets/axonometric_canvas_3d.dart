@@ -928,7 +928,7 @@ class AxonometricSceneRenderer {
       }
     }
 
-    // 4. Room labels projected in 3D (cached TextPainters)
+    // 4. Room labels projected in 3D (cached TextPainters + anti-overlap filtering)
     if (showLabels) {
       _drawRoomLabels(
         canvas,
@@ -936,6 +936,7 @@ class AxonometricSceneRenderer {
         selectedModuleId: selectedModuleId,
         isDarkTheme: isDarkTheme || isNight,
         showDimensions: zoom >= 26.0,
+        explodedFactor: explodedFactor,
       );
     }
 
@@ -1178,14 +1179,64 @@ class AxonometricSceneRenderer {
     return tp;
   }
 
+  /// Selects which label candidate indices can be painted without overlapping on screen.
+  @visibleForTesting
+  static List<int> selectNonOverlappingLabelIndices(
+    List<({Rect rect, int floorIndex, bool isSelected, double depth})>
+        candidates, {
+    required bool stackedMultiStory,
+    required int maxFloorIndex,
+  }) {
+    final orderedIndices = List<int>.generate(candidates.length, (i) => i);
+    orderedIndices.sort((a, b) {
+      final ca = candidates[a];
+      final cb = candidates[b];
+      if (ca.isSelected != cb.isSelected) return ca.isSelected ? -1 : 1;
+      final floorCmp = cb.floorIndex.compareTo(ca.floorIndex);
+      if (floorCmp != 0) return floorCmp;
+      return cb.depth.compareTo(ca.depth);
+    });
+
+    final accepted = <int>[];
+    final placedRects = <Rect>[];
+    for (final idx in orderedIndices) {
+      final c = candidates[idx];
+      if (stackedMultiStory &&
+          !c.isSelected &&
+          c.floorIndex < maxFloorIndex) {
+        continue;
+      }
+      final padded = c.rect.inflate(2.0);
+      final collides = placedRects.any((r) => r.overlaps(padded));
+      if (collides) continue;
+      placedRects.add(padded);
+      accepted.add(idx);
+    }
+    return accepted;
+  }
+
   static void _drawRoomLabels(
     Canvas canvas,
     List<_ProjectedFace> projectedFaces, {
     required String? selectedModuleId,
     required bool isDarkTheme,
     bool showDimensions = true,
+    double explodedFactor = 0.0,
   }) {
+    final labelItems = <({
+      _ProjectedFace face,
+      double cx,
+      double cy,
+      bool isSelected,
+      TextPainter painter,
+      Rect rect,
+    })>[];
+
+    int maxFloorIndex = 0;
     for (final pFace in projectedFaces) {
+      if (pFace.floorIndex > maxFloorIndex) {
+        maxFloorIndex = pFace.floorIndex;
+      }
       final label = pFace.label;
       if (label == null || label.isEmpty) continue;
       if (!pFace.isRoomLabel) continue;
@@ -1213,13 +1264,52 @@ class AxonometricSceneRenderer {
       const paddingV = 2.0;
       final badgeW = textPainter.width + paddingH * 2;
       final badgeH = textPainter.height + paddingV * 2;
+      final rect = Rect.fromCenter(
+        center: Offset(cx, cy),
+        width: badgeW,
+        height: badgeH,
+      );
+
+      labelItems.add((
+        face: pFace,
+        cx: cx,
+        cy: cy,
+        isSelected: isSelected,
+        painter: textPainter,
+        rect: rect,
+      ));
+    }
+
+    if (labelItems.isEmpty) return;
+
+    final floorIndices = labelItems.map((e) => e.face.floorIndex).toSet();
+    final topRoomFloor = floorIndices.reduce(math.max);
+    final stackedMultiStory = floorIndices.length > 1 && explodedFactor < 0.15;
+
+    final visibleIndices = selectNonOverlappingLabelIndices(
+      labelItems
+          .map(
+            (e) => (
+              rect: e.rect,
+              floorIndex: e.face.floorIndex,
+              isSelected: e.isSelected,
+              depth: e.face.depth,
+            ),
+          )
+          .toList(),
+      stackedMultiStory: stackedMultiStory,
+      maxFloorIndex: topRoomFloor,
+    );
+
+    for (final idx in visibleIndices) {
+      final item = labelItems[idx];
       final badgeRect = RRect.fromRectAndRadius(
-        Rect.fromCenter(center: Offset(cx, cy), width: badgeW, height: badgeH),
+        item.rect,
         const Radius.circular(4),
       );
 
       final bgPaint = Paint()
-        ..color = isSelected
+        ..color = item.isSelected
             ? const Color(0xFF00E5FF)
             : (isDarkTheme
                 ? const Color(0xDD0F172A)
@@ -1228,18 +1318,21 @@ class AxonometricSceneRenderer {
       canvas.drawRRect(badgeRect, bgPaint);
 
       final borderPaint = Paint()
-        ..color = isSelected
+        ..color = item.isSelected
             ? const Color(0xFF00E5FF)
             : (isDarkTheme
                 ? const Color(0xFF00E5FF).withValues(alpha: 0.50)
                 : const Color(0xFF0284C7).withValues(alpha: 0.65))
         ..style = PaintingStyle.stroke
-        ..strokeWidth = isSelected ? 1.5 : 1.0;
+        ..strokeWidth = item.isSelected ? 1.5 : 1.0;
       canvas.drawRRect(badgeRect, borderPaint);
 
-      textPainter.paint(
+      item.painter.paint(
         canvas,
-        Offset(cx - textPainter.width / 2, cy - textPainter.height / 2),
+        Offset(
+          item.cx - item.painter.width / 2,
+          item.cy - item.painter.height / 2,
+        ),
       );
     }
   }

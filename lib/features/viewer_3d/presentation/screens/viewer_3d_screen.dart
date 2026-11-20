@@ -48,6 +48,13 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   bool _showLabels = true; // Rótulos activados por defecto
   bool _isFullWallHeight = false; // false = 1.20m Maqueta axonométrica, true = altura real por piso
   bool _showRoof = false; // Cubierta + antepecho superior opcional
+  bool _isRealisticStudioView = false;
+  bool _prevPerspective = false;
+  bool _prevFullWallHeight = false;
+  bool _prevShowRoof = false;
+  bool _prevShowLabels = true;
+  SunPreset3D _prevSunPreset = SunPreset3D.studioNoon;
+  double _prevExplodedFactor = 0.0;
   bool _isPerspective = false;
   SunPreset3D _sunPreset = SunPreset3D.studioNoon;
   SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
@@ -243,8 +250,44 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     });
   }
 
+  void _toggleRealisticStudioView() {
+    setState(() {
+      if (!_isRealisticStudioView) {
+        _prevPerspective = _isPerspective;
+        _prevFullWallHeight = _isFullWallHeight;
+        _prevShowRoof = _showRoof;
+        _prevShowLabels = _showLabels;
+        _prevSunPreset = _sunPreset;
+        _prevExplodedFactor = _explodedFactor;
+
+        _isRealisticStudioView = true;
+        _isPerspective = true;
+        _isFullWallHeight = true;
+        _showRoof = true;
+        _showLabels = false;
+        _explodedFactor = 0.0;
+        _sunPreset = SunPreset3D.goldenHourWest;
+        _yaw = -0.58;
+        _pitch = 0.94;
+        _cameraRevision++;
+      } else {
+        _isRealisticStudioView = false;
+        _isPerspective = _prevPerspective;
+        _isFullWallHeight = _prevFullWallHeight;
+        _showRoof = _prevShowRoof;
+        _showLabels = _prevShowLabels;
+        _sunPreset = _prevSunPreset;
+        _explodedFactor = _prevExplodedFactor;
+        _yaw = -0.35;
+        _pitch = 0.70;
+        _cameraRevision++;
+      }
+    });
+  }
+
   void _resetCamera() {
     setState(() {
+      _isRealisticStudioView = false;
       _yaw = -0.35;
       _pitch = 0.70;
       _zoom = 48.0;
@@ -917,11 +960,11 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 ),
               ),
 
-          // 1.5. Selector flotante en vivo: Antes / Después / Comparativo Obra
+          // 1.5. Selector flotante en vivo: Antes / Después / Comparativo / Realista
           Positioned(
-            top: 12,
-            left: 12,
-            right: 12,
+            top: isMobile ? 12 : 16,
+            left: isMobile ? 12 : 380,
+            right: isMobile ? 12 : 300,
             child: IgnorePointer(
               ignoring: false,
               child: Center(
@@ -962,6 +1005,59 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                               icon: Icons.compare_arrows,
                               activeColor: const Color(0xFF10B981),
                               lang: lang,
+                            ),
+                            Container(
+                              width: 1,
+                              height: 16,
+                              margin: const EdgeInsets.symmetric(horizontal: 4),
+                              color: Colors.white24,
+                            ),
+                            InkWell(
+                              key: const Key('toggle_realistic_view_button'),
+                              borderRadius: BorderRadius.circular(7),
+                              onTap: _toggleRealisticStudioView,
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _isRealisticStudioView
+                                      ? Colors.amber.withValues(alpha: 0.24)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
+                                  border: Border.all(
+                                    color: _isRealisticStudioView
+                                        ? Colors.amber.withValues(alpha: 0.75)
+                                        : Colors.transparent,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.wb_twilight_rounded,
+                                      size: 13,
+                                      color: _isRealisticStudioView
+                                          ? Colors.amber
+                                          : Colors.white60,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      lang == 'es' ? 'Realista' : 'Realistic',
+                                      style: TextStyle(
+                                        color: _isRealisticStudioView
+                                            ? Colors.white
+                                            : Colors.white70,
+                                        fontSize: 10.5,
+                                        fontWeight: _isRealisticStudioView
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                           ],
                         ),

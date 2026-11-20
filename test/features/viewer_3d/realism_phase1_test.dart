@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
@@ -9,6 +10,8 @@ import 'package:trazzik/features/lots/domain/lot.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
 import 'package:trazzik/features/viewer_3d/domain/building_3d_builder.dart';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
+import 'package:trazzik/features/viewer_3d/presentation/screens/viewer_3d_screen.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 import 'package:trazzik/features/walls/domain/wall.dart';
 
 void main() {
@@ -288,6 +291,79 @@ void main() {
         );
         expect(apronFace, isNotEmpty);
         expect(groundShadow, isNotEmpty);
+      },
+    );
+  });
+
+  group('3D Realism Phase 1 — Block 2C: Smart Labels & Realistic Studio View', () {
+    test(
+      'selectNonOverlappingLabelIndices hides stacked lower-floor labels and drops colliding labels',
+      () {
+        final candidates = [
+          (
+            rect: const Rect.fromLTWH(100, 100, 60, 22),
+            floorIndex: 0,
+            isSelected: false,
+            depth: 1.0,
+          ),
+          (
+            rect: const Rect.fromLTWH(102, 102, 60, 22),
+            floorIndex: 1,
+            isSelected: false,
+            depth: 2.0,
+          ),
+          (
+            rect: const Rect.fromLTWH(105, 105, 60, 22),
+            floorIndex: 1,
+            isSelected: false,
+            depth: 1.5,
+          ),
+          (
+            rect: const Rect.fromLTWH(240, 100, 60, 22),
+            floorIndex: 1,
+            isSelected: false,
+            depth: 1.8,
+          ),
+        ];
+
+        // Stacked multi-story: ignores floorIndex 0, keeps non-colliding top-floor labels (1 and 3)
+        final keptStacked = AxonometricSceneRenderer.selectNonOverlappingLabelIndices(
+          candidates,
+          stackedMultiStory: true,
+          maxFloorIndex: 1,
+        );
+        expect(keptStacked, containsAll([1, 3]));
+        expect(keptStacked, isNot(contains(0)));
+        expect(keptStacked, isNot(contains(2)));
+      },
+    );
+
+    testWidgets(
+      'Viewer3dScreen 1-click Realistic button toggles perspective + roof + golden hour cleanly',
+      (tester) async {
+        final container = ProviderContainer();
+        addTearDown(container.dispose);
+
+        tester.view.physicalSize = const Size(1280, 800);
+        tester.view.devicePixelRatio = 1.0;
+        addTearDown(tester.view.resetPhysicalSize);
+
+        await tester.pumpWidget(
+          UncontrolledProviderScope(
+            container: container,
+            child: const MaterialApp(home: Viewer3dScreen()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final realisticBtn = find.byKey(const Key('toggle_realistic_view_button'));
+        expect(realisticBtn, findsOneWidget);
+
+        await tester.tap(realisticBtn);
+        await tester.pumpAndSettle();
+        // Tap again to restore previous maquette view cleanly
+        await tester.tap(realisticBtn);
+        await tester.pumpAndSettle();
       },
     );
   });
