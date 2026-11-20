@@ -16,6 +16,7 @@ import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/axonometric_canvas_3d.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/client_share_link_dialog.dart';
 import 'package:trazzik/features/viewer_3d/presentation/widgets/render_3d_studio_dialog.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/webgl_canvas_3d.dart';
 
 /// Pantalla completa de Maqueta Axonométrica 3D del Proyecto
 class Viewer3dScreen extends ConsumerStatefulWidget {
@@ -62,6 +63,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   RemodelViewMode3D _remodelViewMode = RemodelViewMode3D.after;
   bool _isSplitCurtainActive = false;
   double _curtainRatio = 0.50;
+  bool _useWebGlPbr = false;
+  bool _isWalkModeActive = false;
+  final WebGlViewerController _webGlController = WebGlViewerController();
   String _activeCameraPreset = 'iso';
   BoxConstraints? _lastConstraints;
   String? _selectedModuleId;
@@ -95,11 +99,42 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   void _applyCameraPreset(String presetId, double yaw, double pitch) {
     setState(() {
       _activeCameraPreset = presetId;
+      _isWalkModeActive = false;
       _yaw = yaw;
       _pitch = pitch;
       _panOffset = Offset.zero;
       _cameraRevision++;
     });
+    if (_useWebGlPbr) {
+      _webGlController.setCameraPreset(presetId);
+    }
+  }
+
+  void _toggleWebGlPbr() {
+    setState(() {
+      _useWebGlPbr = !_useWebGlPbr;
+      if (_useWebGlPbr) {
+        _isSplitCurtainActive = false;
+        _isPerspective = true;
+        _isFullWallHeight = true;
+      } else {
+        _isWalkModeActive = false;
+      }
+    });
+  }
+
+  void _toggleWalkMode(List<Floor> floors) {
+    if (!_useWebGlPbr) return;
+    final nextWalk = !_isWalkModeActive;
+    double? floorElev;
+    if (nextWalk) {
+      final targetFloor = _selectedFloorId != null
+          ? floors.where((f) => f.id == _selectedFloorId).firstOrNull
+          : floors.firstOrNull;
+      floorElev = targetFloor?.levelMeters ?? 0.0;
+    }
+    setState(() => _isWalkModeActive = nextWalk);
+    _webGlController.setWalkMode(nextWalk, floorElevation: floorElev);
   }
 
   Widget _buildRemodelModeButton({
@@ -263,6 +298,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   }
 
   void _zoomIn() {
+    if (_useWebGlPbr) {
+      _webGlController.zoomStep(0.80);
+      return;
+    }
     setState(() {
       _zoom = (_zoom * 1.25).clamp(10.0, 200.0);
       _cameraRevision++;
@@ -270,6 +309,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   }
 
   void _zoomOut() {
+    if (_useWebGlPbr) {
+      _webGlController.zoomStep(1.25);
+      return;
+    }
     setState(() {
       _zoom = (_zoom / 1.25).clamp(10.0, 200.0);
       _cameraRevision++;
@@ -277,6 +320,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   }
 
   void _fitView(Lot lot, [BoxConstraints? constraints]) {
+    if (_useWebGlPbr) {
+      _webGlController.setCameraPreset('iso');
+      return;
+    }
     setState(() {
       _zoom = _computeFitZoom(lot, constraints ?? _lastConstraints);
       _panOffset = Offset.zero;
@@ -304,6 +351,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         _yaw = -0.58;
         _pitch = 0.94;
         _cameraRevision++;
+        if (_useWebGlPbr) {
+          _webGlController.setCameraPreset('realistic');
+        }
       } else {
         _isRealisticStudioView = false;
         _isPerspective = _prevPerspective;
@@ -952,62 +1002,111 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
 
           return Stack(
             children: [
-              // 1. Canvas Axonométrico 3D Interactivo
+              // 1. Canvas 3D Interactivo (WebGL PBR Three.js en Web o Motor Axonométrico Flutter)
               Positioned.fill(
-                child: AxonometricCanvas3D(
-                  faces: faces,
-                  yaw: _yaw,
-                  pitch: _pitch,
-                  zoom: _zoom,
-                  panOffset: _panOffset,
-                  explodedFactor: _explodedFactor,
-                  isPerspective: _isPerspective,
-                  sunPreset: _sunPreset,
-                  sectionCutAxis: _sectionCutAxis,
-                  sectionCutRatio: _sectionCutRatio,
-                  cameraRevision: _cameraRevision,
-                  orientationDegrees: lot.orientationDegrees,
-                  showLabels: _showLabels,
-                  selectedModuleId: _selectedModuleId,
-                  highlightWallSelection:
-                      _activeSurfaceTab == FinishSurfaceTarget.wall,
-                  onSurfaceTapped: (moduleId, floorId, isWallFace) {
-                    if (_isClientPreviewMode && !_clientAllowFinishSelection) {
-                      return;
-                    }
-                    setState(() {
-                      _selectedModuleId = moduleId;
-                      _selectedModuleFloorId = floorId;
-                      if (moduleId != null) {
-                        _activeSurfaceTab = isWallFace
-                            ? FinishSurfaceTarget.wall
-                            : FinishSurfaceTarget.floor;
-                      }
-                    });
-                  },
-                  onOrbitChanged: (ny, np) {
-                    _yaw = ny;
-                    _pitch = np;
-                    if (_isSplitCurtainActive) {
-                      setState(() {
-                        _activeCameraPreset = '';
-                        _cameraRevision++;
-                      });
-                    }
-                  },
-                  onZoomChanged: (nz) {
-                    _zoom = nz;
-                    if (_isSplitCurtainActive) {
-                      setState(() => _cameraRevision++);
-                    }
-                  },
-                  onPanChanged: (np) {
-                    _panOffset = np;
-                    if (_isSplitCurtainActive) {
-                      setState(() => _cameraRevision++);
-                    }
-                  },
-                ),
+                child: (_useWebGlPbr && isWebGlViewerSupported)
+                    ? WebGlCanvas3D(
+                        key: const Key('webgl_canvas_3d'),
+                        faces: faces,
+                        sunPreset: _sunPreset,
+                        explodedFactor: _explodedFactor,
+                        sectionCutAxis: _sectionCutAxis,
+                        sectionCutRatio: _sectionCutRatio,
+                        selectedModuleId: _selectedModuleId,
+                        highlightWallSelection:
+                            _activeSurfaceTab == FinishSurfaceTarget.wall,
+                        isPerspective: _isPerspective,
+                        orientationDegrees: lot.orientationDegrees,
+                        controller: _webGlController,
+                        onSurfaceTapped: (moduleId, floorId, isWallFace) {
+                          if (_isClientPreviewMode &&
+                              !_clientAllowFinishSelection) {
+                            return;
+                          }
+                          setState(() {
+                            _selectedModuleId = moduleId;
+                            _selectedModuleFloorId = floorId;
+                            if (moduleId != null) {
+                              _activeSurfaceTab = isWallFace
+                                  ? FinishSurfaceTarget.wall
+                                  : FinishSurfaceTarget.floor;
+                            }
+                          });
+                        },
+                        onWalkModeChanged: (enabled) {
+                          if (mounted && _isWalkModeActive != enabled) {
+                            setState(() => _isWalkModeActive = enabled);
+                          }
+                        },
+                        onSnapshotSaved: (filename) {
+                          if (!mounted) return;
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                lang == 'es'
+                                    ? 'Render WebGL HD guardado: $filename'
+                                    : 'HD WebGL render saved: $filename',
+                              ),
+                              duration: const Duration(seconds: 2),
+                            ),
+                          );
+                        },
+                      )
+                    : AxonometricCanvas3D(
+                        faces: faces,
+                        yaw: _yaw,
+                        pitch: _pitch,
+                        zoom: _zoom,
+                        panOffset: _panOffset,
+                        explodedFactor: _explodedFactor,
+                        isPerspective: _isPerspective,
+                        sunPreset: _sunPreset,
+                        sectionCutAxis: _sectionCutAxis,
+                        sectionCutRatio: _sectionCutRatio,
+                        cameraRevision: _cameraRevision,
+                        orientationDegrees: lot.orientationDegrees,
+                        showLabels: _showLabels,
+                        selectedModuleId: _selectedModuleId,
+                        highlightWallSelection:
+                            _activeSurfaceTab == FinishSurfaceTarget.wall,
+                        onSurfaceTapped: (moduleId, floorId, isWallFace) {
+                          if (_isClientPreviewMode &&
+                              !_clientAllowFinishSelection) {
+                            return;
+                          }
+                          setState(() {
+                            _selectedModuleId = moduleId;
+                            _selectedModuleFloorId = floorId;
+                            if (moduleId != null) {
+                              _activeSurfaceTab = isWallFace
+                                  ? FinishSurfaceTarget.wall
+                                  : FinishSurfaceTarget.floor;
+                            }
+                          });
+                        },
+                        onOrbitChanged: (ny, np) {
+                          _yaw = ny;
+                          _pitch = np;
+                          if (_isSplitCurtainActive) {
+                            setState(() {
+                              _activeCameraPreset = '';
+                              _cameraRevision++;
+                            });
+                          }
+                        },
+                        onZoomChanged: (nz) {
+                          _zoom = nz;
+                          if (_isSplitCurtainActive) {
+                            setState(() => _cameraRevision++);
+                          }
+                        },
+                        onPanChanged: (np) {
+                          _panOffset = np;
+                          if (_isSplitCurtainActive) {
+                            setState(() => _cameraRevision++);
+                          }
+                        },
+                      ),
               ),
 
               // 1.2. Cortina Interactiva "Antes / Después" sobre la misma cámara 3D
@@ -1201,6 +1300,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                               onTap: () => setState(() {
                                 _isSplitCurtainActive = !_isSplitCurtainActive;
                                 if (_isSplitCurtainActive) {
+                                  _useWebGlPbr = false;
+                                  _isWalkModeActive = false;
                                   _curtainRatio = 0.50;
                                   _cameraRevision++;
                                 }
@@ -1301,6 +1402,58 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                                 ),
                               ),
                             ),
+                            if (isWebGlViewerSupported) ...[
+                              const SizedBox(width: 4),
+                              InkWell(
+                                key: const Key('toggle_webgl_pbr_button'),
+                                borderRadius: BorderRadius.circular(7),
+                                onTap: _toggleWebGlPbr,
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 9,
+                                    vertical: 5,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: _useWebGlPbr
+                                        ? const Color(0xFF38BDF8)
+                                            .withValues(alpha: 0.25)
+                                        : Colors.transparent,
+                                    borderRadius: BorderRadius.circular(7),
+                                    border: Border.all(
+                                      color: _useWebGlPbr
+                                          ? const Color(0xFF38BDF8)
+                                              .withValues(alpha: 0.85)
+                                          : Colors.white24,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.auto_fix_high_rounded,
+                                        size: 13,
+                                        color: _useWebGlPbr
+                                            ? const Color(0xFF38BDF8)
+                                            : Colors.white70,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        'WebGL PBR',
+                                        style: TextStyle(
+                                          color: _useWebGlPbr
+                                              ? Colors.white
+                                              : Colors.white70,
+                                          fontSize: 10.5,
+                                          fontWeight: _useWebGlPbr
+                                              ? FontWeight.bold
+                                              : FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
                           ],
                         ),
                       ),
@@ -1734,6 +1887,114 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                       ),
                     ],
                   ),
+                  if (_useWebGlPbr && isWebGlViewerSupported) ...[
+                    const SizedBox(height: 6),
+                    Container(
+                      height: 1,
+                      width: 120,
+                      color: Colors.white12,
+                    ),
+                    const SizedBox(height: 6),
+                    Wrap(
+                      spacing: 4,
+                      runSpacing: 4,
+                      children: [
+                        InkWell(
+                          key: const Key('webgl_walk_mode_button'),
+                          borderRadius: BorderRadius.circular(5),
+                          onTap: () => _toggleWalkMode(floors),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: _isWalkModeActive
+                                  ? const Color(0xFF10B981)
+                                      .withValues(alpha: 0.25)
+                                  : Colors.white.withValues(alpha: 0.06),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: _isWalkModeActive
+                                    ? const Color(0xFF10B981)
+                                        .withValues(alpha: 0.8)
+                                    : Colors.white12,
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(
+                                  Icons.directions_walk_rounded,
+                                  size: 11,
+                                  color: _isWalkModeActive
+                                      ? const Color(0xFF34D399)
+                                      : Colors.white70,
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  lang == 'es' ? 'Caminar' : 'Walk',
+                                  style: TextStyle(
+                                    color: _isWalkModeActive
+                                        ? Colors.white
+                                        : Colors.white70,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        InkWell(
+                          key: const Key('webgl_snapshot_button'),
+                          borderRadius: BorderRadius.circular(5),
+                          onTap: () {
+                            final slug = (ref.read(floorEditorProvider).project?.name ?? 'trazzik')
+                                .toLowerCase()
+                                .replaceAll(RegExp(r'[^a-z0-9]+'), '_');
+                            _webGlController.captureSnapshot(
+                              filename: '${slug}_render_hd.png',
+                            );
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 7,
+                              vertical: 3,
+                            ),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF38BDF8)
+                                  .withValues(alpha: 0.14),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: const Color(0xFF38BDF8)
+                                    .withValues(alpha: 0.55),
+                              ),
+                            ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(
+                                  Icons.camera_alt_rounded,
+                                  size: 11,
+                                  color: Color(0xFF38BDF8),
+                                ),
+                                const SizedBox(width: 3),
+                                Text(
+                                  lang == 'es' ? 'Foto HD' : 'HD Shot',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 9.5,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
                 ],
               ),
             ),
