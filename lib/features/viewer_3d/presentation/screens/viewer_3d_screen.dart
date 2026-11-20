@@ -60,6 +60,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
   double _sectionCutRatio = 0.65;
   RemodelViewMode3D _remodelViewMode = RemodelViewMode3D.after;
+  bool _isSplitCurtainActive = false;
+  double _curtainRatio = 0.50;
+  String _activeCameraPreset = 'iso';
   BoxConstraints? _lastConstraints;
   String? _selectedModuleId;
   String? _selectedModuleFloorId;
@@ -79,6 +82,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
 
   // Caché de escena 3D para evitar regenerar mallas al cambiar cámara, etiquetas o despiece vertical
   List<Face3D>? _cachedFaces;
+  List<Face3D>? _cachedBeforeCurtainFaces;
   List<Floor>? _cachedFloors;
   Lot? _cachedLot;
   String? _cachedSelectedFloorId;
@@ -88,6 +92,16 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   bool? _cachedShowRoof;
   bool? _cachedSolidLowerFloors;
 
+  void _applyCameraPreset(String presetId, double yaw, double pitch) {
+    setState(() {
+      _activeCameraPreset = presetId;
+      _yaw = yaw;
+      _pitch = pitch;
+      _panOffset = Offset.zero;
+      _cameraRevision++;
+    });
+  }
+
   Widget _buildRemodelModeButton({
     required RemodelViewMode3D mode,
     required Key buttonKey,
@@ -95,11 +109,14 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     required Color activeColor,
     required String lang,
   }) {
-    final isSelected = _remodelViewMode == mode;
+    final isSelected = !_isSplitCurtainActive && _remodelViewMode == mode;
     return InkWell(
       key: buttonKey,
       borderRadius: BorderRadius.circular(7),
-      onTap: () => setState(() => _remodelViewMode = mode),
+      onTap: () => setState(() {
+        _isSplitCurtainActive = false;
+        _remodelViewMode = mode;
+      }),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
         decoration: BoxDecoration(
@@ -165,6 +182,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   }) {
     final effectiveWallHeight = _resolveWallHeight(floors);
     final solidLowerFloors = _explodedFactor <= 0.05;
+    final effectiveMode =
+        _isSplitCurtainActive ? RemodelViewMode3D.after : _remodelViewMode;
     final canReuse = _cachedFaces != null &&
         _cachedFloors != null &&
         listEquals(_cachedFloors, floors) &&
@@ -172,9 +191,10 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         _cachedSelectedFloorId == _selectedFloorId &&
         _cachedWallHeight == effectiveWallHeight &&
         _cachedSunPreset == _sunPreset &&
-        _cachedRemodelViewMode == _remodelViewMode &&
+        _cachedRemodelViewMode == effectiveMode &&
         _cachedShowRoof == _showRoof &&
-        _cachedSolidLowerFloors == solidLowerFloors;
+        _cachedSolidLowerFloors == solidLowerFloors &&
+        (!_isSplitCurtainActive || _cachedBeforeCurtainFaces != null);
     if (canReuse) {
       return _cachedFaces!;
     }
@@ -187,17 +207,31 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       showLotGround: true,
       wallHeight: effectiveWallHeight,
       sunPreset: _sunPreset,
-      viewMode: _remodelViewMode,
+      viewMode: effectiveMode,
       showRoof: _showRoof,
       keepLowerFloorsFullHeight: solidLowerFloors,
     );
+    _cachedBeforeCurtainFaces = _isSplitCurtainActive
+        ? Building3DBuilder.buildScene(
+            floors: floors,
+            lot: lot,
+            explodedFactor: 0.0,
+            soloFloorId: _selectedFloorId,
+            showLotGround: true,
+            wallHeight: effectiveWallHeight,
+            sunPreset: _sunPreset,
+            viewMode: RemodelViewMode3D.before,
+            showRoof: _showRoof,
+            keepLowerFloorsFullHeight: solidLowerFloors,
+          )
+        : null;
     _cachedFaces = built;
     _cachedFloors = List<Floor>.unmodifiable(floors);
     _cachedLot = lot;
     _cachedSelectedFloorId = _selectedFloorId;
     _cachedWallHeight = effectiveWallHeight;
     _cachedSunPreset = _sunPreset;
-    _cachedRemodelViewMode = _remodelViewMode;
+    _cachedRemodelViewMode = effectiveMode;
     _cachedShowRoof = _showRoof;
     _cachedSolidLowerFloors = solidLowerFloors;
     return built;
@@ -954,11 +988,166 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                   onOrbitChanged: (ny, np) {
                     _yaw = ny;
                     _pitch = np;
+                    if (_isSplitCurtainActive) {
+                      setState(() {
+                        _activeCameraPreset = '';
+                        _cameraRevision++;
+                      });
+                    }
                   },
-                  onZoomChanged: (nz) => _zoom = nz,
-                  onPanChanged: (np) => _panOffset = np,
+                  onZoomChanged: (nz) {
+                    _zoom = nz;
+                    if (_isSplitCurtainActive) {
+                      setState(() => _cameraRevision++);
+                    }
+                  },
+                  onPanChanged: (np) {
+                    _panOffset = np;
+                    if (_isSplitCurtainActive) {
+                      setState(() => _cameraRevision++);
+                    }
+                  },
                 ),
               ),
+
+              // 1.2. Cortina Interactiva "Antes / Después" sobre la misma cámara 3D
+              if (_isSplitCurtainActive && _cachedBeforeCurtainFaces != null) ...[
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: ClipRect(
+                      clipper: _HorizontalSplitClipper(_curtainRatio),
+                      child: AxonometricCanvas3D(
+                        faces: _cachedBeforeCurtainFaces!,
+                        yaw: _yaw,
+                        pitch: _pitch,
+                        zoom: _zoom,
+                        panOffset: _panOffset,
+                        explodedFactor: _explodedFactor,
+                        isPerspective: _isPerspective,
+                        sunPreset: _sunPreset,
+                        sectionCutAxis: _sectionCutAxis,
+                        sectionCutRatio: _sectionCutRatio,
+                        cameraRevision: _cameraRevision,
+                        orientationDegrees: lot.orientationDegrees,
+                        showLabels: _showLabels,
+                      ),
+                    ),
+                  ),
+                ),
+                // Badges "ANTES" (izquierda) y "DESPUÉS" (derecha)
+                Positioned(
+                  left: (constraints.maxWidth * _curtainRatio - 88)
+                      .clamp(12.0, math.max(12.0, constraints.maxWidth - 170.0))
+                      .toDouble(),
+                  bottom: _selectedModuleId != null ? 210 : 72,
+                  child: IgnorePointer(
+                    child: Container(
+                      key: const Key('curtain_before_badge'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: const Color(0xFFF59E0B).withValues(alpha: 0.75),
+                        ),
+                      ),
+                      child: Text(
+                        lang == 'es' ? 'ANTES' : 'BEFORE',
+                        style: const TextStyle(
+                          color: Color(0xFFFBBF24),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Positioned(
+                  left: (constraints.maxWidth * _curtainRatio + 16)
+                      .clamp(12.0, math.max(12.0, constraints.maxWidth - 96.0))
+                      .toDouble(),
+                  bottom: _selectedModuleId != null ? 210 : 72,
+                  child: IgnorePointer(
+                    child: Container(
+                      key: const Key('curtain_after_badge'),
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.88),
+                        borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: const Color(0xFF00E5FF).withValues(alpha: 0.75),
+                        ),
+                      ),
+                      child: Text(
+                        lang == 'es' ? 'DESPUÉS' : 'AFTER',
+                        style: const TextStyle(
+                          color: Color(0xFF38BDF8),
+                          fontSize: 10,
+                          fontWeight: FontWeight.w800,
+                          letterSpacing: 0.8,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                // Línea divisoria vertical + manija arrastrable
+                Positioned(
+                  top: 0,
+                  bottom: 0,
+                  left: (constraints.maxWidth * _curtainRatio - 18)
+                      .clamp(0.0, math.max(0.0, constraints.maxWidth - 36.0))
+                      .toDouble(),
+                  width: 36,
+                  child: MouseRegion(
+                    cursor: SystemMouseCursors.resizeLeftRight,
+                    child: GestureDetector(
+                      key: const Key('curtain_split_handle'),
+                      behavior: HitTestBehavior.opaque,
+                      onHorizontalDragUpdate: (details) {
+                        final w = math.max(1.0, constraints.maxWidth);
+                        setState(() {
+                          _curtainRatio =
+                              (_curtainRatio + details.delta.dx / w)
+                                  .clamp(0.06, 0.94);
+                        });
+                      },
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 2.5,
+                            color: const Color(0xFFE2E8F0).withValues(alpha: 0.92),
+                          ),
+                          Container(
+                            width: 30,
+                            height: 30,
+                            decoration: BoxDecoration(
+                              color: const Color(0xFF0F172A),
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: const Color(0xFF38BDF8),
+                                width: 2.0,
+                              ),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.55),
+                                  blurRadius: 8,
+                                ),
+                              ],
+                            ),
+                            child: const Icon(
+                              Icons.compare_arrows_rounded,
+                              size: 16,
+                              color: Color(0xFF38BDF8),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
 
           // 1.5. Selector flotante en vivo: Antes / Después / Comparativo / Realista
           Positioned(
@@ -1005,6 +1194,59 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                               icon: Icons.compare_arrows,
                               activeColor: const Color(0xFF10B981),
                               lang: lang,
+                            ),
+                            InkWell(
+                              key: const Key('toggle_curtain_view_button'),
+                              borderRadius: BorderRadius.circular(7),
+                              onTap: () => setState(() {
+                                _isSplitCurtainActive = !_isSplitCurtainActive;
+                                if (_isSplitCurtainActive) {
+                                  _curtainRatio = 0.50;
+                                  _cameraRevision++;
+                                }
+                              }),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 9,
+                                  vertical: 5,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: _isSplitCurtainActive
+                                      ? const Color(0xFFA78BFA).withValues(alpha: 0.24)
+                                      : Colors.transparent,
+                                  borderRadius: BorderRadius.circular(7),
+                                  border: Border.all(
+                                    color: _isSplitCurtainActive
+                                        ? const Color(0xFFA78BFA).withValues(alpha: 0.78)
+                                        : Colors.transparent,
+                                  ),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.view_column_rounded,
+                                      size: 13,
+                                      color: _isSplitCurtainActive
+                                          ? const Color(0xFFC4B5FD)
+                                          : Colors.white60,
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Text(
+                                      lang == 'es' ? 'Cortina' : 'Curtain',
+                                      style: TextStyle(
+                                        color: _isSplitCurtainActive
+                                            ? Colors.white
+                                            : Colors.white70,
+                                        fontSize: 10.5,
+                                        fontWeight: _isSplitCurtainActive
+                                            ? FontWeight.bold
+                                            : FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
                             ),
                             Container(
                               width: 1,
@@ -1388,6 +1630,112 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                 ),
               ),
             ),
+
+          // 3.5. ViewCube / Vistas Rápidas de Cámara (Iso, Frontal, Posterior, Izq, Der, Planta)
+          Positioned(
+            right: 16,
+            top: isMobile ? 64 : 114,
+            child: Container(
+              key: const Key('viewer_3d_viewcube_bar'),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF0F172A).withValues(alpha: 0.90),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: const Color(0xFF38BDF8).withValues(alpha: 0.35),
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.38),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.view_in_ar_rounded,
+                        size: 12,
+                        color: Color(0xFF38BDF8),
+                      ),
+                      const SizedBox(width: 4),
+                      Text(
+                        lang == 'es' ? 'Vistas' : 'Views',
+                        style: const TextStyle(
+                          color: Colors.white70,
+                          fontSize: 9.5,
+                          fontWeight: FontWeight.w700,
+                          letterSpacing: 0.4,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 5),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      _buildCameraPresetChip(
+                        id: 'iso',
+                        buttonKey: const Key('camera_preset_iso'),
+                        label: 'Iso',
+                        yaw: -0.35,
+                        pitch: 0.70,
+                      ),
+                      _buildCameraPresetChip(
+                        id: 'front',
+                        buttonKey: const Key('camera_preset_front'),
+                        label: lang == 'es' ? 'Frente' : 'Front',
+                        yaw: 0.0,
+                        pitch: 1.42,
+                      ),
+                      _buildCameraPresetChip(
+                        id: 'back',
+                        buttonKey: const Key('camera_preset_back'),
+                        label: lang == 'es' ? 'Fondo' : 'Back',
+                        yaw: math.pi,
+                        pitch: 1.42,
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Wrap(
+                    spacing: 4,
+                    runSpacing: 4,
+                    children: [
+                      _buildCameraPresetChip(
+                        id: 'left',
+                        buttonKey: const Key('camera_preset_left'),
+                        label: lang == 'es' ? 'Izq' : 'Left',
+                        yaw: -math.pi / 2,
+                        pitch: 1.42,
+                      ),
+                      _buildCameraPresetChip(
+                        id: 'right',
+                        buttonKey: const Key('camera_preset_right'),
+                        label: lang == 'es' ? 'Der' : 'Right',
+                        yaw: math.pi / 2,
+                        pitch: 1.42,
+                      ),
+                      _buildCameraPresetChip(
+                        id: 'top',
+                        buttonKey: const Key('camera_preset_top'),
+                        label: lang == 'es' ? 'Planta' : 'Top',
+                        yaw: 0.0,
+                        pitch: 0.06,
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
 
           // 4. Controles flotantes de Zoom y Ajuste
           Positioned(
@@ -2024,6 +2372,43 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     );
   }
 
+  Widget _buildCameraPresetChip({
+    required String id,
+    required Key buttonKey,
+    required String label,
+    required double yaw,
+    required double pitch,
+  }) {
+    final active = _activeCameraPreset == id;
+    return InkWell(
+      key: buttonKey,
+      borderRadius: BorderRadius.circular(5),
+      onTap: () => _applyCameraPreset(id, yaw, pitch),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        decoration: BoxDecoration(
+          color: active
+              ? const Color(0xFF00E5FF).withValues(alpha: 0.24)
+              : Colors.white.withValues(alpha: 0.06),
+          borderRadius: BorderRadius.circular(5),
+          border: Border.all(
+            color: active
+                ? const Color(0xFF00E5FF).withValues(alpha: 0.75)
+                : Colors.white12,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? const Color(0xFF38BDF8) : Colors.white70,
+            fontSize: 9.5,
+            fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+          ),
+        ),
+      ),
+    );
+  }
+
   Widget _buildHelpItem(IconData icon, String text) {
     return Row(
       mainAxisSize: MainAxisSize.min,
@@ -2034,4 +2419,20 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       ],
     );
   }
+}
+
+class _HorizontalSplitClipper extends CustomClipper<Rect> {
+  final double ratio;
+
+  const _HorizontalSplitClipper(this.ratio);
+
+  @override
+  Rect getClip(Size size) {
+    final splitX = (size.width * ratio).clamp(0.0, size.width);
+    return Rect.fromLTWH(0, 0, splitX, size.height);
+  }
+
+  @override
+  bool shouldReclip(covariant _HorizontalSplitClipper oldClipper) =>
+      oldClipper.ratio != ratio;
 }
