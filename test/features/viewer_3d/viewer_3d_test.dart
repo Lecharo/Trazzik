@@ -537,7 +537,9 @@ void main() {
       final uri = (buffers.first as Map<String, dynamic>)['uri'] as String;
       expect(uri, startsWith('data:application/octet-stream;base64,'));
       final accessors = decoded['accessors'] as List<dynamic>;
-      expect(accessors, hasLength(4)); // POSITION, NORMAL, COLOR_0, INDICES
+      expect(accessors.length, greaterThanOrEqualTo(4)); // POSITION, NORMAL, COLOR_0 + per-finish INDICES
+      final materials = decoded['materials'] as List<dynamic>;
+      expect(materials.length, greaterThanOrEqualTo(2)); // Distinct per-finish PBR materials
       expect((accessors[0] as Map<String, dynamic>)['count'], greaterThan(20));
 
       // Verify right-handed (x, z, +y) orientation, exact Float32 bounds, and CCW outward winding

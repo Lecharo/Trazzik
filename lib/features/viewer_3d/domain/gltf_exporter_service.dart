@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:trazzik/features/viewer_3d/domain/geometry_3d.dart';
+import 'package:trazzik/features/viewer_3d/domain/webgl_scene_payload.dart';
 
 /// Exports a parametric Trazzik [Face3D] scene into a standards-compliant
 /// glTF 2.0 (`.gltf`) JSON document with an embedded base64 binary buffer,
@@ -51,8 +52,7 @@ class GltfExporterService {
     final positions = <double>[];
     final normals = <double>[];
     final colors = <double>[];
-    final opaqueIndices = <int>[];
-    final translucentIndices = <int>[];
+    final buckets = <String, _GltfMaterialBucket>{};
 
     int vertexCursor = 0;
 
@@ -72,6 +72,19 @@ class GltfExporterService {
       final isTranslucent =
           face.layer == FaceLayer3D.openingPanel || a <= 0.66;
       final outAlpha = isTranslucent ? a : 1.0;
+      final spec = WebGlScenePayloadBuilder.resolveMaterialSpec(face);
+      final bucketKey = isTranslucent ? 'glass' : spec.pattern;
+      final bucket = buckets.putIfAbsent(
+        bucketKey,
+        () => _GltfMaterialBucket(
+          name: isTranslucent
+              ? 'TrazzikGlassPBR'
+              : 'Trazzik_${spec.pattern}_PBR',
+          alphaMode: isTranslucent ? 'BLEND' : 'OPAQUE',
+          metallicFactor: isTranslucent ? 0.10 : spec.metalness,
+          roughnessFactor: isTranslucent ? 0.12 : spec.roughness,
+        ),
+      );
 
       final gltfVerts = <Point3D>[];
       for (final v in verts) {
@@ -86,8 +99,7 @@ class GltfExporterService {
       }
 
       final tris = _triangulatePolygon(verts, norm);
-      final targetIndices =
-          isTranslucent ? translucentIndices : opaqueIndices;
+      final targetIndices = bucket.indices;
       final gNormVec = Point3D(gxNorm, gyNorm, gzNorm);
 
       for (final tri in tris) {
@@ -114,11 +126,16 @@ class GltfExporterService {
       vertexCursor += verts.length;
     }
 
+    final activeBuckets =
+        buckets.values.where((b) => b.indices.isNotEmpty).toList();
+    activeBuckets.sort((a, b) {
+      if (a.alphaMode == b.alphaMode) return a.name.compareTo(b.name);
+      return a.alphaMode == 'OPAQUE' ? -1 : 1;
+    });
+
     final posFloats = Float32List.fromList(positions);
     final normFloats = Float32List.fromList(normals);
     final colFloats = Float32List.fromList(colors);
-    final opaqueIdxInts = Uint32List.fromList(opaqueIndices);
-    final translucentIdxInts = Uint32List.fromList(translucentIndices);
 
     // Compute exact bounds from quantized Float32 values (Khronos validator strict)
     double minX = double.infinity,
@@ -146,50 +163,36 @@ class GltfExporterService {
     final posBytes = posFloats.buffer.asUint8List();
     final normBytes = normFloats.buffer.asUint8List();
     final colBytes = colFloats.buffer.asUint8List();
-    final opaqueIdxBytes = opaqueIdxInts.buffer.asUint8List();
-    final translucentIdxBytes = translucentIdxInts.buffer.asUint8List();
 
+    final bucketByteChunks = <Uint8List>[];
+    final bucketOffsets = <int>[];
     final posOffset = 0;
     final normOffset = posBytes.length;
     final colOffset = normOffset + normBytes.length;
-    final opaqueIdxOffset = colOffset + colBytes.length;
-    final translucentIdxOffset = opaqueIdxOffset + opaqueIdxBytes.length;
-    final totalByteLength =
-        translucentIdxOffset + translucentIdxBytes.length;
+    int runningOffset = colOffset + colBytes.length;
+
+    for (final b in activeBuckets) {
+      final idxBytes = Uint32List.fromList(b.indices).buffer.asUint8List();
+      bucketOffsets.add(runningOffset);
+      bucketByteChunks.add(idxBytes);
+      runningOffset += idxBytes.length;
+    }
+    final totalByteLength = runningOffset;
 
     final combinedBuffer = Uint8List(totalByteLength);
     combinedBuffer.setRange(posOffset, normOffset, posBytes);
     combinedBuffer.setRange(normOffset, colOffset, normBytes);
-    combinedBuffer.setRange(colOffset, opaqueIdxOffset, colBytes);
-    if (opaqueIdxBytes.isNotEmpty) {
-      combinedBuffer.setRange(
-        opaqueIdxOffset,
-        translucentIdxOffset,
-        opaqueIdxBytes,
-      );
-    }
-    if (translucentIdxBytes.isNotEmpty) {
-      combinedBuffer.setRange(
-        translucentIdxOffset,
-        totalByteLength,
-        translucentIdxBytes,
-      );
+    combinedBuffer.setRange(colOffset, colOffset + colBytes.length, colBytes);
+    for (int i = 0; i < activeBuckets.length; i++) {
+      final start = bucketOffsets[i];
+      final chunk = bucketByteChunks[i];
+      combinedBuffer.setRange(start, start + chunk.length, chunk);
     }
 
     final base64Uri =
         'data:application/octet-stream;base64,${base64Encode(combinedBuffer)}';
 
-    final materials = <Map<String, dynamic>>[
-      {
-        'name': 'TrazzikArchitecturalPBR',
-        'alphaMode': 'OPAQUE',
-        'doubleSided': true,
-        'pbrMetallicRoughness': {
-          'metallicFactor': 0.05,
-          'roughnessFactor': 0.78,
-        },
-      },
-    ];
+    final materials = <Map<String, dynamic>>[];
 
     final bufferViews = <Map<String, dynamic>>[
       {
@@ -236,64 +239,44 @@ class GltfExporterService {
     ];
 
     final primitives = <Map<String, dynamic>>[];
+    int totalIndexCount = 0;
 
-    if (opaqueIndices.isNotEmpty) {
-      final viewIdx = bufferViews.length;
-      final accIdx = accessors.length;
-      bufferViews.add({
-        'buffer': 0,
-        'byteOffset': opaqueIdxOffset,
-        'byteLength': opaqueIdxBytes.length,
-        'target': 34963, // ELEMENT_ARRAY_BUFFER
-      });
-      accessors.add({
-        'bufferView': viewIdx,
-        'componentType': 5125, // UNSIGNED_INT
-        'count': opaqueIndices.length,
-        'type': 'SCALAR',
-      });
-      primitives.add({
-        'attributes': {'POSITION': 0, 'NORMAL': 1, 'COLOR_0': 2},
-        'indices': accIdx,
-        'material': 0,
-        'mode': 4, // TRIANGLES
-      });
-    }
-
-    if (translucentIndices.isNotEmpty) {
-      final glassMatIdx = materials.length;
+    for (int i = 0; i < activeBuckets.length; i++) {
+      final bucket = activeBuckets[i];
+      final matIdx = materials.length;
       materials.add({
-        'name': 'TrazzikGlassPBR',
-        'alphaMode': 'BLEND',
+        'name': bucket.name,
+        'alphaMode': bucket.alphaMode,
         'doubleSided': true,
         'pbrMetallicRoughness': {
-          'metallicFactor': 0.10,
-          'roughnessFactor': 0.12,
+          'metallicFactor': bucket.metallicFactor,
+          'roughnessFactor': bucket.roughnessFactor,
         },
       });
       final viewIdx = bufferViews.length;
       final accIdx = accessors.length;
       bufferViews.add({
         'buffer': 0,
-        'byteOffset': translucentIdxOffset,
-        'byteLength': translucentIdxBytes.length,
-        'target': 34963,
+        'byteOffset': bucketOffsets[i],
+        'byteLength': bucketByteChunks[i].length,
+        'target': 34963, // ELEMENT_ARRAY_BUFFER
       });
       accessors.add({
         'bufferView': viewIdx,
-        'componentType': 5125,
-        'count': translucentIndices.length,
+        'componentType': 5125, // UNSIGNED_INT
+        'count': bucket.indices.length,
         'type': 'SCALAR',
       });
       primitives.add({
         'attributes': {'POSITION': 0, 'NORMAL': 1, 'COLOR_0': 2},
         'indices': accIdx,
-        'material': glassMatIdx,
-        'mode': 4,
+        'material': matIdx,
+        'mode': 4, // TRIANGLES
       });
+      totalIndexCount += bucket.indices.length;
     }
 
-    final totalTris = (opaqueIndices.length + translucentIndices.length) ~/ 3;
+    final totalTris = totalIndexCount ~/ 3;
 
     final gltf = <String, dynamic>{
       'asset': {
@@ -466,4 +449,19 @@ class GltfExporterService {
 
   static double _dot3(Point3D a, Point3D b) =>
       a.x * b.x + a.y * b.y + a.z * b.z;
+}
+
+class _GltfMaterialBucket {
+  final String name;
+  final String alphaMode;
+  final double metallicFactor;
+  final double roughnessFactor;
+  final List<int> indices = <int>[];
+
+  _GltfMaterialBucket({
+    required this.name,
+    required this.alphaMode,
+    required this.metallicFactor,
+    required this.roughnessFactor,
+  });
 }
