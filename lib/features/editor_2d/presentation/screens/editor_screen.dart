@@ -265,6 +265,42 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
         const SingleActivator(LogicalKeyboardKey.backspace): () {
           if (!_isEditingText()) notifier.deleteSelectedElement();
         },
+        const SingleActivator(LogicalKeyboardKey.keyD, control: true): () {
+          if (!_isEditingText()) {
+            final selId = ref.read(floorEditorProvider).selectedModuleId;
+            if (selId != null) notifier.duplicateModule(selId);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.keyD, meta: true): () {
+          if (!_isEditingText()) {
+            final selId = ref.read(floorEditorProvider).selectedModuleId;
+            if (selId != null) notifier.duplicateModule(selId);
+          }
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(-0.05, 0.0);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowRight): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.05, 0.0);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.0, -0.05);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.0, 0.05);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowLeft, shift: true): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(-0.01, 0.0);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowRight, shift: true): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.01, 0.0);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowUp, shift: true): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.0, -0.01);
+        },
+        const SingleActivator(LogicalKeyboardKey.arrowDown, shift: true): () {
+          if (!_isEditingText()) notifier.nudgeSelectedElement(0.0, 0.01);
+        },
       },
       child: Focus(
         autofocus: true,

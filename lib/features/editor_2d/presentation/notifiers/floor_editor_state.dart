@@ -70,6 +70,9 @@ class FloorEditorState {
   final Set<String> dirtyFloorIds;
   final Set<String> deletedFloorIds;
   final bool showZoningGuide;
+  final bool showFloorGhost;
+  final bool showPerimeterDimensions;
+  final bool isSplitView3D;
   final bool hasUnsavedChanges;
   final bool isRenderedMode;
   final bool isLaserMeasureActive;
@@ -99,6 +102,9 @@ class FloorEditorState {
     this.dirtyFloorIds = const {},
     this.deletedFloorIds = const {},
     this.showZoningGuide = false,
+    this.showFloorGhost = false,
+    this.showPerimeterDimensions = true,
+    this.isSplitView3D = false,
     this.hasUnsavedChanges = false,
     this.isRenderedMode = true,
     this.isLaserMeasureActive = false,
@@ -145,6 +151,21 @@ class FloorEditorState {
     return mod.subModules.where((s) => s.id == selectedSubModuleId).firstOrNull;
   }
 
+  /// Returns the floor immediately below the active floor for 2D onion-skin alignment,
+  /// or null if the active floor is already the lowest level.
+  Floor? get ghostReferenceFloor {
+    Floor? candidate;
+    for (final f in allFloors) {
+      if (f.id == floor.id) continue;
+      if (f.floorNumber < floor.floorNumber) {
+        if (candidate == null || f.floorNumber > candidate.floorNumber) {
+          candidate = f;
+        }
+      }
+    }
+    return candidate;
+  }
+
   FloorEditorState copyWith({
     Floor? floor,
     List<Floor>? allFloors,
@@ -166,6 +187,9 @@ class FloorEditorState {
     Set<String>? dirtyFloorIds,
     Set<String>? deletedFloorIds,
     bool? showZoningGuide,
+    bool? showFloorGhost,
+    bool? showPerimeterDimensions,
+    bool? isSplitView3D,
     bool? hasUnsavedChanges,
     bool? isRenderedMode,
     bool? isLaserMeasureActive,
@@ -197,6 +221,10 @@ class FloorEditorState {
       dirtyFloorIds: dirtyFloorIds ?? this.dirtyFloorIds,
       deletedFloorIds: deletedFloorIds ?? this.deletedFloorIds,
       showZoningGuide: showZoningGuide ?? this.showZoningGuide,
+      showFloorGhost: showFloorGhost ?? this.showFloorGhost,
+      showPerimeterDimensions:
+          showPerimeterDimensions ?? this.showPerimeterDimensions,
+      isSplitView3D: isSplitView3D ?? this.isSplitView3D,
       hasUnsavedChanges: hasUnsavedChanges ?? this.hasUnsavedChanges,
       isRenderedMode: isRenderedMode ?? this.isRenderedMode,
       isLaserMeasureActive: isLaserMeasureActive ?? this.isLaserMeasureActive,

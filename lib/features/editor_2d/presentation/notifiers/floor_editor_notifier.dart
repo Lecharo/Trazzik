@@ -1764,6 +1764,46 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     );
   }
 
+  void toggleFloorGhost() {
+    state = state.copyWith(showFloorGhost: !state.showFloorGhost);
+  }
+
+  void togglePerimeterDimensions() {
+    state = state.copyWith(
+      showPerimeterDimensions: !state.showPerimeterDimensions,
+    );
+  }
+
+  void toggleSplitView3D() {
+    state = state.copyWith(isSplitView3D: !state.isSplitView3D);
+  }
+
+  /// Nudges the currently selected unlocked furniture or room module by exact
+  /// meter deltas (e.g. ±0.05 m with Arrow keys, ±0.01 m with Shift+Arrow).
+  void nudgeSelectedElement(double dxMeters, double dyMeters) {
+    final sub = state.selectedSubModule;
+    final parent = state.selectedModule;
+    if (sub != null && parent != null && !sub.isLocked) {
+      final sbb = sub.geometry.boundingBox;
+      setSubModulePosition(
+        parent.id,
+        sub.id,
+        sbb.minX + dxMeters,
+        sbb.minY + dyMeters,
+      );
+      return;
+    }
+    if (parent != null && !parent.isLocked) {
+      final bb = parent.geometry.boundingBox;
+      setModulePosition(
+        parent.id,
+        bb.minX + dxMeters,
+        bb.minY + dyMeters,
+        snap: false,
+      );
+    }
+  }
+
   void resetToMVP() {
     _resetInteractionState();
     final seed = MvpFloorSeed.buildInitialState();

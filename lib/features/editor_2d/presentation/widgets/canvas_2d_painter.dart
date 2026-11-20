@@ -183,6 +183,85 @@ SmartSnapResult computeSmartSnapGuides({
   return SmartSnapResult(x: snappedX, y: snappedY, guides: guides);
 }
 
+/// Ordered exterior architectural chain dimension breakpoints (in meters)
+/// computed along the X and Y axes of a floor plan.
+class ExteriorChainDimensions {
+  final List<double> xStops;
+  final List<double> yStops;
+  final double minX;
+  final double maxX;
+  final double minY;
+  final double maxY;
+
+  const ExteriorChainDimensions({
+    required this.xStops,
+    required this.yStops,
+    required this.minX,
+    required this.maxX,
+    required this.minY,
+    required this.maxY,
+  });
+
+  double get totalWidth => math.max(0.0, maxX - minX);
+  double get totalDepth => math.max(0.0, maxY - minY);
+}
+
+/// Computes clustered exterior chain dimension stops along X and Y from all
+/// non-opening modules (excluding demolished ones) and the floor envelope.
+ExteriorChainDimensions computeExteriorChainDimensions(
+  Floor floor, {
+  double mergeToleranceMeters = 0.08,
+}) {
+  final rawX = <double>[];
+  final rawY = <double>[];
+
+  final activeModules = floor.modules
+      .where((m) => !m.isOpening && m.status != ElementStatus.toDemolish)
+      .toList();
+
+  if (activeModules.isEmpty) {
+    final bb = floor.boundary.boundingBox;
+    return ExteriorChainDimensions(
+      xStops: [bb.minX, bb.maxX],
+      yStops: [bb.minY, bb.maxY],
+      minX: bb.minX,
+      maxX: bb.maxX,
+      minY: bb.minY,
+      maxY: bb.maxY,
+    );
+  }
+
+  for (final mod in activeModules) {
+    final bb = mod.geometry.boundingBox;
+    rawX.add(bb.minX);
+    rawX.add(bb.maxX);
+    rawY.add(bb.minY);
+    rawY.add(bb.maxY);
+  }
+
+  List<double> clusterStops(List<double> values) {
+    values.sort();
+    final clustered = <double>[];
+    for (final v in values) {
+      if (clustered.isEmpty || (v - clustered.last).abs() > mergeToleranceMeters) {
+        clustered.add(v);
+      }
+    }
+    return clustered;
+  }
+
+  final xStops = clusterStops(rawX);
+  final yStops = clusterStops(rawY);
+  return ExteriorChainDimensions(
+    xStops: xStops,
+    yStops: yStops,
+    minX: xStops.first,
+    maxX: xStops.last,
+    minY: yStops.first,
+    maxY: yStops.last,
+  );
+}
+
 /// Custom painter responsible for rendering the 2D architectural floor plan,
 /// grid, zoning bands, walls, spaces, openings, and interior furniture.
 class Canvas2DPainter extends CustomPainter {
@@ -304,6 +383,14 @@ class Canvas2DPainter extends CustomPainter {
       labelOffsetY: -14,
     );
 
+    // 5.5. Onion-Skin Ghost Reference of Floor Immediately Below (multi-story alignment)
+    if (state.showFloorGhost) {
+      final ghostFloor = state.ghostReferenceFloor;
+      if (ghostFloor != null) {
+        _drawGhostFloorUnderlay(canvas, ghostFloor, zoom);
+      }
+    }
+
     // 6. Non-opening Room Modules (floor finishes, furniture & symbols under walls)
     Module? selectedModule;
     for (final module in state.floor.modules) {
@@ -345,6 +432,11 @@ class Canvas2DPainter extends CustomPainter {
         zoom,
         isSelected: module.id == state.selectedModuleId,
       );
+    }
+
+    // 9.5. Automatic Exterior Architectural Chain Dimensions (bottom & right perimeter)
+    if (state.showPerimeterDimensions && zoom >= 16.0) {
+      _drawExteriorChainDimensions(canvas, zoom);
     }
 
     // 10. Selected Module Architectural 45°-Tick Dimensions & Resize Handles
@@ -1854,6 +1946,203 @@ class Canvas2DPainter extends CustomPainter {
     }
   }
 
+  void _drawGhostFloorUnderlay(Canvas canvas, Floor ghostFloor, double zoom) {
+    final ghostAccent =
+        isDarkTheme ? const Color(0xFF818CF8) : const Color(0xFF4F46E5);
+    final ghostFillPaint = Paint()
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.06 : 0.05)
+      ..style = PaintingStyle.fill;
+    final ghostStrokePaint = Paint()
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.45 : 0.38)
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.0;
+
+    for (final mod in ghostFloor.modules) {
+      if (mod.isOpening || mod.status == ElementStatus.toDemolish) continue;
+      final path = _polygonToPath(mod.geometry, zoom);
+      canvas.drawPath(path, ghostFillPaint);
+      _drawDashedPath(canvas, path, ghostStrokePaint, dashLength: 4.5, gapLength: 3.5);
+
+      if (mod.isStairs || mod.isWetCore) {
+        final bb = mod.geometry.boundingBox;
+        final tag = mod.isStairs
+            ? (lang == 'en' ? 'STAIR F${ghostFloor.floorNumber}' : 'ESC P${ghostFloor.floorNumber}')
+            : (lang == 'en' ? 'WET F${ghostFloor.floorNumber}' : 'HÚM P${ghostFloor.floorNumber}');
+        final tp = _getCachedTextPainter(
+          ('ghost_tag', tag, isDarkTheme),
+          TextSpan(
+            text: tag,
+            style: TextStyle(
+              color: ghostAccent.withValues(alpha: 0.78),
+              fontSize: 8.0,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.4,
+            ),
+          ),
+        );
+        tp.paint(
+          canvas,
+          Offset(
+            (bb.minX + bb.width / 2) * zoom - tp.width / 2,
+            bb.minY * zoom + 4,
+          ),
+        );
+      }
+    }
+
+    final ghostWallPaint = Paint()
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.24 : 0.18)
+      ..style = PaintingStyle.fill;
+    for (final wall in ghostFloor.walls) {
+      if (wall.status == ElementStatus.toDemolish) continue;
+      canvas.drawPath(_polygonToPath(wall.footprint, zoom), ghostWallPaint);
+    }
+  }
+
+  void _drawExteriorChainDimensions(Canvas canvas, double zoom) {
+    final chain = computeExteriorChainDimensions(state.floor);
+    if (chain.totalWidth < 0.25 && chain.totalDepth < 0.25) return;
+
+    final chainColor =
+        isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+    final totalColor =
+        isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0369A1);
+
+    final bottomEdgePx = chain.maxY * zoom;
+    final rightEdgePx = chain.maxX * zoom;
+    final leftEdgePx = chain.minX * zoom;
+    final topEdgePx = chain.minY * zoom;
+
+    void drawChainSegment(
+      Offset p1,
+      Offset p2,
+      Offset anchor1,
+      Offset anchor2,
+      String text,
+      Color color, {
+      double rotateDegrees = 0.0,
+    }) {
+      final extPaint = Paint()
+        ..color = color.withValues(alpha: 0.35)
+        ..strokeWidth = 0.75;
+      canvas.drawLine(anchor1, p1, extPaint);
+      canvas.drawLine(anchor2, p2, extPaint);
+
+      final linePaint = Paint()
+        ..color = color.withValues(alpha: 0.80)
+        ..strokeWidth = 1.0;
+      canvas.drawLine(p1, p2, linePaint);
+
+      const tick = 3.2;
+      final tickPaint = Paint()
+        ..color = color
+        ..strokeWidth = 1.35
+        ..strokeCap = StrokeCap.round;
+      canvas.drawLine(
+        Offset(p1.dx - tick, p1.dy + tick),
+        Offset(p1.dx + tick, p1.dy - tick),
+        tickPaint,
+      );
+      canvas.drawLine(
+        Offset(p2.dx - tick, p2.dy + tick),
+        Offset(p2.dx + tick, p2.dy - tick),
+        tickPaint,
+      );
+
+      final segPx = (p2 - p1).distance;
+      if (segPx >= 26.0) {
+        final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
+        final tp = _getCachedTextPainter(
+          ('chain_dim', text, color.toARGB32()),
+          TextSpan(
+            text: text,
+            style: TextStyle(
+              color: color,
+              fontSize: 8.5,
+              fontWeight: FontWeight.w700,
+              fontFeatures: const [FontFeature.tabularFigures()],
+            ),
+          ),
+        );
+        canvas.save();
+        canvas.translate(mid.dx, mid.dy);
+        if (rotateDegrees != 0.0) {
+          canvas.rotate(rotateDegrees * math.pi / 180.0);
+        }
+        final pill = Rect.fromCenter(
+          center: Offset.zero,
+          width: tp.width + 6,
+          height: tp.height + 2,
+        );
+        canvas.drawRect(pill, Paint()..color = _canvasBg.withValues(alpha: 0.90));
+        tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
+        canvas.restore();
+      }
+    }
+
+    // Bottom horizontal partial chain (+24px) & total (+42px)
+    if (chain.xStops.length >= 2) {
+      final chainY = bottomEdgePx + 24.0;
+      if (chain.xStops.length > 2) {
+        for (int i = 0; i < chain.xStops.length - 1; i++) {
+          final x1 = chain.xStops[i];
+          final x2 = chain.xStops[i + 1];
+          final len = x2 - x1;
+          if (len < 0.15) continue;
+          drawChainSegment(
+            Offset(x1 * zoom, chainY),
+            Offset(x2 * zoom, chainY),
+            Offset(x1 * zoom, bottomEdgePx + 4),
+            Offset(x2 * zoom, bottomEdgePx + 4),
+            len.toStringAsFixed(2),
+            chainColor,
+          );
+        }
+      }
+      final totalY = bottomEdgePx + (chain.xStops.length > 2 ? 42.0 : 24.0);
+      drawChainSegment(
+        Offset(leftEdgePx, totalY),
+        Offset(rightEdgePx, totalY),
+        Offset(leftEdgePx, bottomEdgePx + 4),
+        Offset(rightEdgePx, bottomEdgePx + 4),
+        '${chain.totalWidth.toStringAsFixed(2)} m',
+        totalColor,
+      );
+    }
+
+    // Right vertical partial chain (+24px) & total (+42px)
+    if (chain.yStops.length >= 2) {
+      final chainX = rightEdgePx + 24.0;
+      if (chain.yStops.length > 2) {
+        for (int i = 0; i < chain.yStops.length - 1; i++) {
+          final y1 = chain.yStops[i];
+          final y2 = chain.yStops[i + 1];
+          final len = y2 - y1;
+          if (len < 0.15) continue;
+          drawChainSegment(
+            Offset(chainX, y1 * zoom),
+            Offset(chainX, y2 * zoom),
+            Offset(rightEdgePx + 4, y1 * zoom),
+            Offset(rightEdgePx + 4, y2 * zoom),
+            len.toStringAsFixed(2),
+            chainColor,
+            rotateDegrees: 90,
+          );
+        }
+      }
+      final totalX = rightEdgePx + (chain.yStops.length > 2 ? 42.0 : 24.0);
+      drawChainSegment(
+        Offset(totalX, topEdgePx),
+        Offset(totalX, bottomEdgePx),
+        Offset(rightEdgePx + 4, topEdgePx),
+        Offset(rightEdgePx + 4, bottomEdgePx),
+        '${chain.totalDepth.toStringAsFixed(2)} m',
+        totalColor,
+        rotateDegrees: 90,
+      );
+    }
+  }
+
   void _drawSnapGuides(Canvas canvas, double zoom) {
     final guideColor =
         isDarkTheme ? const Color(0xFFEC4899) : const Color(0xFFDB2777);
@@ -2494,6 +2783,9 @@ class Canvas2DPainter extends CustomPainter {
         prev.selectedWallId != state.selectedWallId ||
         prev.isRenderedMode != state.isRenderedMode ||
         prev.showZoningGuide != state.showZoningGuide ||
+        prev.showFloorGhost != state.showFloorGhost ||
+        prev.showPerimeterDimensions != state.showPerimeterDimensions ||
+        !identical(prev.allFloors, state.allFloors) ||
         prev.isLaserMeasureActive != state.isLaserMeasureActive ||
         prev.laserStart != state.laserStart ||
         prev.laserEnd != state.laserEnd ||

@@ -3,6 +3,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
@@ -73,6 +74,199 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
   bool _isSpacePanning = false;
   Offset? _lastAuxPanPos;
   Offset? _primaryPointerDownLocalPos;
+  Offset? _secondaryDownLocalPos;
+  Offset? _secondaryDownGlobalPos;
+  bool _secondaryDragged = false;
+
+  Future<void> _showContextMenuAt({
+    required Offset localPosition,
+    required Offset globalPosition,
+    required FloorEditorState editorState,
+    required FloorEditorNotifier notifier,
+  }) async {
+    final metersX = (localPosition.dx - editorState.panOffset.dx) / editorState.zoom;
+    final metersY = (localPosition.dy - editorState.panOffset.dy) / editorState.zoom;
+    final clickPoint = Point2D(metersX, metersY);
+    final hit = _hitTestAt(clickPoint, editorState.floor, editorState.zoom);
+    if (hit.kind == _HitKind.none) return;
+
+    final lang = ref.read(appLocaleProvider);
+    final overlay = Overlay.of(context).context.findRenderObject() as RenderBox?;
+    if (overlay == null) return;
+
+    final position = RelativeRect.fromRect(
+      Rect.fromPoints(globalPosition, globalPosition),
+      Offset.zero & overlay.size,
+    );
+
+    if (hit.kind == _HitKind.wall && hit.wallId != null) {
+      final wallId = hit.wallId!;
+      notifier.selectWall(wallId);
+      final choice = await showMenu<String>(
+        context: context,
+        position: position,
+        items: [
+          PopupMenuItem(
+            value: 'wall_existing',
+            child: Row(
+              children: [
+                const Icon(Icons.layers, size: 16),
+                const SizedBox(width: 8),
+                Text(lang == 'es' ? 'Muro Existente' : 'Mark Existing'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'wall_new',
+            child: Row(
+              children: [
+                const Icon(Icons.add_box_outlined, size: 16, color: Color(0xFF14B8A6)),
+                const SizedBox(width: 8),
+                Text(lang == 'es' ? 'Muro Nuevo' : 'Mark New'),
+              ],
+            ),
+          ),
+          PopupMenuItem(
+            value: 'wall_demolish',
+            child: Row(
+              children: [
+                const Icon(Icons.warning_amber_rounded, size: 16, color: Color(0xFFEF4444)),
+                const SizedBox(width: 8),
+                Text(lang == 'es' ? 'Marcar Demoler' : 'Mark Demolish'),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
+          PopupMenuItem(
+            value: 'delete',
+            child: Row(
+              children: [
+                const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
+                const SizedBox(width: 8),
+                Text(lang == 'es' ? 'Eliminar muro' : 'Delete wall'),
+              ],
+            ),
+          ),
+        ],
+      );
+      if (!mounted || choice == null) return;
+      switch (choice) {
+        case 'wall_existing':
+          notifier.setWallStatus(wallId, ElementStatus.existing);
+          break;
+        case 'wall_new':
+          notifier.setWallStatus(wallId, ElementStatus.isNew);
+          break;
+        case 'wall_demolish':
+          notifier.setWallStatus(wallId, ElementStatus.toDemolish);
+          break;
+        case 'delete':
+          notifier.deleteSelectedElement();
+          break;
+      }
+      return;
+    }
+
+    final targetMod = hit.module;
+    if (targetMod == null) return;
+    notifier.selectModule(targetMod.id);
+    final choice = await showMenu<String>(
+      context: context,
+      position: position,
+      items: [
+        PopupMenuItem(
+          value: 'duplicate',
+          child: Row(
+            children: [
+              const Icon(Icons.copy_all, size: 16),
+              const SizedBox(width: 8),
+              Text(lang == 'es' ? 'Duplicar (Ctrl+D)' : 'Duplicate (Ctrl+D)'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'lock',
+          child: Row(
+            children: [
+              Icon(
+                targetMod.isLocked ? Icons.lock_open : Icons.lock_outline,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                targetMod.isLocked
+                    ? (lang == 'es' ? 'Desbloquear' : 'Unlock')
+                    : (lang == 'es' ? 'Bloquear posición' : 'Lock position'),
+              ),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'status_existing',
+          child: Row(
+            children: [
+              const Icon(Icons.home_outlined, size: 16),
+              const SizedBox(width: 8),
+              Text(lang == 'es' ? 'Estado: Existente' : 'Status: Existing'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'status_new',
+          child: Row(
+            children: [
+              const Icon(Icons.auto_awesome, size: 16, color: Color(0xFF14B8A6)),
+              const SizedBox(width: 8),
+              Text(lang == 'es' ? 'Estado: Nuevo' : 'Status: New'),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'status_demolish',
+          child: Row(
+            children: [
+              const Icon(Icons.delete_sweep_outlined, size: 16, color: Color(0xFFEF4444)),
+              const SizedBox(width: 8),
+              Text(lang == 'es' ? 'Estado: Demoler' : 'Status: Demolish'),
+            ],
+          ),
+        ),
+        const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'delete',
+          child: Row(
+            children: [
+              const Icon(Icons.delete_outline, size: 16, color: Color(0xFFEF4444)),
+              const SizedBox(width: 8),
+              Text(lang == 'es' ? 'Eliminar' : 'Delete'),
+            ],
+          ),
+        ),
+      ],
+    );
+    if (!mounted || choice == null) return;
+    switch (choice) {
+      case 'duplicate':
+        notifier.duplicateModule(targetMod.id);
+        break;
+      case 'lock':
+        notifier.toggleModuleLock(targetMod.id);
+        break;
+      case 'status_existing':
+        notifier.setModuleStatus(targetMod.id, ElementStatus.existing);
+        break;
+      case 'status_new':
+        notifier.setModuleStatus(targetMod.id, ElementStatus.isNew);
+        break;
+      case 'status_demolish':
+        notifier.setModuleStatus(targetMod.id, ElementStatus.toDemolish);
+        break;
+      case 'delete':
+        notifier.deleteSelectedElement();
+        break;
+    }
+  }
 
   static MouseCursor _cursorForResizeHandle(ResizeHandle2D handle) {
     switch (handle) {
@@ -316,12 +510,21 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           }
         },
         onPointerDown: (event) {
-          final isAuxButton = (event.buttons & kMiddleMouseButton) != 0 ||
-              (event.buttons & kSecondaryMouseButton) != 0;
-          if (isAuxButton) {
+          final isSecondary = (event.buttons & kSecondaryMouseButton) != 0;
+          final isMiddle = (event.buttons & kMiddleMouseButton) != 0;
+          if (isSecondary || isMiddle) {
             setState(() {
               _isAuxPanning = true;
               _lastAuxPanPos = event.localPosition;
+              if (isSecondary) {
+                _secondaryDownLocalPos = event.localPosition;
+                _secondaryDownGlobalPos = event.position;
+                _secondaryDragged = false;
+              } else {
+                _secondaryDownLocalPos = null;
+                _secondaryDownGlobalPos = null;
+                _secondaryDragged = false;
+              }
             });
           } else {
             _primaryPointerDownLocalPos = event.localPosition;
@@ -330,17 +533,40 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         onPointerMove: (event) {
           if (_isAuxPanning && _lastAuxPanPos != null) {
             final delta = event.localPosition - _lastAuxPanPos!;
+            if (_secondaryDownLocalPos != null &&
+                (event.localPosition - _secondaryDownLocalPos!).distance > 4.0) {
+              _secondaryDragged = true;
+            }
             _lastAuxPanPos = event.localPosition;
-            notifier.updatePan(delta);
+            if (_secondaryDownLocalPos == null || _secondaryDragged) {
+              notifier.updatePan(delta);
+            }
           }
         },
         onPointerUp: (_) {
           _primaryPointerDownLocalPos = null;
+          final shouldOpenMenu = _secondaryDownLocalPos != null &&
+              _secondaryDownGlobalPos != null &&
+              !_secondaryDragged;
+          final menuLocalPos = _secondaryDownLocalPos;
+          final menuGlobalPos = _secondaryDownGlobalPos;
+
           if (_isAuxPanning) {
             setState(() {
               _isAuxPanning = false;
               _lastAuxPanPos = null;
+              _secondaryDownLocalPos = null;
+              _secondaryDownGlobalPos = null;
+              _secondaryDragged = false;
             });
+          }
+          if (shouldOpenMenu && menuLocalPos != null && menuGlobalPos != null) {
+            _showContextMenuAt(
+              localPosition: menuLocalPos,
+              globalPosition: menuGlobalPos,
+              editorState: editorState,
+              notifier: notifier,
+            );
           }
         },
         onPointerCancel: (_) {
@@ -349,6 +575,9 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
             setState(() {
               _isAuxPanning = false;
               _lastAuxPanPos = null;
+              _secondaryDownLocalPos = null;
+              _secondaryDownGlobalPos = null;
+              _secondaryDragged = false;
             });
           }
         },
