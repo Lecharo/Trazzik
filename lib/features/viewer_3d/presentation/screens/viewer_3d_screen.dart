@@ -47,6 +47,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   bool _zoomInitialized = false;
   bool _showLabels = true; // Rótulos activados por defecto
   bool _isFullWallHeight = false; // false = 1.20m Maqueta axonométrica, true = altura real por piso
+  bool _showRoof = false; // Cubierta + antepecho superior opcional
   bool _isPerspective = false;
   SunPreset3D _sunPreset = SunPreset3D.studioNoon;
   SectionCutAxis3D _sectionCutAxis = SectionCutAxis3D.none;
@@ -77,6 +78,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
   double? _cachedWallHeight;
   SunPreset3D? _cachedSunPreset;
   RemodelViewMode3D? _cachedRemodelViewMode;
+  bool? _cachedShowRoof;
+  bool? _cachedSolidLowerFloors;
 
   Widget _buildRemodelModeButton({
     required RemodelViewMode3D mode,
@@ -154,6 +157,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     required Lot lot,
   }) {
     final effectiveWallHeight = _resolveWallHeight(floors);
+    final solidLowerFloors = _explodedFactor <= 0.05;
     final canReuse = _cachedFaces != null &&
         _cachedFloors != null &&
         listEquals(_cachedFloors, floors) &&
@@ -161,7 +165,9 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
         _cachedSelectedFloorId == _selectedFloorId &&
         _cachedWallHeight == effectiveWallHeight &&
         _cachedSunPreset == _sunPreset &&
-        _cachedRemodelViewMode == _remodelViewMode;
+        _cachedRemodelViewMode == _remodelViewMode &&
+        _cachedShowRoof == _showRoof &&
+        _cachedSolidLowerFloors == solidLowerFloors;
     if (canReuse) {
       return _cachedFaces!;
     }
@@ -175,6 +181,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       wallHeight: effectiveWallHeight,
       sunPreset: _sunPreset,
       viewMode: _remodelViewMode,
+      showRoof: _showRoof,
+      keepLowerFloorsFullHeight: solidLowerFloors,
     );
     _cachedFaces = built;
     _cachedFloors = List<Floor>.unmodifiable(floors);
@@ -183,6 +191,8 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
     _cachedWallHeight = effectiveWallHeight;
     _cachedSunPreset = _sunPreset;
     _cachedRemodelViewMode = _remodelViewMode;
+    _cachedShowRoof = _showRoof;
+    _cachedSolidLowerFloors = solidLowerFloors;
     return built;
   }
 
@@ -241,6 +251,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
       _panOffset = Offset.zero;
       _explodedFactor = 0.0;
       _isFullWallHeight = false;
+      _showRoof = false;
       _sectionCutAxis = SectionCutAxis3D.none;
       _sectionCutRatio = 0.65;
       _cameraRevision++;
@@ -274,6 +285,7 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           _yaw = -0.18;
           _pitch = 0.24; // Planta 3D amoblada tipo Dollhouse
           _isFullWallHeight = false;
+          _showRoof = false;
           break;
         case 'top':
           _yaw = 0.0;
@@ -712,6 +724,28 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
                       ? 'Muros Completos (${_fullHeightLabel(floors)}) — Tocar para Maqueta (1.20 m)'
                       : 'Full Height (${_fullHeightLabel(floors)}) — Tap for Maquette (1.20 m)'),
               onPressed: () => setState(() => _isFullWallHeight = !_isFullWallHeight),
+            ),
+            IconButton(
+              key: const Key('toggle_roof_button'),
+              visualDensity: VisualDensity.compact,
+              padding: const EdgeInsets.symmetric(horizontal: 5),
+              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+              icon: Icon(
+                Icons.roofing_rounded,
+                size: 19,
+                color: _showRoof ? Colors.amber : Colors.white70,
+              ),
+              tooltip: _showRoof
+                  ? (lang == 'es'
+                      ? 'Ocultar Cubierta / Techo'
+                      : 'Hide Roof & Parapet')
+                  : (lang == 'es'
+                      ? 'Mostrar Cubierta y Antepecho'
+                      : 'Show Roof & Parapet'),
+              onPressed: () => setState(() {
+                _showRoof = !_showRoof;
+                if (_showRoof) _isFullWallHeight = true;
+              }),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,

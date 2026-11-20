@@ -24,6 +24,8 @@ class Building3DBuilder {
     bool includeShadows = true,
     SunPreset3D sunPreset = SunPreset3D.studioNoon,
     RemodelViewMode3D viewMode = RemodelViewMode3D.all,
+    bool showRoof = false,
+    bool? keepLowerFloorsFullHeight,
   }) {
     final faces = <Face3D>[];
 
@@ -47,21 +49,46 @@ class Building3DBuilder {
     final targetFloors = soloFloorId != null
         ? floors.where((f) => f.id == soloFloorId).toList()
         : floors;
+    final solidLowerFloors =
+        keepLowerFloorsFullHeight ?? (explodedFactor <= 0.05);
 
     for (int i = 0; i < targetFloors.length; i++) {
       final floor = targetFloors[i];
+      final isTopFloor = i == targetFloors.length - 1;
+      // Keep lower floors at full real height when stacked so upper slabs never float in mid-air.
+      final useFullHeightForFloor =
+          (showRoof && isTopFloor) || (!isTopFloor && solidLowerFloors);
       // Elevación Z real + desplazamiento opcional pre-aplicado si explodedFactor > 0
       final elevationZ = floor.levelMeters + (i * explodedFactor * 2.50);
       final floorHeight = floor.heightMeters;
-      final cutawayHeight = math.min(floorHeight, wallHeight);
+      final cutawayHeight =
+          useFullHeightForFloor ? floorHeight : math.min(floorHeight, wallHeight);
 
-      // 2. Losa estructural de entrepiso (0.18m de espesor)
-      _buildSlab(faces, floor, elevationZ, floorIndex: i);
+      // Detect lower-floor stair footprint to carve a real stairwell void in upper floor slabs
+      BoundingBox2D? stairVoidBounds;
+      if (i > 0) {
+        final lowerStair = targetFloors[i - 1]
+            .modules
+            .where((m) => m.isStairs && viewMode.includesStatus(m.status))
+            .firstOrNull;
+        stairVoidBounds = lowerStair?.geometry.boundingBox;
+      }
+
+      // 2. Losa estructural de entrepiso (0.18m de espesor) con vacío real de escalera
+      _buildSlab(
+        faces,
+        floor,
+        elevationZ,
+        floorIndex: i,
+        stairVoidBounds: stairVoidBounds,
+      );
 
       // 3. Pavimentos, carpinterías, escaleras y mobiliario por recinto (filtrados por modo Antes / Después)
       final visibleModules = floor.modules
           .where((m) => viewMode.includesStatus(m.status))
           .toList();
+      final openingModules =
+          visibleModules.where((m) => m.isOpening).toList();
       for (final mod in visibleModules) {
         if (mod.isOpening) {
           _buildOpening3D(
@@ -140,7 +167,9 @@ class Building3DBuilder {
       final roomModules =
           visibleModules.where((m) => !m.isOpening && !m.isStairs).toList();
       for (final wall in effectiveWalls) {
-        final effectiveWallH = math.min(wall.height, wallHeight);
+        final effectiveWallH = useFullHeightForFloor
+            ? wall.height
+            : math.min(wall.height, wallHeight);
         if (includeShadows) {
           _buildWallShadow3D(
             faces,
@@ -159,10 +188,25 @@ class Building3DBuilder {
           overrideHeight: effectiveWallH,
           label: wallLabel,
           roomModules: roomModules,
+          openingModules: openingModules,
           floorIndex: i,
           viewMode: viewMode,
         );
       }
+    }
+
+    // 5. Optional Roof Slab + Architectural Parapet above the top visible floor
+    if (showRoof && targetFloors.isNotEmpty) {
+      final topIndex = targetFloors.length - 1;
+      final topFloor = targetFloors[topIndex];
+      final topElevZ =
+          topFloor.levelMeters + (topIndex * explodedFactor * 2.50);
+      _buildRoofAndParapet(
+        faces,
+        topFloor,
+        topElevZ + topFloor.heightMeters,
+        floorIndex: targetFloors.length,
+      );
     }
 
     return faces;
@@ -184,12 +228,13 @@ class Building3DBuilder {
     return verts;
   }
 
-  /// Construye la losa de entrepiso con normales exteriores verificadas
+  /// Construye la losa de entrepiso con normales exteriores verificadas y vacío real de escalera
   static void _buildSlab(
     List<Face3D> faces,
     Floor floor,
     double elevationZ, {
     required int floorIndex,
+    BoundingBox2D? stairVoidBounds,
   }) {
     final verts = _ensureCounterClockwiseXY(floor.boundary.vertices);
     if (verts.length < 3) return;
@@ -197,6 +242,45 @@ class Building3DBuilder {
     const slabThickness = 0.18;
     final topZ = elevationZ;
     final botZ = elevationZ - slabThickness;
+
+    // Partition rectangular upper-floor slabs into up to 4 clean sub-slabs around a stairwell void
+    if (stairVoidBounds != null && verts.length == 4) {
+      final bb = floor.boundary.boundingBox;
+      final vx0 = stairVoidBounds.minX.clamp(bb.minX, bb.maxX).toDouble();
+      final vx1 = stairVoidBounds.maxX.clamp(bb.minX, bb.maxX).toDouble();
+      final vy0 = stairVoidBounds.minY.clamp(bb.minY, bb.maxY).toDouble();
+      final vy1 = stairVoidBounds.maxY.clamp(bb.minY, bb.maxY).toDouble();
+      if ((vx1 - vx0) > 0.30 && (vy1 - vy0) > 0.30) {
+        final strips = <({double x0, double y0, double x1, double y1})>[
+          if (vx0 - bb.minX > 0.05)
+            (x0: bb.minX, y0: bb.minY, x1: vx0, y1: bb.maxY),
+          if (bb.maxX - vx1 > 0.05)
+            (x0: vx1, y0: bb.minY, x1: bb.maxX, y1: bb.maxY),
+          if (vy0 - bb.minY > 0.05)
+            (x0: vx0, y0: bb.minY, x1: vx1, y1: vy0),
+          if (bb.maxY - vy1 > 0.05)
+            (x0: vx0, y0: vy1, x1: vx1, y1: bb.maxY),
+        ];
+        if (strips.isNotEmpty) {
+          for (final s in strips) {
+            _addAxisAlignedBox3D(
+              faces,
+              minX: s.x0,
+              minY: s.y0,
+              maxX: s.x1,
+              maxY: s.y1,
+              z0: botZ,
+              z1: topZ,
+              sideColor: const Color(0xFF1E2B37),
+              topColor: const Color(0xFF2C3E50),
+              floorIndex: floorIndex,
+              layer: FaceLayer3D.slab,
+            );
+          }
+          return;
+        }
+      }
+    }
 
     // Cara superior de la losa (normal +Z)
     faces.add(
@@ -225,6 +309,70 @@ class Building3DBuilder {
           layer: FaceLayer3D.slab,
           floorIndex: floorIndex,
         ),
+      );
+    }
+  }
+
+  /// Builds an architectural flat roof slab and perimeter parapet above the highest floor.
+  static void _buildRoofAndParapet(
+    List<Face3D> faces,
+    Floor topFloor,
+    double roofBaseZ, {
+    required int floorIndex,
+  }) {
+    final verts = _ensureCounterClockwiseXY(topFloor.boundary.vertices);
+    if (verts.length < 3) return;
+
+    const roofThickness = 0.18;
+    const parapetHeight = 0.35;
+    final roofTopZ = roofBaseZ + roofThickness;
+
+    // Top roof terrace surface (+Z normal)
+    faces.add(
+      Face3D(
+        vertices: verts.map((p) => Point3D(p.x, p.y, roofTopZ)).toList(),
+        baseColor: const Color(0xFFCBD5E1),
+        label: 'Cubierta',
+        layer: FaceLayer3D.slab,
+        floorIndex: floorIndex,
+      ),
+    );
+
+    // Roof fascia edges
+    for (int i = 0; i < verts.length; i++) {
+      final p1 = verts[i];
+      final p2 = verts[(i + 1) % verts.length];
+      faces.add(
+        Face3D(
+          vertices: [
+            Point3D(p1.x, p1.y, roofBaseZ),
+            Point3D(p2.x, p2.y, roofBaseZ),
+            Point3D(p2.x, p2.y, roofTopZ),
+            Point3D(p1.x, p1.y, roofTopZ),
+          ],
+          baseColor: const Color(0xFF334155),
+          layer: FaceLayer3D.slab,
+          floorIndex: floorIndex,
+        ),
+      );
+    }
+
+    // Perimeter parapet wall around the roof terrace
+    for (int i = 0; i < verts.length; i++) {
+      final p1 = verts[i];
+      final p2 = verts[(i + 1) % verts.length];
+      _buildWallSegment3D(
+        faces,
+        p1: p1,
+        p2: p2,
+        elevationZ: roofTopZ,
+        height: parapetHeight,
+        thickness: 0.15,
+        wallColor: const Color(0xFFE2E8F0),
+        topCapColor: const Color(0xFF475569),
+        forceOverrideColor: true,
+        label: i == 0 ? 'Antepecho Cubierta' : null,
+        floorIndex: floorIndex,
       );
     }
   }
@@ -501,8 +649,82 @@ class Building3DBuilder {
     );
   }
 
-  /// Extruye un muro 3D subdividiéndolo exactamente en las transiciones de recintos adyacentes
-  /// y fusionando tramos colineales con el mismo par de recintos (sin tapas internas).
+  /// Subtracts parametric intervals `[t0, t1]` occupied by doors/windows lying on [wall].
+  static List<({double t0, double t1})> _computeSolidWallIntervals(
+    Wall wall,
+    List<Module> openingModules,
+  ) {
+    if (openingModules.isEmpty) return const [(t0: 0.0, t1: 1.0)];
+    final dx = wall.endPoint.x - wall.startPoint.x;
+    final dy = wall.endPoint.y - wall.startPoint.y;
+    final lenSq = dx * dx + dy * dy;
+    if (lenSq < 1e-6) return const [];
+    final len = math.sqrt(lenSq);
+    final ux = dx / len;
+    final uy = dy / len;
+    final maxPerp = wall.thickness + 0.25;
+
+    final cutouts = <({double a, double b})>[];
+    for (final op in openingModules) {
+      final bb = op.geometry.boundingBox;
+      final cx = bb.minX + bb.width / 2.0;
+      final cy = bb.minY + bb.height / 2.0;
+      final vx = cx - wall.startPoint.x;
+      final vy = cy - wall.startPoint.y;
+      final perp = (vx * (-uy) + vy * ux).abs();
+      if (perp > maxPerp) continue;
+
+      final corners = [
+        Point2D(bb.minX, bb.minY),
+        Point2D(bb.maxX, bb.minY),
+        Point2D(bb.maxX, bb.maxY),
+        Point2D(bb.minX, bb.maxY),
+      ];
+      double minT = double.infinity;
+      double maxT = double.negativeInfinity;
+      for (final c in corners) {
+        final t = ((c.x - wall.startPoint.x) * dx +
+                (c.y - wall.startPoint.y) * dy) /
+            lenSq;
+        if (t < minT) minT = t;
+        if (t > maxT) maxT = t;
+      }
+      final a = minT.clamp(0.0, 1.0).toDouble();
+      final b = maxT.clamp(0.0, 1.0).toDouble();
+      if (b - a > 0.02) {
+        cutouts.add((a: a, b: b));
+      }
+    }
+
+    if (cutouts.isEmpty) return const [(t0: 0.0, t1: 1.0)];
+    cutouts.sort((x, y) => x.a.compareTo(y.a));
+
+    final mergedCutouts = <({double a, double b})>[];
+    for (final c in cutouts) {
+      if (mergedCutouts.isNotEmpty && c.a <= mergedCutouts.last.b + 0.005) {
+        final prev = mergedCutouts.removeLast();
+        mergedCutouts.add((a: prev.a, b: math.max(prev.b, c.b)));
+      } else {
+        mergedCutouts.add(c);
+      }
+    }
+
+    final solid = <({double t0, double t1})>[];
+    double cursor = 0.0;
+    for (final cut in mergedCutouts) {
+      if (cut.a - cursor > 0.01) {
+        solid.add((t0: cursor, t1: cut.a));
+      }
+      cursor = math.max(cursor, cut.b);
+    }
+    if (1.0 - cursor > 0.01) {
+      solid.add((t0: cursor, t1: 1.0));
+    }
+    return solid;
+  }
+
+  /// Extruye un muro 3D subdividiéndolo exactamente en las transiciones de recintos adyacentes,
+  /// recortando aberturas reales (puertas/ventanas) y fusionando tramos colineales (sin tapas internas).
   static void _buildWall3D(
     List<Face3D> faces,
     Wall wall,
@@ -510,12 +732,48 @@ class Building3DBuilder {
     double? overrideHeight,
     String label = 'Muro',
     List<Module> roomModules = const [],
+    List<Module> openingModules = const [],
     int floorIndex = 0,
     RemodelViewMode3D viewMode = RemodelViewMode3D.all,
   }) {
     final len = wall.startPoint.distanceTo(wall.endPoint);
     if (len < 0.08) return;
     final h = overrideHeight ?? wall.height;
+
+    final solidSpans = _computeSolidWallIntervals(wall, openingModules);
+    if (solidSpans.isEmpty) return;
+
+    if (solidSpans.length > 1 ||
+        solidSpans.first.t0 > 0.005 ||
+        solidSpans.first.t1 < 0.995) {
+      final dx = wall.endPoint.x - wall.startPoint.x;
+      final dy = wall.endPoint.y - wall.startPoint.y;
+      for (int i = 0; i < solidSpans.length; i++) {
+        final span = solidSpans[i];
+        final subWall = wall.copyWith(
+          startPoint: Point2D(
+            wall.startPoint.x + dx * span.t0,
+            wall.startPoint.y + dy * span.t0,
+          ),
+          endPoint: Point2D(
+            wall.startPoint.x + dx * span.t1,
+            wall.startPoint.y + dy * span.t1,
+          ),
+        );
+        _buildWall3D(
+          faces,
+          subWall,
+          elevationZ,
+          overrideHeight: overrideHeight,
+          label: i == 0 ? label : '',
+          roomModules: roomModules,
+          openingModules: const [],
+          floorIndex: floorIndex,
+          viewMode: viewMode,
+        );
+      }
+      return;
+    }
 
     Color resolvedWallColor = const Color(0xFFECEFF1);
     Color resolvedTopCapColor = const Color(0xFFCFD8DC);
