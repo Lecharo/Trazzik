@@ -59,14 +59,21 @@ Future<FileExportResult> exportTextFile({
     _document.body?.appendChild(anchor);
     anchor.click();
     anchor.remove();
-    _JSUrl.revokeObjectURL(objectUrl);
+    // Defer object URL revocation so Safari/Firefox finish initiating the download.
+    Future<void>.delayed(const Duration(seconds: 2), () {
+      try {
+        _JSUrl.revokeObjectURL(objectUrl);
+      } catch (_) {}
+    });
     downloaded = true;
   } catch (_) {
     downloaded = false;
   }
 
   var copied = false;
-  if (copyToClipboardFallback) {
+  // Only fall back to clipboard when browser download failed so large exports
+  // (.gltf / .dxf / .json) do not clobber the user's clipboard unexpectedly.
+  if (!downloaded && copyToClipboardFallback) {
     try {
       await Clipboard.setData(ClipboardData(text: content));
       copied = true;

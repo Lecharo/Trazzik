@@ -95,12 +95,22 @@ class _OpenSharedLinkDialogState extends ConsumerState<OpenSharedLinkDialog> {
   }
 
   Future<void> _pasteFromClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text?.trim() ?? '';
-    if (text.isNotEmpty && mounted) {
+    final lang = ref.read(appLocaleProvider);
+    try {
+      final data = await Clipboard.getData(Clipboard.kTextPlain);
+      final text = data?.text?.trim() ?? '';
+      if (text.isNotEmpty && mounted) {
+        setState(() {
+          _tokenController.text = text;
+          _errorText = null;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
-        _tokenController.text = text;
-        _errorText = null;
+        _errorText = lang == 'es'
+            ? 'El navegador bloqueó el portapapeles. Pega el enlace con Ctrl+V (o Cmd+V).'
+            : 'Browser blocked clipboard access. Paste the link with Ctrl+V (or Cmd+V).';
       });
     }
   }

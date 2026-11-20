@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/geometry/polygon_2d.dart';
+import 'package:trazzik/core/utils/file_import_helper.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/lots/domain/lot.dart';
@@ -149,6 +150,14 @@ void main() {
         expect(estudio.geometry.boundingBox.width, closeTo(2.815, 1e-6));
       },
     );
+
+    test('registerJsonDropTarget returns a safe cleanup callback on IO/VM', () {
+      final unregister = registerJsonDropTarget(
+        onDragStateChanged: (_) {},
+        onFileDropped: (_) {},
+      );
+      expect(unregister, returnsNormally);
+    });
 
     test('ProjectJsonBundle rejects malformed JSON or empty floors gracefully', () {
       expect(ProjectJsonBundle.tryFromJsonString('not-json'), isNull);

@@ -108,15 +108,35 @@ class _ProjectJsonIoDialogState extends ConsumerState<ProjectJsonIoDialog> {
   List<LocalExportFileEntry> _savedFiles = const [];
   String? _errorText;
   bool _isLoading = false;
+  bool _isDraggingFile = false;
+  VoidCallback? _unregisterDropTarget;
 
   @override
   void initState() {
     super.initState();
     _loadSavedFiles();
+    _unregisterDropTarget = registerJsonDropTarget(
+      onDragStateChanged: (isDragging) {
+        if (!mounted || _isDraggingFile == isDragging) return;
+        setState(() => _isDraggingFile = isDragging);
+      },
+      onFileDropped: (res) {
+        if (!mounted) return;
+        if (res.error != null) {
+          setState(() => _errorText = res.error);
+          return;
+        }
+        if (res.hasContent) {
+          _jsonController.text = res.content!;
+          _importFromRawJson(res.content!);
+        }
+      },
+    );
   }
 
   @override
   void dispose() {
+    _unregisterDropTarget?.call();
     _jsonController.dispose();
     _pathController.dispose();
     super.dispose();
@@ -166,12 +186,22 @@ class _ProjectJsonIoDialogState extends ConsumerState<ProjectJsonIoDialog> {
   }
 
   Future<void> _pasteFromClipboard() async {
-    final clip = await Clipboard.getData(Clipboard.kTextPlain);
-    if (!mounted) return;
-    if (clip?.text != null && clip!.text!.trim().isNotEmpty) {
+    final lang = ref.read(appLocaleProvider);
+    try {
+      final clip = await Clipboard.getData(Clipboard.kTextPlain);
+      if (!mounted) return;
+      if (clip?.text != null && clip!.text!.trim().isNotEmpty) {
+        setState(() {
+          _jsonController.text = clip.text!;
+          _errorText = null;
+        });
+      }
+    } catch (_) {
+      if (!mounted) return;
       setState(() {
-        _jsonController.text = clip.text!;
-        _errorText = null;
+        _errorText = lang == 'es'
+            ? 'El navegador bloqueó el acceso al portapapeles. Usa Ctrl+V (o Cmd+V) dentro del cuadro de texto.'
+            : 'Browser blocked clipboard access. Press Ctrl+V (or Cmd+V) inside the text box.';
       });
     }
   }
@@ -266,13 +296,68 @@ class _ProjectJsonIoDialogState extends ConsumerState<ProjectJsonIoDialog> {
               ),
               const SizedBox(height: 12),
               if (supportsNativeJsonFilePicker) ...[
-                ElevatedButton.icon(
-                  onPressed: _isLoading ? null : _pickFileFromBrowser,
-                  icon: const Icon(Icons.folder_open, size: 18),
-                  label: Text(
-                    lang == 'es'
-                        ? 'Seleccionar archivo .json'
-                        : 'Choose .json file',
+                Material(
+                  color: _isDraggingFile
+                      ? colors.accent.withValues(alpha: 0.16)
+                      : colors.cardSurface,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    side: BorderSide(
+                      color: _isDraggingFile
+                          ? colors.accent
+                          : colors.accent.withValues(alpha: 0.45),
+                      width: _isDraggingFile ? 2.0 : 1.2,
+                    ),
+                  ),
+                  child: InkWell(
+                    key: const Key('json_drop_zone'),
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: _isLoading ? null : _pickFileFromBrowser,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 18,
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            _isDraggingFile
+                                ? Icons.file_download_outlined
+                                : Icons.upload_file_outlined,
+                            size: 28,
+                            color: colors.accent,
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            _isDraggingFile
+                                ? (lang == 'es'
+                                    ? 'Suelta el archivo .json para importar'
+                                    : 'Drop the .json file to import')
+                                : (lang == 'es'
+                                    ? 'Arrastra y suelta tu archivo .json aquí'
+                                    : 'Drag & drop your .json file here'),
+                            style: TextStyle(
+                              color: colors.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 3),
+                          Text(
+                            lang == 'es'
+                                ? 'o haz clic para seleccionar desde tu equipo'
+                                : 'or click to browse from your computer',
+                            style: TextStyle(
+                              color: colors.textMuted,
+                              fontSize: 11,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
                 const SizedBox(height: 12),

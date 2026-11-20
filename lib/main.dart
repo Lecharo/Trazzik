@@ -1,4 +1,7 @@
+import 'dart:ui' show PointerDeviceKind;
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart' show BrowserContextMenu;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/core/supabase/supabase_config.dart';
@@ -11,6 +14,10 @@ import 'package:trazzik/features/viewer_3d/presentation/widgets/open_shared_link
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  if (kIsWeb) {
+    // Allow CAD right-click canvas interactions without the native browser menu.
+    await BrowserContextMenu.disableContextMenu();
+  }
   String? startupError;
   try {
     await SupabaseConfig.initialize();
@@ -55,12 +62,27 @@ class TrazzikApp extends ConsumerWidget {
     return MaterialApp(
       title: AppStrings.tr('app_title', lang),
       debugShowCheckedModeBanner: false,
+      scrollBehavior: const _TrazzikWebScrollBehavior(),
       theme: AppTheme.lightTheme,
       darkTheme: AppTheme.darkTheme,
       themeMode: themeMode,
       home: home,
     );
   }
+}
+
+/// Enables mouse-drag scrolling on horizontal carousels and strips on Desktop Web.
+class _TrazzikWebScrollBehavior extends MaterialScrollBehavior {
+  const _TrazzikWebScrollBehavior();
+
+  @override
+  Set<PointerDeviceKind> get dragDevices => const {
+        PointerDeviceKind.touch,
+        PointerDeviceKind.mouse,
+        PointerDeviceKind.trackpad,
+        PointerDeviceKind.stylus,
+        PointerDeviceKind.unknown,
+      };
 }
 
 class _StartupShareGate extends ConsumerStatefulWidget {

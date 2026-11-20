@@ -109,8 +109,9 @@ class _ClientShareLinkDialogState extends ConsumerState<ClientShareLinkDialog> {
 
   String get _shareUrl {
     if (kIsWeb) {
-      final origin = Uri.base.origin;
-      return '$origin/?share=$_token';
+      final base = Uri.base;
+      final cleanPath = base.path.isEmpty ? '/' : base.path;
+      return '${base.origin}$cleanPath?share=$_token';
     }
     return 'https://trazzik.app/?share=$_token';
   }
