@@ -12,6 +12,7 @@ import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_a
 import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_bottom_bar.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/toolbar/editor_dialogs.dart';
 import 'package:trazzik/features/floors/data/supabase_floor_repository.dart';
+import 'package:trazzik/features/viewer_3d/presentation/widgets/live_split_3d_pane.dart';
 
 class EditorScreen extends ConsumerStatefulWidget {
   const EditorScreen({super.key});
@@ -24,6 +25,7 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   bool _isSaving = false;
   bool _isTourActive = false;
   String? _lastFittedLotId;
+  double _split2dRatio = 0.56;
 
   String _describeUnsavedScope(FloorEditorState state) {
     final dirtyNames = state.dirtyFloors.map((f) => '"${f.name}"').toList();
@@ -223,7 +225,12 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
   Widget build(BuildContext context) {
     final notifier = ref.read(floorEditorProvider.notifier);
     final lotId = ref.watch(floorEditorProvider.select((s) => s.lot.id));
-    final isMobile = MediaQuery.sizeOf(context).width < 720;
+    final isSplitView3D = ref.watch(
+      floorEditorProvider.select((s) => s.isSplitView3D),
+    );
+    final screenWidth = MediaQuery.sizeOf(context).width;
+    final isMobile = screenWidth < 720;
+    final showSplit3d = !isMobile && isSplitView3D && screenWidth >= 900;
 
     if (_lastFittedLotId != lotId) {
       _lastFittedLotId = lotId;
@@ -343,17 +350,82 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
             : Row(
                 children: [
                   Expanded(
-                    child: Stack(
-                      children: [
-                        const EditorCanvas2D(),
-                        if (_isTourActive)
-                          RepaintBoundary(
-                            child: CinematicTourOverlay(
-                              onClose: () =>
-                                  setState(() => _isTourActive = false),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        if (!showSplit3d) {
+                          return Stack(
+                            children: [
+                              const EditorCanvas2D(),
+                              if (_isTourActive)
+                                RepaintBoundary(
+                                  child: CinematicTourOverlay(
+                                    onClose: () =>
+                                        setState(() => _isTourActive = false),
+                                  ),
+                                ),
+                            ],
+                          );
+                        }
+                        final totalW = math.max(1.0, constraints.maxWidth - 6.0);
+                        final leftW = (totalW * _split2dRatio)
+                            .clamp(240.0, math.max(240.0, totalW - 240.0))
+                            .toDouble();
+                        return Row(
+                          children: [
+                            SizedBox(
+                              width: leftW,
+                              child: Stack(
+                                children: [
+                                  const EditorCanvas2D(),
+                                  if (_isTourActive)
+                                    RepaintBoundary(
+                                      child: CinematicTourOverlay(
+                                        onClose: () => setState(
+                                          () => _isTourActive = false,
+                                        ),
+                                      ),
+                                    ),
+                                ],
+                              ),
                             ),
-                          ),
-                      ],
+                            MouseRegion(
+                              cursor: SystemMouseCursors.resizeLeftRight,
+                              child: GestureDetector(
+                                behavior: HitTestBehavior.opaque,
+                                onHorizontalDragUpdate: (details) {
+                                  setState(() {
+                                    _split2dRatio =
+                                        (_split2dRatio + details.delta.dx / totalW)
+                                            .clamp(0.30, 0.75);
+                                  });
+                                },
+                                child: Container(
+                                  width: 6,
+                                  color: Theme.of(context).brightness ==
+                                          Brightness.dark
+                                      ? const Color(0xFF283244)
+                                      : const Color(0xFFCBD5E1),
+                                  child: Center(
+                                    child: Container(
+                                      width: 2,
+                                      height: 36,
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFF38BDF8),
+                                        borderRadius: BorderRadius.circular(2),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            Expanded(
+                              child: LiveSplit3dPane(
+                                onClose: notifier.toggleSplitView3D,
+                              ),
+                            ),
+                          ],
+                        );
+                      },
                     ),
                   ),
                   const RepaintBoundary(child: PropertiesPanel()),
