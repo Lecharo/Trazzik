@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:trazzik/core/geometry/element_status.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
@@ -211,6 +212,82 @@ void main() {
           (f) => f.vertices.any((v) => v.z >= 4.54 + 0.30),
         );
         expect(roofFaces, isNotEmpty);
+      },
+    );
+  });
+
+  group('3D Realism Phase 1 — Block 2B: Hemispheric Lighting, AO & Site Context', () {
+    test(
+      'Face3D.computeShadedColor tints sunlit faces warmer than cool shadow-facing faces',
+      () {
+        final light = SunPreset3D.goldenHourWest.lightDirection;
+        // Golden hour sun comes from West (-X), so normal (-X) is sunlit and (+X) is shaded
+        final sunlitFace = Face3D(
+          vertices: const [
+            Point3D(0, 2, 0),
+            Point3D(0, 0, 0),
+            Point3D(0, 0, 2),
+            Point3D(0, 2, 2),
+          ],
+          baseColor: const Color(0xFFCCCCCC),
+        );
+        final shadedFace = Face3D(
+          vertices: const [
+            Point3D(0, 0, 0),
+            Point3D(0, 2, 0),
+            Point3D(0, 2, 2),
+            Point3D(0, 0, 2),
+          ],
+          baseColor: const Color(0xFFCCCCCC),
+        );
+
+        final cLit = sunlitFace.computeShadedColor(
+          light,
+          preset: SunPreset3D.goldenHourWest,
+        );
+        final cDark = shadedFace.computeShadedColor(
+          light,
+          preset: SunPreset3D.goldenHourWest,
+        );
+        // Sunlit warm face has higher red-over-blue ratio than cool shaded face
+        expect(cLit.r - cLit.b, greaterThan(cDark.r - cDark.b));
+      },
+    );
+
+    test(
+      'Building3DBuilder emits wider context apron and directional exterior building ground shadow',
+      () {
+        final lot = Lot(
+          id: 'lot_ctx',
+          projectId: 'p1',
+          boundary: Polygon2D.fromRect(0, 0, 7, 10),
+        );
+        final floor = Floor(
+          id: 'p1',
+          buildingId: 'b1',
+          floorNumber: 1,
+          name: 'Piso 1',
+          heightMeters: 2.34,
+          boundary: lot.boundary,
+          maxAllowedArea: 70,
+        );
+
+        final faces = Building3DBuilder.buildScene(
+          floors: [floor],
+          lot: lot,
+          showLotGround: true,
+          includeShadows: true,
+          sunPreset: SunPreset3D.goldenHourWest,
+        );
+
+        final apronFace = faces.where(
+          (f) => f.floorIndex == -2 && f.layer == FaceLayer3D.terrain,
+        );
+        final groundShadow = faces.where(
+          (f) => f.floorIndex == -2 && f.layer == FaceLayer3D.shadow,
+        );
+        expect(apronFace, isNotEmpty);
+        expect(groundShadow, isNotEmpty);
       },
     );
   });

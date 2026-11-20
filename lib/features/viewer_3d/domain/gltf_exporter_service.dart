@@ -20,7 +20,12 @@ class GltfExporterService {
     String projectName = 'Trazzik 3D Model',
   }) {
     final exportableFaces = faces
-        .where((f) => f.layer != FaceLayer3D.shadow && f.vertices.length >= 3)
+        .where(
+          (f) =>
+              f.layer != FaceLayer3D.shadow &&
+              f.floorIndex >= -1 &&
+              f.vertices.length >= 3,
+        )
         .toList();
 
     if (exportableFaces.isEmpty) {

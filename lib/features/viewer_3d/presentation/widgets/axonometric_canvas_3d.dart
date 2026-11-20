@@ -609,7 +609,7 @@ class AxonometricSceneRenderer {
 
   static Size? _cachedBgSize;
   static bool? _cachedBgDark;
-  static bool? _cachedBgNight;
+  static SunPreset3D? _cachedBgSunPreset;
   static Shader? _cachedBgShader;
 
   static final Map<String, TextPainter> _labelPainterCache = {};
@@ -622,7 +622,7 @@ class AxonometricSceneRenderer {
     _labelPainterCache.clear();
     _cachedBgSize = null;
     _cachedBgDark = null;
-    _cachedBgNight = null;
+    _cachedBgSunPreset = null;
     _cachedBgShader = null;
   }
 
@@ -650,7 +650,19 @@ class AxonometricSceneRenderer {
   static final Paint _glassHighlightPaint = Paint()
     ..style = PaintingStyle.stroke
     ..strokeWidth = 1.15
-    ..color = Colors.white.withValues(alpha: 0.38);
+    ..color = Colors.white.withValues(alpha: 0.42);
+  static final Paint _wallBaseAoPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = Colors.black.withValues(alpha: 0.14);
+  static final Paint _wallTopAoPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = Colors.black.withValues(alpha: 0.08);
+  static final Paint _woodBandPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = Colors.black.withValues(alpha: 0.055);
+  static final Paint _glassSheenPaint = Paint()
+    ..style = PaintingStyle.fill
+    ..color = Colors.white.withValues(alpha: 0.10);
 
   /// Renders a complete 3D scene onto [canvas] for interactive viewports,
   /// high-resolution PNG exports, and PDF technical sheets (`PL-3D`).
@@ -692,24 +704,36 @@ class AxonometricSceneRenderer {
       size.height / 2 + panOffset.dy,
     );
 
-    // 1. Studio radial gradient background (cached by size, theme brightness, and night mode)
+    // 1. Architectural studio backdrop responsive to SunPreset3D and theme
     final isNight = sunPreset == SunPreset3D.nightInterior;
     if (drawBackground) {
       if (_cachedBgShader == null ||
           _cachedBgSize != size ||
           _cachedBgDark != isDarkTheme ||
-          _cachedBgNight != isNight) {
+          _cachedBgSunPreset != sunPreset) {
         _cachedBgSize = size;
         _cachedBgDark = isDarkTheme;
-        _cachedBgNight = isNight;
+        _cachedBgSunPreset = sunPreset;
+        final List<Color> bgColors;
+        if (isNight) {
+          bgColors = const [Color(0xFF10192D), Color(0xFF060A13)];
+        } else if (sunPreset == SunPreset3D.goldenHourWest) {
+          bgColors = isDarkTheme
+              ? const [Color(0xFF2B2230), Color(0xFF101622)]
+              : const [Color(0xFFFEF3C7), Color(0xFFDCE5F0)];
+        } else if (sunPreset == SunPreset3D.morningEast) {
+          bgColors = isDarkTheme
+              ? const [Color(0xFF1A2D40), Color(0xFF0E1726)]
+              : const [Color(0xFFE0F2FE), Color(0xFFD5E3F0)];
+        } else {
+          bgColors = isDarkTheme
+              ? const [Color(0xFF1E2836), Color(0xFF0F172A)]
+              : const [Color(0xFFF1F5F9), Color(0xFFDCE5F0)];
+        }
         _cachedBgShader = RadialGradient(
-          center: Alignment.center,
-          radius: 1.2,
-          colors: isNight
-              ? const [Color(0xFF10192D), Color(0xFF060A13)]
-              : (isDarkTheme
-                  ? const [Color(0xFF1E2836), Color(0xFF0F172A)]
-                  : const [Color(0xFFF1F5F9), Color(0xFFDCE5F0)]),
+          center: const Alignment(0.0, -0.25),
+          radius: 1.25,
+          colors: bgColors,
         ).createShader(Offset.zero & size);
       }
       final bgPaint = Paint()..shader = _cachedBgShader;
@@ -768,7 +792,7 @@ class AxonometricSceneRenderer {
           ? face.computeNightShadedColor(lightDir)
           : (useDefaultSun
               ? face.defaultShadedColor
-              : face.computeShadedColor(lightDir));
+              : face.computeShadedColor(lightDir, preset: sunPreset));
 
       projectedFaces.add(
         _ProjectedFace(
@@ -827,7 +851,40 @@ class AxonometricSceneRenderer {
         _drawFacePattern3D(canvas, path, pFace, project, lodFactor);
       }
 
-      // Subtle diagonal glass specular reflection on window panels
+      // Subtle architectural Ambient Occlusion (AO) bands at wall-floor base and soffit top
+      if (pFace.isWallFace &&
+          pFace.points.length == 4 &&
+          pFace.vertices3D.length == 4 &&
+          pFace.color.a > 0.90) {
+        final wallSpanZ = (pFace.vertices3D[3].z - pFace.vertices3D[0].z).abs();
+        if (wallSpanZ > 0.45) {
+          final b0 = pFace.points[0];
+          final b1 = pFace.points[1];
+          final t1 = pFace.points[2];
+          final t0 = pFace.points[3];
+          final aoBase0 = Offset.lerp(b0, t0, 0.13)!;
+          final aoBase1 = Offset.lerp(b1, t1, 0.13)!;
+          final basePath = Path()
+            ..moveTo(b0.dx, b0.dy)
+            ..lineTo(b1.dx, b1.dy)
+            ..lineTo(aoBase1.dx, aoBase1.dy)
+            ..lineTo(aoBase0.dx, aoBase0.dy)
+            ..close();
+          canvas.drawPath(basePath, _wallBaseAoPaint);
+
+          final aoTop0 = Offset.lerp(t0, b0, 0.07)!;
+          final aoTop1 = Offset.lerp(t1, b1, 0.07)!;
+          final topPath = Path()
+            ..moveTo(aoTop0.dx, aoTop0.dy)
+            ..lineTo(aoTop1.dx, aoTop1.dy)
+            ..lineTo(t1.dx, t1.dy)
+            ..lineTo(t0.dx, t0.dy)
+            ..close();
+          canvas.drawPath(topPath, _wallTopAoPaint);
+        }
+      }
+
+      // Specular glass reflection sheen + diagonal glints on window & shower panels
       if (pFace.layer == FaceLayer3D.openingPanel &&
           pFace.points.length == 4 &&
           pFace.color.a < 0.85) {
@@ -835,6 +892,19 @@ class AxonometricSceneRenderer {
         final p1 = pFace.points[1];
         final p2 = pFace.points[2];
         final p3 = pFace.points[3];
+        final sheenPath = Path()
+          ..moveTo(p3.dx, p3.dy)
+          ..lineTo(p2.dx, p2.dy)
+          ..lineTo(
+            Offset.lerp(p2, p1, 0.45)!.dx,
+            Offset.lerp(p2, p1, 0.45)!.dy,
+          )
+          ..lineTo(
+            Offset.lerp(p3, p0, 0.25)!.dx,
+            Offset.lerp(p3, p0, 0.25)!.dy,
+          )
+          ..close();
+        canvas.drawPath(sheenPath, _glassSheenPaint);
         final s1 = Offset.lerp(p0, p3, 0.25)!;
         final e1 = Offset.lerp(p1, p2, 0.65)!;
         final s2 = Offset.lerp(p0, p3, 0.45)!;
@@ -969,13 +1039,24 @@ class AxonometricSceneRenderer {
         final step = math.max(baseStep * lodFactor, spanY / max3dPatternLines);
         int plankRow = 0;
         for (double y = minY + step; y < maxY && plankRow < max3dPatternLines; y += step) {
+          final prevY = y - step;
           final (p1, _) = project(Point3D(minX, y, z), fIdx);
           final (p2, _) = project(Point3D(maxX, y, z), fIdx);
+          if (plankRow.isOdd && lodFactor <= 1.2) {
+            final (p0a, _) = project(Point3D(minX, prevY, z), fIdx);
+            final (p0b, _) = project(Point3D(maxX, prevY, z), fIdx);
+            final band = Path()
+              ..moveTo(p0a.dx, p0a.dy)
+              ..lineTo(p0b.dx, p0b.dy)
+              ..lineTo(p2.dx, p2.dy)
+              ..lineTo(p1.dx, p1.dy)
+              ..close();
+            canvas.drawPath(band, _woodBandPaint);
+          }
           canvas.drawLine(p1, p2, _textureLinePaint);
 
           // Staggered plank butt-joints
           if (lodFactor <= 1.2 && spanX > 1.20) {
-            final prevY = y - step;
             final jointX = minX +
                 ((plankRow.isEven ? 0.32 : 0.68) * spanX).clamp(0.25, spanX - 0.25);
             final (j1, _) = project(Point3D(jointX, prevY, z), fIdx);

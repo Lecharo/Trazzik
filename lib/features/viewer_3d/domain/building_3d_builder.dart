@@ -29,8 +29,28 @@ class Building3DBuilder {
   }) {
     final faces = <Face3D>[];
 
-    // 1. Suelo del Lote (normal hacia +Z garantizada por orientación CCW)
+    // 1. Entorno urbano + Suelo del Lote (normal hacia +Z garantizada por orientación CCW)
     if (showLotGround) {
+      final lotBb = lot.boundary.boundingBox;
+      if (lotBb.width > 0.5 && lotBb.height > 0.5) {
+        const apron = 1.60;
+        faces.add(
+          Face3D(
+            vertices: [
+              Point3D(lotBb.minX - apron, lotBb.minY - apron, -0.10),
+              Point3D(lotBb.maxX + apron, lotBb.minY - apron, -0.10),
+              Point3D(lotBb.maxX + apron, lotBb.maxY + apron, -0.10),
+              Point3D(lotBb.minX - apron, lotBb.maxY + apron, -0.10),
+            ],
+            baseColor: const Color(0xFF141E28),
+            label: 'Entorno',
+            isEdgeVisible: false,
+            layer: FaceLayer3D.terrain,
+            floorIndex: -2,
+          ),
+        );
+      }
+
       final lotVerts = _ensureCounterClockwiseXY(lot.boundary.vertices);
       if (lotVerts.length >= 3) {
         faces.add(
@@ -49,6 +69,20 @@ class Building3DBuilder {
     final targetFloors = soloFloorId != null
         ? floors.where((f) => f.id == soloFloorId).toList()
         : floors;
+
+    // 1.5 Sombra exterior proyectada de toda la edificación sobre el entorno
+    if (showLotGround && includeShadows && targetFloors.isNotEmpty) {
+      final totalHeight = targetFloors.fold<double>(
+        0.0,
+        (acc, f) => math.max(acc, f.levelMeters + f.heightMeters),
+      );
+      _buildBuildingGroundShadow3D(
+        faces,
+        lot: lot,
+        totalBuildingHeight: totalHeight,
+        sunPreset: sunPreset,
+      );
+    }
     final solidLowerFloors =
         keepLowerFloorsFullHeight ?? (explodedFactor <= 0.05);
 
@@ -210,6 +244,37 @@ class Building3DBuilder {
     }
 
     return faces;
+  }
+
+  /// Projects a soft directional exterior ground shadow for the building mass onto the site apron.
+  static void _buildBuildingGroundShadow3D(
+    List<Face3D> faces, {
+    required Lot lot,
+    required double totalBuildingHeight,
+    required SunPreset3D sunPreset,
+  }) {
+    final bb = lot.boundary.boundingBox;
+    if (bb.width < 0.5 || bb.height < 0.5 || totalBuildingHeight < 0.5) return;
+    final light = sunPreset.lightDirection;
+    final scale = (math.min(totalBuildingHeight, 9.0) * 0.22).clamp(0.4, 1.55);
+    final sx = (-light.x * scale).clamp(-1.55, 1.55);
+    final sy = (-light.y * scale).clamp(-1.55, 1.55);
+    final alpha = sunPreset == SunPreset3D.nightInterior ? 0.16 : 0.28;
+
+    faces.add(
+      Face3D(
+        vertices: [
+          Point3D(bb.minX + sx, bb.minY + sy, -0.08),
+          Point3D(bb.maxX + sx, bb.minY + sy, -0.08),
+          Point3D(bb.maxX + sx, bb.maxY + sy, -0.08),
+          Point3D(bb.minX + sx, bb.maxY + sy, -0.08),
+        ],
+        baseColor: Colors.black.withValues(alpha: alpha),
+        isEdgeVisible: false,
+        layer: FaceLayer3D.shadow,
+        floorIndex: -2,
+      ),
+    );
   }
 
   /// Ensures a 2D polygon is wound counter-clockwise in XY so its 3D cross-product

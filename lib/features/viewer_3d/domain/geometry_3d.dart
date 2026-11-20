@@ -189,25 +189,47 @@ class Face3D {
   /// Color precalculado con la fuente solar direccional estándar (45° cenital)
   late final Color defaultShadedColor = computeShadedColor(defaultSunLight);
 
-  /// Calcula el color sombreado según la fuente de luz direccional (Sol arquitectónico cenital a 45°)
-  Color computeShadedColor(Point3D lightDir) {
+  /// Calcula el color sombreado hemisférico (luz solar cálida + rebote frío en sombras)
+  Color computeShadedColor(
+    Point3D lightDir, {
+    SunPreset3D preset = SunPreset3D.studioNoon,
+  }) {
     if (layer == FaceLayer3D.shadow) {
       return baseColor;
     }
     final norm = normal;
-    // Producto punto
     final rawDot =
         norm.x * lightDir.x + norm.y * lightDir.y + norm.z * lightDir.z;
     final dot = isTwoSided ? rawDot.abs() : rawDot;
     final intensity = (dot.clamp(-0.2, 1.0) + 0.2) / 1.2;
-    // Factor de luminosidad ambiente mínima (0.48 a 1.0)
-    final brightness = 0.48 + 0.52 * intensity;
+
+    // Hemispheric sky-vs-sun color tinting for architectural depth
+    Color tintedBase = baseColor;
+    if (dot > 0.25) {
+      final sunTint = preset == SunPreset3D.goldenHourWest
+          ? const Color(0xFFFFD8A8)
+          : const Color(0xFFFFF8E8);
+      final tintStrength =
+          (preset == SunPreset3D.goldenHourWest ? 0.16 : 0.08) *
+              ((dot - 0.25) / 0.75).clamp(0.0, 1.0);
+      tintedBase = Color.lerp(baseColor, sunTint, tintStrength)!;
+    } else if (dot < 0.05) {
+      final shadowTint = preset == SunPreset3D.goldenHourWest
+          ? const Color(0xFF475569)
+          : const Color(0xFF64748B);
+      final coolStrength = 0.12 * ((0.05 - dot) / 1.05).clamp(0.0, 1.0);
+      tintedBase = Color.lerp(baseColor, shadowTint, coolStrength)!;
+    }
+
+    // Subtle upward sky-fill boost on horizontal upward-facing planes (+Z)
+    final skyBoost = norm.z > 0.5 ? 0.04 : 0.0;
+    final brightness = (0.46 + 0.54 * intensity + skyBoost).clamp(0.42, 1.04);
 
     return Color.fromARGB(
       (baseColor.a * 255.0).round().clamp(0, 255),
-      (baseColor.r * 255.0 * brightness).round().clamp(0, 255),
-      (baseColor.g * 255.0 * brightness).round().clamp(0, 255),
-      (baseColor.b * 255.0 * brightness).round().clamp(0, 255),
+      (tintedBase.r * 255.0 * brightness).round().clamp(0, 255),
+      (tintedBase.g * 255.0 * brightness).round().clamp(0, 255),
+      (tintedBase.b * 255.0 * brightness).round().clamp(0, 255),
     );
   }
 
