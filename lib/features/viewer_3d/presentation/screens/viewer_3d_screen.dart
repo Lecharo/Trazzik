@@ -1522,23 +1522,25 @@ class _Viewer3dScreenState extends ConsumerState<Viewer3dScreen> {
           Positioned(
             right: 20,
             top: 20,
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-              decoration: BoxDecoration(
-                color: const Color(0xFF0F172A).withValues(alpha: 0.80),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.white12),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  _buildHelpItem(Icons.touch_app, lang == 'es' ? 'Tocar piso/muro: Cambiar acabado' : 'Tap floor/wall: Change finish'),
-                  const SizedBox(height: 4),
-                  _buildHelpItem(Icons.threesixty, lang == 'es' ? 'Arrastrar: Orbitar 360°' : 'Drag: Orbit 360°'),
-                  const SizedBox(height: 4),
-                  _buildHelpItem(Icons.pinch, lang == 'es' ? 'Pellizco / Rueda: Zoom' : 'Pinch / Wheel: Zoom'),
-                ],
+            child: IgnorePointer(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F172A).withValues(alpha: 0.80),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.white12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    _buildHelpItem(Icons.touch_app, lang == 'es' ? 'Tocar piso/muro: Cambiar acabado' : 'Tap floor/wall: Change finish'),
+                    const SizedBox(height: 4),
+                    _buildHelpItem(Icons.threesixty, lang == 'es' ? 'Arrastrar: Orbitar 360°' : 'Drag: Orbit 360°'),
+                    const SizedBox(height: 4),
+                    _buildHelpItem(Icons.pinch, lang == 'es' ? 'Pellizco / Rueda: Zoom' : 'Pinch / Wheel: Zoom'),
+                  ],
+                ),
               ),
             ),
           ),

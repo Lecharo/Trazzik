@@ -1147,7 +1147,7 @@ class AxonometricSceneRenderer {
         : (isDarkTheme ? Colors.white : const Color(0xFF0F172A));
     final subColor = isSelected
         ? const Color(0xFF1E293B)
-        : (isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569));
+        : (isDarkTheme ? const Color(0xFFE2E8F0) : const Color(0xFF334155));
     final tp = TextPainter(
       text: TextSpan(
         children: [
@@ -1155,9 +1155,9 @@ class AxonometricSceneRenderer {
             text: shortCode,
             style: TextStyle(
               color: textColor,
-              fontSize: 8.5,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.3,
+              fontSize: 11.2,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.35,
             ),
           ),
           if (subLine != null && subLine.isNotEmpty)
@@ -1165,9 +1165,10 @@ class AxonometricSceneRenderer {
               text: '\n$subLine',
               style: TextStyle(
                 color: subColor,
-                fontSize: 6.8,
+                fontSize: 9.8,
                 fontWeight: FontWeight.w600,
-                height: 1.15,
+                height: 1.22,
+                fontFeatures: const [FontFeature.tabularFigures()],
               ),
             ),
         ],
@@ -1260,8 +1261,8 @@ class AxonometricSceneRenderer {
         subLine: showDimensions ? pFace.roomDimensionsLabel : null,
       );
 
-      const paddingH = 4.5;
-      const paddingV = 2.0;
+      const paddingH = 7.0;
+      const paddingV = 3.5;
       final badgeW = textPainter.width + paddingH * 2;
       final badgeH = textPainter.height + paddingV * 2;
       final rect = Rect.fromCenter(

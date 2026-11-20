@@ -356,40 +356,31 @@ class Canvas2DPainter extends CustomPainter {
       _drawZoningGuideBands(canvas, zoom);
     }
 
-    // 4. Lot Boundary
+    // 4. Lot Boundary (stroke pass; label renders above walls so openings never clip it)
+    final lotBoundaryColor =
+        isDarkTheme ? const Color(0xFF90A4AE) : const Color(0xFF64748B);
     _drawPolygonBoundary(
       canvas,
       state.lot.boundary,
       zoom,
       Paint()
-        ..color = isDarkTheme ? const Color(0xFF90A4AE) : const Color(0xFF64748B)
+        ..color = lotBoundaryColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0,
-      label: 'LOTE (${state.lot.boundary.area.toStringAsFixed(1)} m²)',
-      labelOffsetY: -28,
     );
 
-    // 5. Floor Boundary
+    // 5. Floor Boundary (stroke pass)
+    final floorBoundaryColor =
+        isDarkTheme ? const Color(0xFF64B5F6) : const Color(0xFF0284C7);
     _drawPolygonBoundary(
       canvas,
       state.floor.boundary,
       zoom,
       Paint()
-        ..color = isDarkTheme ? const Color(0xFF64B5F6) : const Color(0xFF0284C7)
+        ..color = floorBoundaryColor
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.5,
-      label:
-          '${state.floor.name.toUpperCase()} (Max: ${state.floor.maxAllowedArea.toStringAsFixed(0)} m²)',
-      labelOffsetY: -14,
     );
-
-    // 5.5. Onion-Skin Ghost Reference of Floor Immediately Below (multi-story alignment)
-    if (state.showFloorGhost) {
-      final ghostFloor = state.ghostReferenceFloor;
-      if (ghostFloor != null) {
-        _drawGhostFloorUnderlay(canvas, ghostFloor, zoom);
-      }
-    }
 
     // 6. Non-opening Room Modules (floor finishes, furniture & symbols under walls)
     Module? selectedModule;
@@ -404,6 +395,14 @@ class Canvas2DPainter extends CustomPainter {
           isSelected: isSelected,
           isHovered: module.id == hoveredModuleId && !isSelected,
         );
+      }
+    }
+
+    // 6.5. Onion-Skin Ghost Reference of Floor Immediately Below (above floor fills, under active walls)
+    if (state.showFloorGhost) {
+      final ghostFloor = state.ghostReferenceFloor;
+      if (ghostFloor != null) {
+        _drawGhostFloorUnderlay(canvas, ghostFloor, zoom);
       }
     }
 
@@ -433,6 +432,30 @@ class Canvas2DPainter extends CustomPainter {
         isSelected: module.id == state.selectedModuleId,
       );
     }
+
+    // 9.2. Lot & Floor Boundary Header Labels (painted above walls & windows with clean clearance)
+    final headerClearancePx = math.max(10.0, 0.14 * zoom);
+    _drawBoundaryLabel(
+      canvas,
+      state.floor.boundary,
+      zoom,
+      label:
+          '${state.floor.name.toUpperCase()} (Max: ${state.floor.maxAllowedArea.toStringAsFixed(0)} m²)',
+      color: floorBoundaryColor,
+      labelOffsetY: -headerClearancePx - 20.0,
+      fontSize: 11.5,
+      withBackdrop: true,
+    );
+    _drawBoundaryLabel(
+      canvas,
+      state.lot.boundary,
+      zoom,
+      label: 'LOTE (${state.lot.boundary.area.toStringAsFixed(1)} m²)',
+      color: lotBoundaryColor,
+      labelOffsetY: -headerClearancePx - 42.0,
+      fontSize: 10.5,
+      showLotOrientation: true,
+    );
 
     // 9.5. Automatic Exterior Architectural Chain Dimensions (bottom & right perimeter)
     if (state.showPerimeterDimensions && zoom >= 16.0) {
@@ -1582,19 +1605,19 @@ class Canvas2DPainter extends CustomPainter {
     if (roomPixelW < 78.0 || roomPixelH < 46.0) {
       titleText = '${_toCompactRoomName(module.name)}$lockTag';
       subtitleText = '${module.area.toStringAsFixed(1)}m²';
-      titleFontSize = 8.5;
-      subFontSize = 7.5;
+      titleFontSize = 9.2;
+      subFontSize = 8.4;
     } else if (roomPixelW < 138.0 || roomPixelH < 68.0) {
       titleText = '${_toMediumRoomName(module.name)}$lockTag$statusTag';
       subtitleText = '${module.area.toStringAsFixed(1)} m²';
-      titleFontSize = 9.5;
-      subFontSize = 8.2;
+      titleFontSize = 10.5;
+      subFontSize = 9.2;
     } else {
       titleText = '${module.name}$lockTag$statusTag';
       subtitleText =
           '${bb.width.toStringAsFixed(2)}×${bb.height.toStringAsFixed(2)}m · ${module.area.toStringAsFixed(2)} m²';
-      titleFontSize = 10.8;
-      subFontSize = 8.8;
+      titleFontSize = 11.8;
+      subFontSize = 10.0;
     }
 
     final titleColor = isDarkTheme ? const Color(0xFFF8FAFC) : const Color(0xFF0F172A);
@@ -1706,7 +1729,7 @@ class Canvas2DPainter extends CustomPainter {
       ('badge', text, color.toARGB32(), isDarkTheme),
       TextSpan(
         text: text,
-        style: TextStyle(color: color, fontSize: 9, fontWeight: FontWeight.bold),
+        style: TextStyle(color: color, fontSize: 10.5, fontWeight: FontWeight.bold),
       ),
     );
 
@@ -1948,20 +1971,20 @@ class Canvas2DPainter extends CustomPainter {
 
   void _drawGhostFloorUnderlay(Canvas canvas, Floor ghostFloor, double zoom) {
     final ghostAccent =
-        isDarkTheme ? const Color(0xFF818CF8) : const Color(0xFF4F46E5);
+        isDarkTheme ? const Color(0xFFA5B4FC) : const Color(0xFF4F46E5);
     final ghostFillPaint = Paint()
-      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.06 : 0.05)
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.08 : 0.06)
       ..style = PaintingStyle.fill;
     final ghostStrokePaint = Paint()
-      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.45 : 0.38)
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.68 : 0.52)
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.0;
+      ..strokeWidth = 1.35;
 
     for (final mod in ghostFloor.modules) {
       if (mod.isOpening || mod.status == ElementStatus.toDemolish) continue;
       final path = _polygonToPath(mod.geometry, zoom);
       canvas.drawPath(path, ghostFillPaint);
-      _drawDashedPath(canvas, path, ghostStrokePaint, dashLength: 4.5, gapLength: 3.5);
+      _drawDashedPath(canvas, path, ghostStrokePaint, dashLength: 5.5, gapLength: 3.5);
 
       if (mod.isStairs || mod.isWetCore) {
         final bb = mod.geometry.boundingBox;
@@ -1973,9 +1996,9 @@ class Canvas2DPainter extends CustomPainter {
           TextSpan(
             text: tag,
             style: TextStyle(
-              color: ghostAccent.withValues(alpha: 0.78),
-              fontSize: 8.0,
-              fontWeight: FontWeight.w700,
+              color: ghostAccent.withValues(alpha: 0.90),
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
               letterSpacing: 0.4,
             ),
           ),
@@ -1984,14 +2007,14 @@ class Canvas2DPainter extends CustomPainter {
           canvas,
           Offset(
             (bb.minX + bb.width / 2) * zoom - tp.width / 2,
-            bb.minY * zoom + 4,
+            bb.minY * zoom + 5,
           ),
         );
       }
     }
 
     final ghostWallPaint = Paint()
-      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.24 : 0.18)
+      ..color = ghostAccent.withValues(alpha: isDarkTheme ? 0.30 : 0.22)
       ..style = PaintingStyle.fill;
     for (final wall in ghostFloor.walls) {
       if (wall.status == ElementStatus.toDemolish) continue;
@@ -2004,7 +2027,7 @@ class Canvas2DPainter extends CustomPainter {
     if (chain.totalWidth < 0.25 && chain.totalDepth < 0.25) return;
 
     final chainColor =
-        isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+        isDarkTheme ? const Color(0xFFCBD5E1) : const Color(0xFF334155);
     final totalColor =
         isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0369A1);
 
@@ -2021,22 +2044,23 @@ class Canvas2DPainter extends CustomPainter {
       String text,
       Color color, {
       double rotateDegrees = 0.0,
+      double fontSize = 11.5,
     }) {
       final extPaint = Paint()
-        ..color = color.withValues(alpha: 0.35)
-        ..strokeWidth = 0.75;
+        ..color = color.withValues(alpha: 0.38)
+        ..strokeWidth = 0.85;
       canvas.drawLine(anchor1, p1, extPaint);
       canvas.drawLine(anchor2, p2, extPaint);
 
       final linePaint = Paint()
-        ..color = color.withValues(alpha: 0.80)
-        ..strokeWidth = 1.0;
+        ..color = color.withValues(alpha: 0.85)
+        ..strokeWidth = 1.15;
       canvas.drawLine(p1, p2, linePaint);
 
-      const tick = 3.2;
+      const tick = 4.0;
       final tickPaint = Paint()
         ..color = color
-        ..strokeWidth = 1.35
+        ..strokeWidth = 1.5
         ..strokeCap = StrokeCap.round;
       canvas.drawLine(
         Offset(p1.dx - tick, p1.dy + tick),
@@ -2050,15 +2074,15 @@ class Canvas2DPainter extends CustomPainter {
       );
 
       final segPx = (p2 - p1).distance;
-      if (segPx >= 26.0) {
+      if (segPx >= 24.0) {
         final mid = Offset((p1.dx + p2.dx) / 2, (p1.dy + p2.dy) / 2);
         final tp = _getCachedTextPainter(
-          ('chain_dim', text, color.toARGB32()),
+          ('chain_dim', text, color.toARGB32(), fontSize),
           TextSpan(
             text: text,
             style: TextStyle(
               color: color,
-              fontSize: 8.5,
+              fontSize: fontSize,
               fontWeight: FontWeight.w700,
               fontFeatures: const [FontFeature.tabularFigures()],
             ),
@@ -2071,18 +2095,18 @@ class Canvas2DPainter extends CustomPainter {
         }
         final pill = Rect.fromCenter(
           center: Offset.zero,
-          width: tp.width + 6,
-          height: tp.height + 2,
+          width: tp.width + 8,
+          height: tp.height + 4,
         );
-        canvas.drawRect(pill, Paint()..color = _canvasBg.withValues(alpha: 0.90));
+        canvas.drawRect(pill, Paint()..color = _canvasBg.withValues(alpha: 0.92));
         tp.paint(canvas, Offset(-tp.width / 2, -tp.height / 2));
         canvas.restore();
       }
     }
 
-    // Bottom horizontal partial chain (+24px) & total (+42px)
+    // Bottom horizontal partial chain (+28px) & total (+54px)
     if (chain.xStops.length >= 2) {
-      final chainY = bottomEdgePx + 24.0;
+      final chainY = bottomEdgePx + 28.0;
       if (chain.xStops.length > 2) {
         for (int i = 0; i < chain.xStops.length - 1; i++) {
           final x1 = chain.xStops[i];
@@ -2096,10 +2120,11 @@ class Canvas2DPainter extends CustomPainter {
             Offset(x2 * zoom, bottomEdgePx + 4),
             len.toStringAsFixed(2),
             chainColor,
+            fontSize: 11.5,
           );
         }
       }
-      final totalY = bottomEdgePx + (chain.xStops.length > 2 ? 42.0 : 24.0);
+      final totalY = bottomEdgePx + (chain.xStops.length > 2 ? 54.0 : 28.0);
       drawChainSegment(
         Offset(leftEdgePx, totalY),
         Offset(rightEdgePx, totalY),
@@ -2107,12 +2132,13 @@ class Canvas2DPainter extends CustomPainter {
         Offset(rightEdgePx, bottomEdgePx + 4),
         '${chain.totalWidth.toStringAsFixed(2)} m',
         totalColor,
+        fontSize: 12.5,
       );
     }
 
-    // Right vertical partial chain (+24px) & total (+42px)
+    // Right vertical partial chain (+28px) & total (+54px)
     if (chain.yStops.length >= 2) {
-      final chainX = rightEdgePx + 24.0;
+      final chainX = rightEdgePx + 28.0;
       if (chain.yStops.length > 2) {
         for (int i = 0; i < chain.yStops.length - 1; i++) {
           final y1 = chain.yStops[i];
@@ -2127,10 +2153,11 @@ class Canvas2DPainter extends CustomPainter {
             len.toStringAsFixed(2),
             chainColor,
             rotateDegrees: 90,
+            fontSize: 11.5,
           );
         }
       }
-      final totalX = rightEdgePx + (chain.yStops.length > 2 ? 42.0 : 24.0);
+      final totalX = rightEdgePx + (chain.yStops.length > 2 ? 54.0 : 28.0);
       drawChainSegment(
         Offset(totalX, topEdgePx),
         Offset(totalX, bottomEdgePx),
@@ -2139,6 +2166,7 @@ class Canvas2DPainter extends CustomPainter {
         '${chain.totalDepth.toStringAsFixed(2)} m',
         totalColor,
         rotateDegrees: 90,
+        fontSize: 12.5,
       );
     }
   }
@@ -2174,8 +2202,8 @@ class Canvas2DPainter extends CustomPainter {
   }
 
   void _drawMetricRulers(Canvas canvas, Size size, double zoom, Offset pan) {
-    const topBarH = 22.0;
-    const leftBarW = 28.0;
+    const topBarH = 24.0;
+    const leftBarW = 32.0;
 
     final barBg = isDarkTheme
         ? const Color(0xFF0F131B).withValues(alpha: 0.94)
@@ -2187,7 +2215,7 @@ class Canvas2DPainter extends CustomPainter {
     final majorTextColor =
         isDarkTheme ? const Color(0xFF38BDF8) : const Color(0xFF0369A1);
     final minorTextColor =
-        isDarkTheme ? const Color(0xFF94A3B8) : const Color(0xFF475569);
+        isDarkTheme ? const Color(0xFFCBD5E1) : const Color(0xFF475569);
 
     final bgPaint = Paint()..color = barBg;
     final borderPaint = Paint()
@@ -2235,13 +2263,13 @@ class Canvas2DPainter extends CustomPainter {
             text: label,
             style: TextStyle(
               color: isMajor ? majorTextColor : minorTextColor,
-              fontSize: 8.5,
-              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 10.0,
+              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w600,
             ),
           ),
         );
-        if (sx + 2 + tp.width < size.width) {
-          tp.paint(canvas, Offset(sx + 2, 2.5));
+        if (sx + 3 + tp.width < size.width) {
+          tp.paint(canvas, Offset(sx + 3, 2.5));
         }
       }
     }
@@ -2266,13 +2294,13 @@ class Canvas2DPainter extends CustomPainter {
             text: label,
             style: TextStyle(
               color: isMajor ? majorTextColor : minorTextColor,
-              fontSize: 8.0,
-              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w500,
+              fontSize: 9.5,
+              fontWeight: isMajor ? FontWeight.w700 : FontWeight.w600,
             ),
           ),
         );
         if (sy + tp.height < size.height) {
-          tp.paint(canvas, Offset(2.5, sy + 1.5));
+          tp.paint(canvas, Offset(3.0, sy + 1.5));
         }
       }
     }
@@ -2300,7 +2328,7 @@ class Canvas2DPainter extends CustomPainter {
         text: 'm',
         style: TextStyle(
           color: majorTextColor,
-          fontSize: 9.0,
+          fontSize: 10.0,
           fontWeight: FontWeight.w800,
         ),
       ),
@@ -2327,7 +2355,7 @@ class Canvas2DPainter extends CustomPainter {
         text: text,
         style: TextStyle(
           color: isDarkTheme ? const Color(0xFFE2E8F0) : const Color(0xFF0F172A),
-          fontSize: 10.5,
+          fontSize: 11.5,
           fontWeight: FontWeight.w600,
           fontFeatures: const [FontFeature.tabularFigures()],
         ),
@@ -2375,63 +2403,98 @@ class Canvas2DPainter extends CustomPainter {
     canvas.drawPath(path, paint);
 
     if (label != null) {
-      final bb = polygon.boundingBox;
-      final textPainter = _getCachedTextPainter(
-        ('poly_lbl', label, paint.color.toARGB32()),
+      _drawBoundaryLabel(
+        canvas,
+        polygon,
+        zoom,
+        label: label,
+        color: paint.color,
+        labelOffsetY: labelOffsetY,
+        showLotOrientation: label.startsWith('LOTE'),
+      );
+    }
+  }
+
+  void _drawBoundaryLabel(
+    Canvas canvas,
+    Polygon2D polygon,
+    double zoom, {
+    required String label,
+    required Color color,
+    required double labelOffsetY,
+    double fontSize = 11.0,
+    bool withBackdrop = false,
+    bool showLotOrientation = false,
+  }) {
+    final bb = polygon.boundingBox;
+    final textPainter = _getCachedTextPainter(
+      ('poly_lbl', label, color.toARGB32(), fontSize),
+      TextSpan(
+        text: label,
+        style: TextStyle(
+          color: color,
+          fontSize: fontSize,
+          fontWeight: FontWeight.w800,
+          letterSpacing: 0.25,
+        ),
+      ),
+    );
+    final labelPos = Offset(bb.minX * zoom + 4, bb.minY * zoom + labelOffsetY);
+    if (withBackdrop) {
+      final pill = RRect.fromRectAndRadius(
+        Rect.fromLTWH(
+          labelPos.dx - 5,
+          labelPos.dy - 2,
+          textPainter.width + 10,
+          textPainter.height + 4,
+        ),
+        const Radius.circular(4),
+      );
+      canvas.drawRRect(
+        pill,
+        Paint()..color = _canvasBg.withValues(alpha: 0.88),
+      );
+    }
+    textPainter.paint(canvas, labelPos);
+
+    if (showLotOrientation) {
+      final frontColor =
+          isDarkTheme ? const Color(0xFFFFB300) : const Color(0xFFB45309);
+      final backColor =
+          isDarkTheme ? Colors.white54 : const Color(0xFF64748B);
+      final frontTp = _getCachedTextPainter(
+        ('lot_front', lang, isDarkTheme),
         TextSpan(
-          text: label,
+          text: lang == 'en'
+              ? '▲ FRONT / STREET / ACCESS ▲'
+              : '▲ FRENTE / CALLE / ACCESO ▲',
           style: TextStyle(
-            color: paint.color,
-            fontSize: 10,
+            color: frontColor,
+            fontSize: 10.0,
             fontWeight: FontWeight.bold,
+            letterSpacing: 0.8,
           ),
         ),
       );
-      textPainter.paint(
-        canvas,
-        Offset(bb.minX * zoom + 4, bb.minY * zoom + labelOffsetY),
+      final frontX = (bb.minX + bb.width / 2) * zoom - frontTp.width / 2;
+      frontTp.paint(canvas, Offset(frontX, bb.minY * zoom + labelOffsetY - 18));
+
+      final backTp = _getCachedTextPainter(
+        ('lot_back', lang, isDarkTheme),
+        TextSpan(
+          text: lang == 'en'
+              ? '▼ REAR / BACKYARD ▼'
+              : '▼ FONDO / PATIO POSTERIOR ▼',
+          style: TextStyle(
+            color: backColor,
+            fontSize: 9.5,
+            fontWeight: FontWeight.w600,
+            letterSpacing: 0.8,
+          ),
+        ),
       );
-
-      // Permanent lot orientation indicators
-      if (label.startsWith('LOTE')) {
-        final frontColor =
-            isDarkTheme ? const Color(0xFFFFB300) : const Color(0xFFB45309);
-        final backColor =
-            isDarkTheme ? Colors.white38 : const Color(0xFF64748B);
-        final frontTp = _getCachedTextPainter(
-          ('lot_front', lang, isDarkTheme),
-          TextSpan(
-            text: lang == 'en'
-                ? '▲ FRONT / STREET / ACCESS ▲'
-                : '▲ FRENTE / CALLE / ACCESO ▲',
-            style: TextStyle(
-              color: frontColor,
-              fontSize: 9,
-              fontWeight: FontWeight.bold,
-              letterSpacing: 0.8,
-            ),
-          ),
-        );
-        final frontX = (bb.minX + bb.width / 2) * zoom - frontTp.width / 2;
-        frontTp.paint(canvas, Offset(frontX, bb.minY * zoom - 42));
-
-        final backTp = _getCachedTextPainter(
-          ('lot_back', lang, isDarkTheme),
-          TextSpan(
-            text: lang == 'en'
-                ? '▼ REAR / BACKYARD ▼'
-                : '▼ FONDO / PATIO POSTERIOR ▼',
-            style: TextStyle(
-              color: backColor,
-              fontSize: 8.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.8,
-            ),
-          ),
-        );
-        final backX = (bb.minX + bb.width / 2) * zoom - backTp.width / 2;
-        backTp.paint(canvas, Offset(backX, bb.maxY * zoom + 4));
-      }
+      final backX = (bb.minX + bb.width / 2) * zoom - backTp.width / 2;
+      backTp.paint(canvas, Offset(backX, bb.maxY * zoom + 6));
     }
   }
 
