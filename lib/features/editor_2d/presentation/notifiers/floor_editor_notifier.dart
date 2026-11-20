@@ -131,6 +131,70 @@ class FloorEditorNotifier extends Notifier<FloorEditorState> {
     state = state.copyWith(zoom: clampedZoom);
   }
 
+  /// Zooms the 2D viewport keeping the world coordinate under [focalPoint] fixed.
+  void zoomAtPoint(double newZoom, Offset focalPoint) {
+    final oldZoom = state.zoom;
+    final clampedZoom = GeometryEngine.sanitizeMetric(
+      newZoom,
+      fallback: oldZoom,
+      min: 15.0,
+      max: 100.0,
+    );
+    if ((clampedZoom - oldZoom).abs() < 1e-6) return;
+    final worldX = (focalPoint.dx - state.panOffset.dx) / oldZoom;
+    final worldY = (focalPoint.dy - state.panOffset.dy) / oldZoom;
+    final nextPan = Offset(
+      focalPoint.dx - worldX * clampedZoom,
+      focalPoint.dy - worldY * clampedZoom,
+    );
+    state = state.copyWith(zoom: clampedZoom, panOffset: nextPan);
+  }
+
+  /// Exits active drawing/measurement modes or clears the current selection (Escape shortcut).
+  void cancelActiveToolsOrSelection() {
+    if (state.isDrawWallMode) {
+      state = state.copyWith(isDrawWallMode: false, clearDraftWall: true);
+      return;
+    }
+    if (state.isLaserMeasureActive) {
+      state = state.copyWith(
+        isLaserMeasureActive: false,
+        clearLaserMeasure: true,
+      );
+      return;
+    }
+    if (state.selectedSubModuleId != null) {
+      state = state.copyWith(clearSubModuleSelection: true);
+      return;
+    }
+    if (state.selectedWallId != null || state.selectedModuleId != null) {
+      state = state.copyWith(
+        clearSelection: true,
+        clearWallSelection: true,
+        clearSubModuleSelection: true,
+      );
+    }
+  }
+
+  /// Deletes the currently selected unlocked furniture item, wall, or room module.
+  void deleteSelectedElement() {
+    final sub = state.selectedSubModule;
+    final mod = state.selectedModule;
+    if (sub != null && mod != null) {
+      if (mod.isLocked || sub.isLocked) return;
+      removeSubModule(mod.id, sub.id);
+      return;
+    }
+    final wall = state.selectedWall;
+    if (wall != null) {
+      deleteWall(wall.id);
+      return;
+    }
+    if (mod != null && !mod.isLocked) {
+      deleteModule(mod.id);
+    }
+  }
+
   /// Starts an interactive gesture transaction (such as dragging on canvas)
   /// so intermediate frames coalesce into one Undo step and defer validation.
   void beginInteraction() {

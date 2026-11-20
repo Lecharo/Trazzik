@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/materials/finish_material.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -143,6 +144,9 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
   late final ValueNotifier<_Viewport3D> _viewportNotifier;
   late Point3D _sceneCenter;
   double _baseZoom = 48.0;
+  bool _isAuxPanning = false;
+  bool _isDragging3D = false;
+  Offset? _lastAuxPanPos;
 
   static Point3D computeSceneCenter(List<Face3D> faces) =>
       AxonometricSceneRenderer.computeSceneCenter(faces);
@@ -319,74 +323,148 @@ class _AxonometricCanvas3DState extends State<AxonometricCanvas3D> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final canvasSize = Size(constraints.maxWidth, constraints.maxHeight);
-        return Listener(
-          onPointerSignal: (pointerSignal) {
-            if (pointerSignal is PointerScrollEvent) {
-              final zoomFactor = pointerSignal.scrollDelta.dy < 0 ? 1.12 : 0.88;
-              final nextZoom = GeometryEngine.sanitizeMetric(
-                _viewportNotifier.value.zoom * zoomFactor,
-                fallback: 48.0,
-                min: 10.0,
-                max: 200.0,
-              );
-              _viewportNotifier.value =
-                  _viewportNotifier.value.copyWith(zoom: nextZoom);
-              widget.onZoomChanged?.call(nextZoom);
-            }
-          },
-          child: GestureDetector(
-            onTapUp: (details) => _handleTapUp(details, canvasSize),
-            onScaleStart: (_) {
-              _baseZoom = _viewportNotifier.value.zoom;
+        return MouseRegion(
+          cursor: (_isDragging3D || _isAuxPanning)
+              ? SystemMouseCursors.grabbing
+              : SystemMouseCursors.grab,
+          child: Listener(
+            onPointerDown: (event) {
+              final isAuxButton = (event.buttons & kSecondaryMouseButton) != 0 ||
+                  (event.buttons & kMiddleMouseButton) != 0;
+              if (isAuxButton) {
+                setState(() {
+                  _isAuxPanning = true;
+                  _lastAuxPanPos = event.localPosition;
+                });
+              }
             },
-            onScaleUpdate: (details) {
-              final current = _viewportNotifier.value;
-              if (details.pointerCount == 1) {
-                final rawYaw = current.yaw + details.focalPointDelta.dx * 0.012;
-                final nextYaw = rawYaw.isFinite ? rawYaw : current.yaw;
-                final nextPitch = GeometryEngine.sanitizeMetric(
-                  current.pitch - details.focalPointDelta.dy * 0.012,
-                  fallback: current.pitch,
-                  min: 0.08,
-                  max: math.pi / 2 - 0.05,
-                );
-                _viewportNotifier.value = current.copyWith(
-                  yaw: nextYaw,
-                  pitch: nextPitch,
-                );
-                widget.onOrbitChanged?.call(nextYaw, nextPitch);
-              } else if (details.pointerCount >= 2) {
-                final nextZoom = GeometryEngine.sanitizeMetric(
-                  _baseZoom * details.scale,
-                  fallback: current.zoom,
-                  min: 10.0,
-                  max: 200.0,
-                );
-                final nextPan = (details.focalPointDelta.dx.isFinite &&
-                        details.focalPointDelta.dy.isFinite)
-                    ? current.pan + details.focalPointDelta
+            onPointerMove: (event) {
+              if (_isAuxPanning && _lastAuxPanPos != null) {
+                final delta = event.localPosition - _lastAuxPanPos!;
+                _lastAuxPanPos = event.localPosition;
+                final current = _viewportNotifier.value;
+                final nextPan = (delta.dx.isFinite && delta.dy.isFinite)
+                    ? current.pan + delta
                     : current.pan;
-                _viewportNotifier.value = current.copyWith(
-                  zoom: nextZoom,
-                  pan: nextPan,
-                );
-                widget.onZoomChanged?.call(nextZoom);
+                _viewportNotifier.value = current.copyWith(pan: nextPan);
                 widget.onPanChanged?.call(nextPan);
               }
             },
-            child: RepaintBoundary(
-              child: ClipRect(
-                child: CustomPaint(
-                  size: Size.infinite,
-                  painter: _AxonometricPainter(
-                    faces: widget.faces,
-                    sceneCenter: _sceneCenter,
-                    viewportListenable: _viewportNotifier,
-                    showLabels: widget.showLabels,
-                    orientationDegrees: widget.orientationDegrees,
-                    selectedModuleId: widget.selectedModuleId,
-                    highlightWallSelection: widget.highlightWallSelection,
-                    isDarkTheme: isDarkTheme,
+            onPointerUp: (_) {
+              if (_isAuxPanning) {
+                setState(() {
+                  _isAuxPanning = false;
+                  _lastAuxPanPos = null;
+                });
+              }
+            },
+            onPointerCancel: (_) {
+              if (_isAuxPanning) {
+                setState(() {
+                  _isAuxPanning = false;
+                  _lastAuxPanPos = null;
+                });
+              }
+            },
+            onPointerSignal: (pointerSignal) {
+              if (pointerSignal is PointerScrollEvent) {
+                final zoomFactor =
+                    pointerSignal.scrollDelta.dy < 0 ? 1.12 : 0.88;
+                final nextZoom = GeometryEngine.sanitizeMetric(
+                  _viewportNotifier.value.zoom * zoomFactor,
+                  fallback: 48.0,
+                  min: 10.0,
+                  max: 200.0,
+                );
+                _viewportNotifier.value =
+                    _viewportNotifier.value.copyWith(zoom: nextZoom);
+                widget.onZoomChanged?.call(nextZoom);
+              }
+            },
+            child: GestureDetector(
+              onTapUp: (details) => _handleTapUp(details, canvasSize),
+              onScaleStart: (_) {
+                _baseZoom = _viewportNotifier.value.zoom;
+                if (!_isDragging3D) {
+                  setState(() => _isDragging3D = true);
+                }
+              },
+              onScaleEnd: (_) {
+                if (_isDragging3D) {
+                  setState(() => _isDragging3D = false);
+                }
+              },
+              onScaleUpdate: (details) {
+                if (_isAuxPanning) return;
+                final current = _viewportNotifier.value;
+                if (details.pointerCount == 1) {
+                  if ((details.scale - 1.0).abs() > 0.005) {
+                    // Trackpad pinch-to-zoom on Web arrives with pointerCount == 1
+                    final nextZoom = GeometryEngine.sanitizeMetric(
+                      _baseZoom * details.scale,
+                      fallback: current.zoom,
+                      min: 10.0,
+                      max: 200.0,
+                    );
+                    _viewportNotifier.value = current.copyWith(zoom: nextZoom);
+                    widget.onZoomChanged?.call(nextZoom);
+                    return;
+                  }
+                  if (HardwareKeyboard.instance.isShiftPressed) {
+                    final nextPan = (details.focalPointDelta.dx.isFinite &&
+                            details.focalPointDelta.dy.isFinite)
+                        ? current.pan + details.focalPointDelta
+                        : current.pan;
+                    _viewportNotifier.value = current.copyWith(pan: nextPan);
+                    widget.onPanChanged?.call(nextPan);
+                    return;
+                  }
+                  final rawYaw = current.yaw + details.focalPointDelta.dx * 0.012;
+                  final nextYaw = rawYaw.isFinite ? rawYaw : current.yaw;
+                  final nextPitch = GeometryEngine.sanitizeMetric(
+                    current.pitch - details.focalPointDelta.dy * 0.012,
+                    fallback: current.pitch,
+                    min: 0.08,
+                    max: math.pi / 2 - 0.05,
+                  );
+                  _viewportNotifier.value = current.copyWith(
+                    yaw: nextYaw,
+                    pitch: nextPitch,
+                  );
+                  widget.onOrbitChanged?.call(nextYaw, nextPitch);
+                } else if (details.pointerCount >= 2) {
+                  final nextZoom = GeometryEngine.sanitizeMetric(
+                    _baseZoom * details.scale,
+                    fallback: current.zoom,
+                    min: 10.0,
+                    max: 200.0,
+                  );
+                  final nextPan = (details.focalPointDelta.dx.isFinite &&
+                          details.focalPointDelta.dy.isFinite)
+                      ? current.pan + details.focalPointDelta
+                      : current.pan;
+                  _viewportNotifier.value = current.copyWith(
+                    zoom: nextZoom,
+                    pan: nextPan,
+                  );
+                  widget.onZoomChanged?.call(nextZoom);
+                  widget.onPanChanged?.call(nextPan);
+                }
+              },
+              child: RepaintBoundary(
+                child: ClipRect(
+                  child: CustomPaint(
+                    size: Size.infinite,
+                    painter: _AxonometricPainter(
+                      faces: widget.faces,
+                      sceneCenter: _sceneCenter,
+                      viewportListenable: _viewportNotifier,
+                      showLabels: widget.showLabels,
+                      orientationDegrees: widget.orientationDegrees,
+                      selectedModuleId: widget.selectedModuleId,
+                      highlightWallSelection: widget.highlightWallSelection,
+                      isDarkTheme: isDarkTheme,
+                    ),
                   ),
                 ),
               ),

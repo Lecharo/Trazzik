@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
@@ -210,6 +211,14 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
     );
   }
 
+  bool _isEditingText() {
+    final primary = FocusManager.instance.primaryFocus;
+    final ctx = primary?.context;
+    if (ctx == null) return false;
+    return ctx.widget is EditableText ||
+        ctx.findAncestorWidgetOfExactType<EditableText>() != null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final notifier = ref.read(floorEditorProvider.notifier);
@@ -224,7 +233,42 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
       });
     }
 
-    return PopScope(
+    return CallbackShortcuts(
+      bindings: <ShortcutActivator, VoidCallback>{
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () {
+          if (!_isEditingText()) notifier.undo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true): () {
+          if (!_isEditingText()) notifier.undo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyY, control: true): () {
+          if (!_isEditingText()) notifier.redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): () {
+          if (!_isEditingText()) notifier.redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyZ, meta: true, shift: true): () {
+          if (!_isEditingText()) notifier.redo();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, control: true): () {
+          if (!_isSaving) _saveFloorToSupabase();
+        },
+        const SingleActivator(LogicalKeyboardKey.keyS, meta: true): () {
+          if (!_isSaving) _saveFloorToSupabase();
+        },
+        const SingleActivator(LogicalKeyboardKey.escape): () {
+          notifier.cancelActiveToolsOrSelection();
+        },
+        const SingleActivator(LogicalKeyboardKey.delete): () {
+          if (!_isEditingText()) notifier.deleteSelectedElement();
+        },
+        const SingleActivator(LogicalKeyboardKey.backspace): () {
+          if (!_isEditingText()) notifier.deleteSelectedElement();
+        },
+      },
+      child: Focus(
+        autofocus: true,
+        child: PopScope(
       canPop: false,
       onPopInvokedWithResult: (didPop, result) async {
         if (didPop) return;
@@ -284,6 +328,8 @@ class _EditorScreenState extends ConsumerState<EditorScreen> {
           onOpenMobileProperties: () => _showMobilePropertiesSheet(context),
         ),
       ),
+    ),
+    ),
     );
   }
 }

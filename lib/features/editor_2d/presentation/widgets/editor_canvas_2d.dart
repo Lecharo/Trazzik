@@ -1,10 +1,13 @@
 import 'dart:math' as math;
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:trazzik/core/geometry/geometry_engine.dart';
 import 'package:trazzik/core/geometry/point_2d.dart';
 import 'package:trazzik/core/i18n/app_strings.dart';
 import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_notifier.dart';
+import 'package:trazzik/features/editor_2d/presentation/notifiers/floor_editor_state.dart';
 import 'package:trazzik/features/editor_2d/presentation/widgets/canvas_2d_painter.dart';
 import 'package:trazzik/features/floors/domain/floor.dart';
 import 'package:trazzik/features/modules/domain/module.dart';
@@ -48,6 +51,22 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
   Point2D? _dragStartMeters;
   Point2D? _moduleInitialOrigin;
   Point2D? _subModuleInitialOrigin;
+  bool _isAuxPanning = false;
+  bool _isSpacePanning = false;
+  Offset? _lastAuxPanPos;
+
+  MouseCursor _resolveCursor(FloorEditorState editorState) {
+    if (_isAuxPanning ||
+        _isSpacePanning ||
+        _draggingModuleId != null ||
+        _draggingSubModuleId != null) {
+      return SystemMouseCursors.grabbing;
+    }
+    if (editorState.isDrawWallMode || editorState.isLaserMeasureActive) {
+      return SystemMouseCursors.precise;
+    }
+    return SystemMouseCursors.grab;
+  }
 
   void _finishDragGesture(FloorEditorNotifier notifier) {
     if (_draggingModuleId != null || _draggingSubModuleId != null) {
@@ -61,6 +80,7 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         _dragStartMeters = null;
         _moduleInitialOrigin = null;
         _subModuleInitialOrigin = null;
+        _isSpacePanning = false;
       });
     }
   }
@@ -140,8 +160,59 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
     final editorState = ref.watch(floorEditorProvider);
     final notifier = ref.read(floorEditorProvider.notifier);
 
-    return GestureDetector(
+    return MouseRegion(
+      cursor: _resolveCursor(editorState),
+      child: Listener(
+        onPointerSignal: (pointerSignal) {
+          if (pointerSignal is PointerScrollEvent) {
+            final zoomFactor = pointerSignal.scrollDelta.dy < 0 ? 1.12 : 0.89;
+            notifier.zoomAtPoint(
+              editorState.zoom * zoomFactor,
+              pointerSignal.localPosition,
+            );
+          }
+        },
+        onPointerDown: (event) {
+          final isAuxButton = (event.buttons & kMiddleMouseButton) != 0 ||
+              (event.buttons & kSecondaryMouseButton) != 0;
+          if (isAuxButton) {
+            setState(() {
+              _isAuxPanning = true;
+              _lastAuxPanPos = event.localPosition;
+            });
+          }
+        },
+        onPointerMove: (event) {
+          if (_isAuxPanning && _lastAuxPanPos != null) {
+            final delta = event.localPosition - _lastAuxPanPos!;
+            _lastAuxPanPos = event.localPosition;
+            notifier.updatePan(delta);
+          }
+        },
+        onPointerUp: (_) {
+          if (_isAuxPanning) {
+            setState(() {
+              _isAuxPanning = false;
+              _lastAuxPanPos = null;
+            });
+          }
+        },
+        onPointerCancel: (_) {
+          if (_isAuxPanning) {
+            setState(() {
+              _isAuxPanning = false;
+              _lastAuxPanPos = null;
+            });
+          }
+        },
+        child: GestureDetector(
       onPanStart: (details) {
+        if (_isAuxPanning) return;
+        if (HardwareKeyboard.instance
+            .isLogicalKeyPressed(LogicalKeyboardKey.space)) {
+          setState(() => _isSpacePanning = true);
+          return;
+        }
         final localPos = details.localPosition;
         final metersX = (localPos.dx - editorState.panOffset.dx) / editorState.zoom;
         final metersY = (localPos.dy - editorState.panOffset.dy) / editorState.zoom;
@@ -218,6 +289,11 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
         }
       },
       onPanUpdate: (details) {
+        if (_isAuxPanning) return;
+        if (_isSpacePanning) {
+          notifier.updatePan(details.delta);
+          return;
+        }
         if (editorState.isDrawWallMode) {
           final localPos = details.localPosition;
           final curMetersX =
@@ -355,6 +431,8 @@ class _EditorCanvas2DState extends ConsumerState<EditorCanvas2D> {
           ),
         ),
       ),
+    ),
+    ),
     );
   }
 
